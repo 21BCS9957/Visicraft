@@ -4,6 +4,12 @@ import React, { memo, useCallback } from 'react';
 import { EdgeProps, getBezierPath, useReactFlow } from 'reactflow';
 import toast from 'react-hot-toast';
 
+// Extended EdgeProps to include handle properties
+interface CustomEdgeProps extends EdgeProps {
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
+}
+
 // Memoize color calculation
 const getEdgeColor = (sourceHandle?: string | null, targetHandle?: string | null): string => {
   if (targetHandle === 'referenceImage' || targetHandle === 'sourceImage') {
@@ -29,7 +35,7 @@ function CustomEdgeComponent({
   sourceHandle,
   targetHandle,
   selected,
-}: EdgeProps) {
+}: CustomEdgeProps) {
   const { setEdges } = useReactFlow();
   
   const [edgePath] = getBezierPath({
