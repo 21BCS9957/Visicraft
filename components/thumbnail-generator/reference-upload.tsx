@@ -1,0 +1,114 @@
+'use client';
+
+import { useCallback, useState } from 'react';
+import { useDropzone } from 'react-dropzone';
+import { X, Upload, Info } from 'lucide-react';
+import { validateImageFile } from '@/lib/validations';
+import { UploadedImage } from '@/types';
+import { Button } from '@/components/ui/button';
+
+interface ReferenceUploadProps {
+  onImageChange: (image: UploadedImage | null) => void;
+}
+
+export function ReferenceUpload({ onImageChange }: ReferenceUploadProps) {
+  const [image, setImage] = useState<UploadedImage | null>(null);
+  const [error, setError] = useState<string>('');
+
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    setError('');
+    
+    if (acceptedFiles.length === 0) return;
+
+    const file = acceptedFiles[0];
+    const validation = validateImageFile(file);
+    
+    if (!validation.valid) {
+      setError(validation.error || 'Invalid file');
+      return;
+    }
+
+    const uploadedImage: UploadedImage = {
+      file,
+      preview: URL.createObjectURL(file),
+      id: Math.random().toString(36).substring(2),
+    };
+
+    setImage(uploadedImage);
+    onImageChange(uploadedImage);
+  }, [onImageChange]);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/png': ['.png'],
+      'image/webp': ['.webp'],
+    },
+    maxSize: 5 * 1024 * 1024,
+    multiple: false,
+  });
+
+  const removeImage = () => {
+    setImage(null);
+    onImageChange(null);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 text-[#c8b4a0] text-sm">
+        <Info className="h-4 w-4" />
+        <span>Upload a reference thumbnail that defines the style you want</span>
+      </div>
+
+      {!image ? (
+        <div
+          {...getRootProps()}
+          className={`
+            relative border-2 border-dashed rounded-lg p-12 text-center cursor-pointer
+            transition-all duration-300
+            ${isDragActive 
+              ? 'border-[#c8b4a0] bg-[#c8b4a0]/5' 
+              : 'border-[#c8b4a0]/20 hover:border-[#c8b4a0]/40'
+            }
+            bg-gradient-to-br from-[#1a1d18] to-[#2a2e26]
+          `}
+        >
+          <input {...getInputProps()} />
+          <Upload className="mx-auto h-16 w-16 text-[#c8b4a0] mb-4" />
+          <p className="text-[#f8f7f5] font-light text-lg mb-2">
+            {isDragActive ? 'Drop reference image here' : 'Upload Reference Thumbnail'}
+          </p>
+          <p className="text-[#c8b4a0] text-sm">
+            Click or drag to upload
+          </p>
+          <p className="text-[#c8b4a0]/60 text-xs mt-2">
+            JPG, PNG, WebP • Max 5MB
+          </p>
+        </div>
+      ) : (
+        <div className="relative group rounded-lg overflow-hidden border border-[#c8b4a0]/20">
+          <img
+            src={image.preview}
+            alt="Reference thumbnail"
+            className="w-full h-auto"
+          />
+          <Button
+            variant="destructive"
+            size="icon"
+            className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity"
+            onClick={removeImage}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+
+      {error && (
+        <div className="text-red-400 text-sm p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
