@@ -1,0 +1,80 @@
+{
+  "id": "amazon-creative",
+  "name": "Amazon Product Creative",
+  "description": "Professional product images for Amazon listings",
+  "category": "amazon",
+  "nodes": [
+    {
+      "id": "reference-1",
+      "type": "import",
+      "position": { "x": 150, "y": 100 },
+      "data": {
+        "nodeType": "reference",
+        "label": "Lifestyle Reference (Optional)",
+        "placeholder": "Upload reference for product staging",
+        "status": "idle"
+      }
+    },
+    {
+      "id": "source-1",
+      "type": "import",
+      "position": { "x": 150, "y": 300 },
+      "data": {
+        "nodeType": "source",
+        "label": "Product Photo",
+        "placeholder": "Upload your product image",
+        "status": "idle"
+      }
+    },
+    {
+      "id": "prompt-1",
+      "type": "prompt",
+      "position": { "x": 150, "y": 500 },
+      "data": {
+        "text": "Professional Amazon product photo, clean white background, studio lighting, high quality, commercial photography",
+        "label": "Product Style",
+        "status": "idle"
+      }
+    },
+    {
+      "id": "generate-1",
+      "type": "generate",
+      "position": { "x": 600, "y": 280 },
+      "data": {
+        "aspectRatio": "1:1",
+        "resolution": "2K",
+        "model": "gemini-3-pro",
+        "status": "idle"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "reference-1",
+      "sourceHandle": "image",
+      "target": "generate-1",
+      "targetHandle": "referenceImage",
+      "type": "custom",
+      "animated": false
+    },
+    {
+      "id": "e2",
+      "source": "source-1",
+      "sourceHandle": "image",
+      "target": "generate-1",
+      "targetHandle": "sourceImage",
+      "type": "custom",
+      "animated": false
+    },
+    {
+      "id": "e3",
+      "source": "prompt-1",
+      "sourceHandle": "prompt",
+      "target": "generate-1",
+      "targetHandle": "prompt",
+      "type": "custom",
+      "animated": false
+    }
+  ]
+}

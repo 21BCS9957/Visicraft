@@ -110,6 +110,7 @@ export function OutputNode({ data, selected, id }: NodeProps) {
       initial={{ scale: 0.9, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       className={`
+        group
         bg-[#1a1a1a]
         border border-[#2a2a2a]
         rounded-lg
@@ -121,7 +122,11 @@ export function OutputNode({ data, selected, id }: NodeProps) {
       {/* Header */}
       <div className="flex items-center justify-between p-3 border-b border-[#2a2a2a]">
         <div className="flex items-center gap-2">
-          <MonitorPlay className="w-4 h-4 text-[#8b5cf6]" />
+          <div className="w-5 h-5 bg-[#10b981]/20 rounded flex items-center justify-center">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M9 12L11 14L15 10M21 12C21 16.971 16.971 21 12 21C7.029 21 3 16.971 3 12C3 7.029 7.029 3 12 3C16.971 3 21 7.029 21 12Z" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
           <span className="text-[13px] text-white font-medium">Output</span>
         </div>
         <div className="relative" ref={menuRef}>
@@ -212,7 +217,7 @@ export function OutputNode({ data, selected, id }: NodeProps) {
       </div>
 
       {/* Input Handle with Label */}
-      <div className="absolute left-0 top-1/2 -translate-x-full -translate-y-1/2 pr-2">
+      <div className="absolute left-0 top-1/2 -translate-x-full -translate-y-1/2 pr-2 opacity-0 group-hover:opacity-100 transition-opacity">
         <div className="text-[10px] text-[#8b5cf6] whitespace-nowrap font-medium">
           Result →
         </div>

@@ -5,47 +5,83 @@ import { supabase } from '@/lib/supabase/client';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { referenceImageUrl, sourceImageUrls, prompt } = body;
+    const { 
+      referenceImage, 
+      sourceImages, 
+      prompt,
+      model,
+      aspectRatio,
+      resolution 
+    } = body;
 
-    if (!referenceImageUrl || !sourceImageUrls || sourceImageUrls.length === 0) {
+    // Flexible validation: Need at least one image
+    if (!referenceImage && (!sourceImages || sourceImages.length === 0)) {
       return NextResponse.json(
-        { error: 'Missing required fields' },
+        { error: 'At least one image (reference or source) is required' },
         { status: 400 }
       );
     }
 
-    // Nano Banana API expects URLs directly, not base64
-    // Generate thumbnails using Banana API
+    // If only one image type provided, prompt is required
+    const hasReference = !!referenceImage;
+    const hasSource = sourceImages && sourceImages.length > 0;
+    
+    if ((hasReference && !hasSource) || (!hasReference && hasSource)) {
+      if (!prompt) {
+        return NextResponse.json(
+          { error: 'Prompt is required when using only one image' },
+          { status: 400 }
+        );
+      }
+    }
+
+    console.log('🎨 ========================================');
+    console.log('🎨 GENERATION REQUEST RECEIVED');
+    console.log('🎨 ========================================');
+    console.log('🤖 Model:', model || 'gemini-3-pro (default)');
+    console.log('📐 Aspect Ratio:', aspectRatio || '16:9 (default)');
+    console.log('🎬 Resolution:', resolution || '1080p (default)');
+    console.log('💬 Prompt:', prompt?.substring(0, 50) || 'Using default prompt');
+    console.log('🖼️  Has Reference:', hasReference);
+    console.log('📸 Has Source:', hasSource);
+    console.log('🎨 ========================================');
+
+    // Generate thumbnails using Gemini API with selected parameters
     const generatedThumbnails = await generateThumbnail(
-      referenceImageUrl,
-      sourceImageUrls,
-      prompt
+      referenceImage,
+      sourceImages,
+      prompt,
+      model,
+      aspectRatio,
+      resolution
     );
 
-    // Save generation to database
-    const { data, error } = await supabase
-      .from('generations')
-      .insert({
-        reference_image_url: referenceImageUrl,
-        source_images_urls: sourceImageUrls,
-        generated_thumbnails: generatedThumbnails,
-        prompt: prompt || null,
-      })
-      .select()
-      .single();
+    // Save generation to database (optional - comment out if table doesn't exist)
+    try {
+      const { data, error } = await supabase
+        .from('generations')
+        .insert({
+          reference_image_url: referenceImage,
+          source_images_urls: sourceImages,
+          generated_thumbnails: generatedThumbnails,
+          prompt: prompt || null,
+          model: model || 'gemini-3-pro',
+          aspect_ratio: aspectRatio || '16:9',
+          resolution: resolution || '2K',
+        })
+        .select()
+        .single();
 
-    if (error) {
-      console.error('Database error:', error);
-      return NextResponse.json(
-        { error: 'Failed to save generation' },
-        { status: 500 }
-      );
+      if (error) {
+        console.warn('Database save failed (non-critical):', error);
+      }
+    } catch (dbError) {
+      console.warn('Database operation failed (non-critical):', dbError);
     }
 
     return NextResponse.json({
       success: true,
-      thumbnails: generatedThumbnails,
-      generationId: data.id,
+      images: generatedThumbnails,
     });
   } catch (error) {
     console.error('Generation error:', error);

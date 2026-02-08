@@ -13,6 +13,9 @@ export function ImportNode({ data, selected, id }: NodeProps) {
   const [uploading, setUploading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  
+  // Determine node label based on data.nodeType or default to "Import"
+  const nodeLabel = data.nodeType === 'reference' ? 'Reference' : data.nodeType === 'source' ? 'Source' : 'Import';
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -177,6 +180,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
       initial={{ scale: 0.9, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       className={`
+        group
         bg-[#1a1a1a]
         border border-[#2a2a2a]
         rounded-lg
@@ -188,8 +192,12 @@ export function ImportNode({ data, selected, id }: NodeProps) {
       {/* Header */}
       <div className="flex items-center justify-between p-3 border-b border-[#2a2a2a]">
         <div className="flex items-center gap-2">
-          <ImageIcon className="w-4 h-4 text-[#a0a0a0]" />
-          <span className="text-[13px] text-white font-medium">Import</span>
+          <div className="w-5 h-5 bg-[#3b82f6]/20 rounded flex items-center justify-center">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 16L8.586 11.414C9.367 10.633 10.633 10.633 11.414 11.414L16 16M14 14L15.586 12.414C16.367 11.633 17.633 11.633 18.414 12.414L20 14M14 8H14.01M6 20H18C19.105 20 20 19.105 20 18V6C20 4.895 19.105 4 18 4H6C4.895 4 4 4.895 4 6V18C4 19.105 4.895 20 6 20Z" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <span className="text-[13px] text-white font-medium">{nodeLabel}</span>
         </div>
         <div className="relative" ref={menuRef}>
           <button
@@ -303,7 +311,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
       )}
 
       {/* Output Handle with Label */}
-      <div className="absolute right-0 top-1/2 translate-x-full -translate-y-1/2 pl-2">
+      <div className="absolute right-0 top-1/2 translate-x-full -translate-y-1/2 pl-2 opacity-0 group-hover:opacity-100 transition-opacity">
         <div className="text-[10px] text-[#3b82f6] whitespace-nowrap font-medium">
           ← Image
         </div>

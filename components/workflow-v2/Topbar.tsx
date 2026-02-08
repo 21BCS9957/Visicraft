@@ -2,9 +2,13 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { ChevronDown, Share, Crown, MessageCircle } from 'lucide-react';
+import { ChevronDown, Share, Crown, MessageCircle, Plus } from 'lucide-react';
 
-export function Topbar() {
+interface TopbarProps {
+  onNewWorkflow?: () => void;
+}
+
+export function Topbar({ onNewWorkflow }: TopbarProps) {
   return (
     <div className="h-14 bg-[#0a0a0a] border-b border-[#1a1a1a] flex items-center justify-between px-4">
       <div className="flex items-center gap-3">
@@ -26,6 +30,16 @@ export function Topbar() {
       </div>
 
       <div className="flex items-center gap-3">
+        {onNewWorkflow && (
+          <button 
+            onClick={onNewWorkflow}
+            className="px-3 py-1.5 text-sm text-white hover:bg-[#1a1a1a] rounded transition-colors flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            New Workflow
+          </button>
+        )}
+        
         <button className="px-3 py-1.5 text-sm text-white hover:bg-[#1a1a1a] rounded transition-colors flex items-center gap-2">
           <Share className="w-4 h-4" />
           Share

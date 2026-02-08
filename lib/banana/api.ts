@@ -38,7 +38,10 @@ interface GeminiResponse {
 export async function generateThumbnail(
   referenceImage: string,
   sourceImages: string[],
-  prompt?: string
+  prompt?: string,
+  model?: string,
+  aspectRatio?: string,
+  resolution?: string
 ): Promise<string[]> {
   const apiKey = process.env.GEMINI_API_KEY!;
 
@@ -46,10 +49,56 @@ export async function generateThumbnail(
     throw new Error('GEMINI_API_KEY is not configured. Please add it to your .env.local file.');
   }
 
+  // Map model IDs to Gemini API model names
+  const modelMap: Record<string, string> = {
+    'gemini-2-flash': 'gemini-2-flash-image-preview',
+    'gemini-3-pro': 'gemini-3-pro-image-preview',
+    'banana-pro': 'gemini-3-pro-image-preview', // Using Gemini 3 Pro for Banana Pro
+  };
+
+  // Map UI aspect ratios to Gemini API format
+  // Note: Gemini only supports 16:9, 1:1, 4:3, and 9:16
+  const aspectRatioMap: Record<string, string> = {
+    '16:9': '16:9',
+    '1:1': '1:1',
+    '4:3': '4:3',
+    '9:16': '9:16',
+    '21:9': '16:9', // Fallback to 16:9 for ultrawide
+  };
+
+  // Map UI resolutions to Gemini API imageSize format
+  const resolutionMap: Record<string, string> = {
+    '4K': '4K',
+    '2K': '2K',
+    '1080p': 'HD',
+    '720p': 'SD',
+  };
+
+  const selectedModel = model || 'gemini-3-pro';
+  const geminiModel = modelMap[selectedModel] || 'gemini-3-pro-image-preview';
+  const selectedAspectRatio = aspectRatioMap[aspectRatio || '16:9'] || '16:9';
+  const selectedResolution = resolutionMap[resolution || '1080p'] || 'HD';
+
   try {
-    console.log('🎨 Generating thumbnail with Gemini API...');
-    console.log('Reference image:', referenceImage.substring(0, 50) + '...');
-    console.log('Source images:', sourceImages.length);
+    console.log('🎨 ========================================');
+    console.log('🎨 GENERATING THUMBNAIL WITH GEMINI API');
+    console.log('🎨 ========================================');
+    console.log('📋 Selected Model (UI):', selectedModel);
+    console.log('🤖 Actual Gemini Model:', geminiModel);
+    console.log('📐 Aspect Ratio (UI):', aspectRatio);
+    console.log('📐 Aspect Ratio (API):', selectedAspectRatio);
+    console.log('🎬 Resolution (UI):', resolution);
+    console.log('🎬 Resolution (API):', selectedResolution);
+    console.log('🖼️  Reference image:', referenceImage.substring(0, 50) + '...');
+    console.log('📸 Source images count:', sourceImages.length);
+    
+    // Validate aspect ratio
+    const validAspectRatios = ['16:9', '1:1', '4:3', '9:16'];
+    if (!validAspectRatios.includes(selectedAspectRatio)) {
+      console.warn('⚠️  Invalid aspect ratio detected:', selectedAspectRatio, '- falling back to 16:9');
+    }
+    
+    console.log('🎨 ========================================');
     
     // Download and convert images to base64
     const referenceBase64 = await urlToBase64(referenceImage);
@@ -79,16 +128,17 @@ export async function generateThumbnail(
       generationConfig: {
         responseModalities: ['IMAGE'],
         imageConfig: {
-          aspectRatio: '16:9',
-          imageSize: '2K'
+          aspectRatio: selectedAspectRatio,
+          imageSize: selectedResolution
         }
       }
     };
 
     console.log('📤 Sending request to Gemini API...');
+    console.log('📋 Request config:', JSON.stringify(requestData.generationConfig, null, 2));
     
     const response = await axios.post<GeminiResponse>(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`,
       requestData,
       {
         headers: {
@@ -132,7 +182,10 @@ export async function generateThumbnail(
       console.error('❌ Gemini API Error:', {
         status: statusCode,
         message: errorMessage,
-        data: error.response?.data
+        fullError: error.response?.data,
+        aspectRatio: selectedAspectRatio,
+        resolution: selectedResolution,
+        model: geminiModel
       });
       
       if (statusCode === 401 || statusCode === 403) {
@@ -141,6 +194,14 @@ export async function generateThumbnail(
       
       if (statusCode === 429) {
         throw new Error('Rate limit exceeded. Please try again in a moment.');
+      }
+      
+      if (statusCode === 400) {
+        // Check if it's an aspect ratio issue
+        if (errorMessage.toLowerCase().includes('aspect') || errorMessage.toLowerCase().includes('ratio')) {
+          throw new Error(`Invalid aspect ratio (${aspectRatio}). Try 16:9, 1:1, 4:3, or 9:16.`);
+        }
+        throw new Error(`Invalid request: ${errorMessage}`);
       }
       
       throw new Error(`Gemini API error: ${errorMessage}`);

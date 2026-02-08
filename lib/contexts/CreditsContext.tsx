@@ -1,0 +1,133 @@
+'use client';
+
+import { createContext, useContext, useEffect, useState } from 'react';
+import { useAuth } from './AuthContext';
+import { supabase } from '@/lib/supabase/client';
+
+interface CreditsContextType {
+  credits: number;
+  loading: boolean;
+  refreshCredits: () => Promise<void>;
+  deductCredits: (amount: number) => Promise<boolean>;
+}
+
+const CreditsContext = createContext<CreditsContextType>({
+  credits: 0,
+  loading: true,
+  refreshCredits: async () => {},
+  deductCredits: async () => false,
+});
+
+export function CreditsProvider({ children }: { children: React.ReactNode }) {
+  const [credits, setCredits] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+
+  const refreshCredits = async () => {
+    if (!user) {
+      setCredits(0);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      console.log('🔄 Fetching credits for user:', user.id);
+      
+      // Fetch user credits from database
+      const { data, error } = await supabase
+        .from('user_credits')
+        .select('credits')
+        .eq('user_id', user.id)
+        .single();
+
+      if (error) {
+        console.log('⚠️ Credits fetch error:', error.code, error.message);
+        
+        // If user doesn't exist in credits table, create with 100 free credits
+        if (error.code === 'PGRST116') {
+          console.log('🎁 Creating new user credits entry with 100 free credits...');
+          
+          const { data: newData, error: insertError } = await supabase
+            .from('user_credits')
+            .insert({
+              user_id: user.id,
+              credits: 100,
+            })
+            .select()
+            .single();
+
+          if (insertError) {
+            console.error('❌ Failed to create credits:', insertError);
+            setCredits(0);
+          } else if (newData) {
+            console.log('✅ Credits created successfully:', newData.credits);
+            setCredits(newData.credits);
+          }
+        } else {
+          console.error('❌ Unexpected error fetching credits:', error);
+          setCredits(0);
+        }
+      } else if (data) {
+        console.log('✅ Credits fetched successfully:', data.credits);
+        setCredits(data.credits);
+      }
+    } catch (error) {
+      console.error('❌ Error in refreshCredits:', error);
+      setCredits(0);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deductCredits = async (amount: number): Promise<boolean> => {
+    if (!user) {
+      console.error('❌ Cannot deduct credits: No user logged in');
+      return false;
+    }
+    
+    if (credits < amount) {
+      console.error('❌ Cannot deduct credits: Insufficient balance', { need: amount, have: credits });
+      return false;
+    }
+
+    try {
+      const newCredits = credits - amount;
+      console.log('💳 Deducting credits:', { amount, oldBalance: credits, newBalance: newCredits });
+      
+      const { error } = await supabase
+        .from('user_credits')
+        .update({ credits: newCredits })
+        .eq('user_id', user.id);
+
+      if (!error) {
+        console.log('✅ Credits deducted successfully');
+        setCredits(newCredits);
+        return true;
+      } else {
+        console.error('❌ Failed to deduct credits:', error);
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ Error deducting credits:', error);
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    refreshCredits();
+  }, [user]);
+
+  return (
+    <CreditsContext.Provider value={{ credits, loading, refreshCredits, deductCredits }}>
+      {children}
+    </CreditsContext.Provider>
+  );
+}
+
+export const useCredits = () => {
+  const context = useContext(CreditsContext);
+  if (!context) {
+    throw new Error('useCredits must be used within CreditsProvider');
+  }
+  return context;
+};

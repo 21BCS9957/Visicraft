@@ -1,0 +1,80 @@
+{
+  "id": "youtube-thumbnail",
+  "name": "YouTube Thumbnail",
+  "description": "Create eye-catching YouTube thumbnails",
+  "category": "youtube",
+  "nodes": [
+    {
+      "id": "reference-1",
+      "type": "import",
+      "position": { "x": 150, "y": 100 },
+      "data": {
+        "nodeType": "reference",
+        "label": "Reference Thumbnail (Optional)",
+        "placeholder": "Upload a style reference",
+        "status": "idle"
+      }
+    },
+    {
+      "id": "source-1",
+      "type": "import",
+      "position": { "x": 150, "y": 300 },
+      "data": {
+        "nodeType": "source",
+        "label": "Your Photo/Screenshot",
+        "placeholder": "Upload your base image",
+        "status": "idle"
+      }
+    },
+    {
+      "id": "prompt-1",
+      "type": "prompt",
+      "position": { "x": 150, "y": 500 },
+      "data": {
+        "text": "High-energy YouTube thumbnail with bold text overlay, dramatic lighting, vibrant colors",
+        "label": "Thumbnail Style Prompt",
+        "status": "idle"
+      }
+    },
+    {
+      "id": "generate-1",
+      "type": "generate",
+      "position": { "x": 600, "y": 280 },
+      "data": {
+        "aspectRatio": "16:9",
+        "resolution": "2K",
+        "model": "gemini-3-pro",
+        "status": "idle"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "reference-1",
+      "sourceHandle": "image",
+      "target": "generate-1",
+      "targetHandle": "referenceImage",
+      "type": "custom",
+      "animated": false
+    },
+    {
+      "id": "e2",
+      "source": "source-1",
+      "sourceHandle": "image",
+      "target": "generate-1",
+      "targetHandle": "sourceImage",
+      "type": "custom",
+      "animated": false
+    },
+    {
+      "id": "e3",
+      "source": "prompt-1",
+      "sourceHandle": "prompt",
+      "target": "generate-1",
+      "targetHandle": "prompt",
+      "type": "custom",
+      "animated": false
+    }
+  ]
+}

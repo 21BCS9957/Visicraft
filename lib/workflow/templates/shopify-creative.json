@@ -1,0 +1,79 @@
+{
+  "id": "shopify-creative",
+  "name": "Shopify Product",
+  "description": "E-commerce ready product images",
+  "category": "shopify",
+  "nodes": [
+    {
+      "id": "reference-1",
+      "type": "import",
+      "position": { "x": 150, "y": 100 },
+      "data": {
+        "nodeType": "reference",
+        "label": "Lifestyle Scene (Optional)",
+        "status": "idle"
+      }
+    },
+    {
+      "id": "source-1",
+      "type": "import",
+      "position": { "x": 150, "y": 300 },
+      "data": {
+        "nodeType": "source",
+        "label": "Product Image",
+        "placeholder": "Upload product photo",
+        "status": "idle"
+      }
+    },
+    {
+      "id": "prompt-1",
+      "type": "prompt",
+      "position": { "x": 150, "y": 500 },
+      "data": {
+        "text": "E-commerce product photo, lifestyle setting, soft natural lighting, minimal background",
+        "label": "Scene Description",
+        "status": "idle"
+      }
+    },
+    {
+      "id": "generate-1",
+      "type": "generate",
+      "position": { "x": 600, "y": 280 },
+      "data": {
+        "aspectRatio": "4:3",
+        "resolution": "2K",
+        "model": "gemini-3-pro",
+        "status": "idle"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "reference-1",
+      "sourceHandle": "image",
+      "target": "generate-1",
+      "targetHandle": "referenceImage",
+      "type": "custom",
+      "animated": false
+    },
+    {
+      "id": "e2",
+      "source": "source-1",
+      "sourceHandle": "image",
+      "target": "generate-1",
+      "targetHandle": "sourceImage",
+      "type": "custom",
+      "animated": false
+    },
+    {
+      "id": "e3",
+      "source": "prompt-1",
+      "sourceHandle": "prompt",
+      "target": "generate-1",
+      "targetHandle": "prompt",
+      "type": "custom",
+      "animated": false
+    }
+  ]
+}

@@ -2,15 +2,17 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import {
-  Check,
-  X,
-  Zap,
-  Crown,
-  Rocket,
-  Building2,
-  Sparkles
-} from 'lucide-react';
+import { Check, X } from 'lucide-react';
+import { Icon } from '@iconify/react';
+import { useAuth } from '@/lib/contexts/AuthContext';
+import toast from 'react-hot-toast';
+import { useRouter } from 'next/navigation';
+
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
 
 type BillingCycle = 'monthly' | 'quarterly' | 'yearly';
 
@@ -18,28 +20,31 @@ const pricingTiers = [
   {
     id: 'starter',
     name: 'Starter',
-    description: 'Perfect for beginners exploring AI creativity',
-    icon: Zap,
+    description: 'Perfect for beginners and hobbyists',
+    icon: 'ph:lightning-fill',
     gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
     borderColor: '#667eea',
-    monthly: 999,
-    quarterly: 849,
-    yearly: 799,
-    credits: 100,
+    monthly: 499,
+    quarterly: 424,
+    yearly: 399,
+    credits: 1000,
+    creditCost: 0.50, // ₹0.50 per credit
     features: {
       included: [
-        'YouTube thumbnail generation',
-        'Basic template library',
-        '1080p resolution',
-        'Standard generation speed',
-        'Email support',
+        '1,000 credits/month',
+        'Gemini 2 Flash model',
+        '1080p resolution (30 credits)',
+        'YouTube thumbnails',
+        'Basic templates',
         'Watermark-free exports',
+        'Email support',
+        '~33 generations/month',
       ],
       excluded: [
+        'Banana Pro models',
+        '2K/4K resolution',
         'Amazon creatives',
-        'Meta ads templates',
-        'Batch processing',
-        'API access',
+        'Priority support',
       ],
     },
     popular: false,
@@ -48,32 +53,35 @@ const pricingTiers = [
   {
     id: 'creator',
     name: 'Creator',
-    description: 'For active creators leveling up their content',
-    icon: Sparkles,
+    description: 'For active content creators',
+    icon: 'ph:sparkle-fill',
     gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
     borderColor: '#f5576c',
     badge: 'MOST POPULAR',
     badgeColor: '#ff4d6d',
-    monthly: 2499,
-    quarterly: 2124,
-    yearly: 1999,
-    credits: 500,
+    monthly: 999,
+    quarterly: 849,
+    yearly: 799,
+    credits: 2500,
+    creditCost: 0.40, // ₹0.40 per credit
     features: {
       included: [
-        'Everything in Starter',
-        'Amazon product creatives',
+        '2,500 credits/month',
+        'All Gemini models',
+        'Banana Pro 2K (50 credits)',
+        'Banana Pro 4K (70 credits)',
+        'YouTube + Amazon creatives',
         'Meta ads templates',
-        '2K resolution output',
+        '2K resolution support',
         'Priority generation queue',
-        'Batch processing (10 images)',
-        'Premium template library',
+        'Premium templates',
         'Live chat support',
-        'Export presets',
+        '~50 Banana Pro 2K generations',
       ],
       excluded: [
         'API access',
         'Team collaboration',
-        'Brand kit',
+        'Custom workflows',
       ],
     },
     popular: true,
@@ -82,27 +90,30 @@ const pricingTiers = [
   {
     id: 'pro',
     name: 'Pro',
-    description: 'Maximum power for agencies & power users',
-    icon: Crown,
+    description: 'For agencies and power users',
+    icon: 'ph:crown-fill',
     gradient: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
     borderColor: '#00f2fe',
-    monthly: 5999,
-    quarterly: 5099,
-    yearly: 4799,
-    credits: 2000,
+    monthly: 1999,
+    quarterly: 1699,
+    yearly: 1599,
+    credits: 6000,
+    creditCost: 0.33, // ₹0.33 per credit
     features: {
       included: [
-        'Everything in Creator',
-        'Unlimited template access',
-        '4K resolution output',
+        '6,000 credits/month',
+        'All AI models unlocked',
+        'Banana Pro 2K & 4K',
+        '4K resolution support',
+        'Unlimited templates',
         'Instant generation (no queue)',
-        'Advanced editing suite',
         'API access & webhooks',
-        'Brand kit (logos, colors, fonts)',
+        'Batch processing (50 images)',
+        'Brand kit (logos, colors)',
         'Team collaboration (3 seats)',
         'Priority support',
         'Custom workflows',
-        'Analytics dashboard',
+        '~120 Banana Pro 2K generations',
       ],
       excluded: [
         'Unlimited generations',
@@ -115,18 +126,19 @@ const pricingTiers = [
   {
     id: 'enterprise',
     name: 'Enterprise',
-    description: 'Custom solutions for large organizations',
-    icon: Building2,
+    description: 'Custom solutions for large teams',
+    icon: 'ph:buildings-fill',
     gradient: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
     borderColor: '#fee140',
     monthly: null,
     quarterly: null,
     yearly: null,
-    credits: 'Unlimited*',
+    credits: 'Custom',
+    creditCost: 'Negotiable',
     features: {
       included: [
-        'Everything in Pro',
-        'Unlimited generations*',
+        'Custom credit allocation',
+        'Volume discounts available',
         'Dedicated account manager',
         'Custom AI model training',
         'White-label platform',
@@ -136,6 +148,7 @@ const pricingTiers = [
         'Custom integrations',
         'On-premise deployment option',
         '24/7 phone support',
+        'Custom billing cycles',
       ],
       excluded: [],
     },
@@ -153,37 +166,137 @@ const billingOptions = {
 export default function PricingPage() {
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
   const [hoveredTier, setHoveredTier] = useState<string | null>(null);
+  const [processingPayment, setProcessingPayment] = useState<string | null>(null);
+  const { user } = useAuth();
+  const router = useRouter();
+
+  const handlePayment = async (tier: typeof pricingTiers[0]) => {
+    // Check if user is logged in
+    if (!user) {
+      toast.error('Please sign in to purchase a plan');
+      router.push('/login?redirectTo=/pricing');
+      return;
+    }
+
+    // Handle enterprise plan
+    if (tier.id === 'enterprise') {
+      toast.success('Redirecting to contact sales...');
+      // You can add a contact form or email link here
+      return;
+    }
+
+    const amount = tier[billingCycle];
+    if (!amount) return;
+
+    setProcessingPayment(tier.id);
+
+    try {
+      // Create order on backend
+      const orderResponse = await fetch('/api/payment/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount,
+          planName: tier.name,
+          billingCycle,
+        }),
+      });
+
+      if (!orderResponse.ok) {
+        throw new Error('Failed to create order');
+      }
+
+      const { orderId, amount: orderAmount } = await orderResponse.json();
+
+      // Load Razorpay script if not already loaded
+      if (!window.Razorpay) {
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.async = true;
+        document.body.appendChild(script);
+        await new Promise((resolve) => {
+          script.onload = resolve;
+        });
+      }
+
+      // Initialize Razorpay
+      const options = {
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID!,
+        amount: orderAmount,
+        currency: 'INR',
+        name: 'Visicraft',
+        description: `${tier.name} Plan - ${billingCycle}`,
+        order_id: orderId,
+        prefill: {
+          email: user.email || '',
+          name: user.user_metadata?.name || '',
+          contact: user.user_metadata?.phone || '',
+        },
+        method: {
+          upi: true,
+          card: true,
+          netbanking: true,
+          wallet: true,
+        },
+        theme: {
+          color: '#8b5cf6',
+        },
+        handler: async function (response: any) {
+          try {
+            // Verify payment on backend
+            const verifyResponse = await fetch('/api/payment/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                planName: tier.name,
+                amount,
+              }),
+            });
+
+            const verifyData = await verifyResponse.json();
+
+            if (verifyData.success) {
+              toast.success('Payment successful! Your plan is now active.');
+              // Redirect to dashboard or workflow
+              router.push('/workflow');
+            } else {
+              toast.error('Payment verification failed');
+            }
+          } catch (error) {
+            console.error('Payment verification error:', error);
+            toast.error('Payment verification failed');
+          } finally {
+            setProcessingPayment(null);
+          }
+        },
+        modal: {
+          ondismiss: function () {
+            setProcessingPayment(null);
+            toast.error('Payment cancelled');
+          },
+        },
+      };
+
+      const razorpay = new window.Razorpay(options);
+      razorpay.open();
+    } catch (error) {
+      console.error('Payment error:', error);
+      toast.error('Failed to initiate payment');
+      setProcessingPayment(null);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-black text-white relative overflow-hidden">
-      {/* Animated Background */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <motion.div
-          className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"
-          animate={{
-            x: [0, 100, 0],
-            y: [0, 50, 0],
-            scale: [1, 1.2, 1],
-          }}
-          transition={{
-            duration: 20,
-            repeat: Infinity,
-            ease: 'easeInOut',
-          }}
-        />
-        <motion.div
-          className="absolute bottom-0 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl"
-          animate={{
-            x: [0, -100, 0],
-            y: [0, -50, 0],
-            scale: [1, 1.3, 1],
-          }}
-          transition={{
-            duration: 25,
-            repeat: Infinity,
-            ease: 'easeInOut',
-          }}
-        />
+    <div className="min-h-screen bg-[#0a0a0a] text-white relative overflow-hidden">
+      {/* Subtle Grid Background */}
+      <div className="absolute inset-0 opacity-[0.02]">
+        <div className="absolute inset-0" style={{
+          backgroundImage: 'linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)',
+          backgroundSize: '50px 50px'
+        }} />
       </div>
 
       <div className="relative z-10 max-w-7xl mx-auto px-4 py-20">
@@ -193,10 +306,10 @@ export default function PricingPage() {
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-12"
         >
-          <h1 className="text-5xl md:text-7xl font-bold mb-4 bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-            Choose Your Creative Power
+          <h1 className="text-5xl md:text-7xl font-light text-white tracking-wider mb-4">
+            CHOOSE YOUR<br/>CREATIVE POWER
           </h1>
-          <p className="text-xl text-gray-400 max-w-2xl mx-auto">
+          <p className="text-lg text-gray-400 font-light max-w-2xl mx-auto">
             Generate stunning visuals for YouTube, Amazon, and social media with AI
           </p>
         </motion.div>
@@ -208,13 +321,13 @@ export default function PricingPage() {
           transition={{ delay: 0.1 }}
           className="flex justify-center mb-16"
         >
-          <div className="inline-flex bg-[#1a1a1a] p-1.5 rounded-full border border-white/10">
+          <div className="inline-flex bg-[#1a1a1a] p-1.5 rounded-lg border border-white/10">
             {(Object.keys(billingOptions) as BillingCycle[]).map((cycle) => (
               <button
                 key={cycle}
                 onClick={() => setBillingCycle(cycle)}
                 className={`
-                  relative px-6 py-2 rounded-full text-sm font-medium transition-all
+                  relative px-6 py-2 rounded-lg text-sm font-light tracking-wide transition-all
                   ${billingCycle === cycle
                     ? 'text-white'
                     : 'text-gray-400 hover:text-gray-300'
@@ -224,7 +337,7 @@ export default function PricingPage() {
                 {billingCycle === cycle && (
                   <motion.div
                     layoutId="billing-bg"
-                    className="absolute inset-0 bg-white/10 rounded-full"
+                    className="absolute inset-0 bg-white/10 rounded-lg"
                     transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
                   />
                 )}
@@ -232,7 +345,7 @@ export default function PricingPage() {
                   {billingOptions[cycle].label}
                 </span>
                 {billingOptions[cycle].discount && (
-                  <span className="ml-2 text-xs bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full">
+                  <span className="ml-2 text-xs bg-[#8b7355]/20 text-[#c8b4a0] px-2 py-0.5 rounded-full">
                     {billingOptions[cycle].discount}
                   </span>
                 )}
@@ -252,52 +365,31 @@ export default function PricingPage() {
               onMouseEnter={() => setHoveredTier(tier.id)}
               onMouseLeave={() => setHoveredTier(null)}
               className={`
-                relative rounded-2xl overflow-hidden
+                relative rounded-lg overflow-hidden
                 ${tier.popular ? 'md:scale-105' : ''}
               `}
             >
               {/* Popular Badge */}
               {tier.badge && (
-                <div
-                  className="absolute top-4 right-4 z-20 px-3 py-1 rounded-full text-xs font-bold"
-                  style={{
-                    background: tier.badgeColor,
-                    boxShadow: `0 0 20px ${tier.badgeColor}40`
-                  }}
-                >
+                <div className="absolute top-4 right-4 z-20 px-3 py-1 rounded-lg text-xs font-light tracking-wide bg-gradient-to-r from-[#8b7355] to-[#6b5545] text-white">
                   {tier.badge}
                 </div>
               )}
 
-              {/* Animated Border */}
-              <motion.div
-                className="absolute inset-0 rounded-2xl opacity-0"
-                animate={{
-                  opacity: hoveredTier === tier.id ? 1 : 0,
-                }}
-                style={{
-                  background: tier.gradient,
-                  filter: 'blur(20px)',
-                }}
-              />
-
               {/* Card Content */}
               <div
-                className="relative bg-[#0a0a0a]/90 backdrop-blur-xl border rounded-2xl p-6 h-full flex flex-col"
+                className="relative bg-[#1a1a1a] border rounded-lg p-6 h-full flex flex-col transition-all duration-300"
                 style={{
-                  borderColor: hoveredTier === tier.id ? tier.borderColor : 'rgba(255,255,255,0.1)',
+                  borderColor: hoveredTier === tier.id ? 'rgba(139, 115, 85, 0.3)' : 'rgba(255,255,255,0.1)',
                 }}
               >
                 {/* Icon & Name */}
                 <div className="mb-4">
-                  <div
-                    className="w-12 h-12 rounded-xl flex items-center justify-center mb-3"
-                    style={{ background: tier.gradient }}
-                  >
-                    <tier.icon className="w-6 h-6 text-white" />
+                  <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#8b7355]/20 to-[#6b5545]/20 flex items-center justify-center mb-3 border border-[#8b7355]/30">
+                    <Icon icon={tier.icon} width={24} height={24} className="text-[#c8b4a0]" />
                   </div>
-                  <h3 className="text-2xl font-bold mb-1">{tier.name}</h3>
-                  <p className="text-sm text-gray-400">{tier.description}</p>
+                  <h3 className="text-2xl font-light text-white mb-1">{tier.name}</h3>
+                  <p className="text-sm text-gray-400 font-light">{tier.description}</p>
                 </div>
 
                 {/* Price */}
@@ -305,51 +397,55 @@ export default function PricingPage() {
                   {tier.monthly !== null ? (
                     <>
                       <div className="flex items-baseline gap-2">
-                        <span className="text-4xl font-bold">
+                        <span className="text-4xl font-light text-white">
                           ₹{tier[billingCycle]?.toLocaleString('en-IN')}
                         </span>
-                        <span className="text-gray-400">/month</span>
+                        <span className="text-gray-400 font-light">/month</span>
                       </div>
                       {billingCycle !== 'monthly' && (
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-gray-500 mt-1 font-light">
                           Billed {billingCycle === 'quarterly' ? 'quarterly' : 'annually'}
                         </p>
                       )}
                     </>
                   ) : (
-                    <div className="text-3xl font-bold">Custom</div>
+                    <div className="text-3xl font-light text-white">Custom</div>
                   )}
                 </div>
 
                 {/* Credits */}
-                <div
-                  className="mb-6 p-3 rounded-lg flex items-center gap-2"
-                  style={{
-                    background: `${tier.gradient}15`,
-                    border: `1px solid ${tier.borderColor}30`
-                  }}
-                >
-                  <Sparkles className="w-4 h-4" style={{ color: tier.borderColor }} />
-                  <span className="font-semibold">
-                    {typeof tier.credits === 'number'
-                      ? `${tier.credits.toLocaleString()} credits/month`
-                      : tier.credits
-                    }
-                  </span>
+                <div className="mb-6 p-3 rounded-lg bg-[#8b7355]/10 border border-[#8b7355]/20">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Icon icon="ph:sparkle-fill" width={16} height={16} className="text-[#c8b4a0]" />
+                    <span className="font-light text-white">
+                      {typeof tier.credits === 'number'
+                        ? `${tier.credits.toLocaleString()} credits/month`
+                        : tier.credits
+                      }
+                    </span>
+                  </div>
+                  {typeof tier.creditCost === 'number' && (
+                    <p className="text-xs text-gray-400 ml-6 font-light">
+                      ₹{tier.creditCost.toFixed(2)} per credit
+                    </p>
+                  )}
                 </div>
 
                 {/* CTA Button */}
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  className="w-full py-3 rounded-xl font-semibold mb-6 transition-all"
-                  style={{
-                    background: tier.popular ? tier.gradient : 'transparent',
-                    border: tier.popular ? 'none' : `2px solid ${tier.borderColor}40`,
-                    color: tier.popular ? 'white' : tier.borderColor,
-                  }}
+                  onClick={() => handlePayment(tier)}
+                  disabled={processingPayment === tier.id}
+                  className={`
+                    w-full py-3 rounded-lg font-light tracking-wide mb-6 transition-all disabled:opacity-50 disabled:cursor-not-allowed
+                    ${tier.popular 
+                      ? 'bg-gradient-to-r from-[#8b7355] to-[#6b5545] text-white hover:shadow-lg hover:shadow-[#8b7355]/20' 
+                      : 'bg-white/5 border border-white/10 text-white hover:bg-white/10'
+                    }
+                  `}
                 >
-                  {tier.cta}
+                  {processingPayment === tier.id ? 'Processing...' : tier.cta}
                 </motion.button>
 
                 {/* Features */}
@@ -357,14 +453,14 @@ export default function PricingPage() {
                   <div className="space-y-3">
                     {tier.features.included.map((feature, idx) => (
                       <div key={idx} className="flex items-start gap-2 text-sm">
-                        <Check className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: tier.borderColor }} />
-                        <span className="text-gray-300">{feature}</span>
+                        <Check className="w-4 h-4 mt-0.5 flex-shrink-0 text-[#c8b4a0]" />
+                        <span className="text-gray-300 font-light">{feature}</span>
                       </div>
                     ))}
                     {tier.features.excluded.map((feature, idx) => (
                       <div key={idx} className="flex items-start gap-2 text-sm opacity-40">
                         <X className="w-4 h-4 mt-0.5 flex-shrink-0 text-gray-600" />
-                        <span className="text-gray-500">{feature}</span>
+                        <span className="text-gray-500 font-light">{feature}</span>
                       </div>
                     ))}
                   </div>
@@ -381,7 +477,7 @@ export default function PricingPage() {
           transition={{ delay: 0.6 }}
           className="mt-20 text-center"
         >
-          <p className="text-gray-400 text-sm">
+          <p className="text-gray-400 text-sm font-light">
             All plans include watermark-free exports •
             Cancel anytime •
             14-day money-back guarantee

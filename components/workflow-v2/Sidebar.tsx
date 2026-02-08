@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import {
   MousePointer2,
-  Search,
+  StickyNote,
   Square,
   Grid3x3,
   FolderOpen,
@@ -13,32 +13,34 @@ import {
 } from 'lucide-react';
 
 interface SidebarProps {
-  onAddNode: (type: string, position: { x: number; y: number }) => void;
+  onAddNode: (type: string, position: { x: number; y: number }, nodeType?: string) => void;
 }
 
 const tools = [
   { icon: MousePointer2, label: 'Select', id: 'select' },
-  { icon: Search, label: 'Search', id: 'search' },
+  { icon: StickyNote, label: 'Notes', id: 'notes' },
   { icon: Square, label: 'Nodes', id: 'nodes' },
   { icon: Grid3x3, label: 'Grid', id: 'grid' },
   { icon: FolderOpen, label: 'Files', id: 'files' },
 ];
 
 const nodeTypes = [
-  { icon: Image, label: 'Import', type: 'import', color: '#3b82f6' },
+  { icon: Image, label: 'Reference', type: 'import', nodeType: 'reference', color: '#f97316' },
+  { icon: Image, label: 'Source', type: 'import', nodeType: 'source', color: '#3b82f6' },
   { icon: MessageSquare, label: 'Prompt', type: 'prompt', color: '#8b5cf6' },
   { icon: Zap, label: 'Generate', type: 'generate', color: '#ef4444' },
 ];
 
 export function Sidebar({ onAddNode }: SidebarProps) {
   const [activePanel, setActivePanel] = useState<string | null>(null);
+  const [notes, setNotes] = useState('');
 
-  const handleAddNode = (type: string) => {
+  const handleAddNode = (type: string, nodeType?: string) => {
     const position = {
       x: Math.random() * 300 + 200,
       y: Math.random() * 300 + 100,
     };
-    onAddNode(type, position);
+    onAddNode(type, position, nodeType);
   };
 
   return (
@@ -72,8 +74,8 @@ export function Sidebar({ onAddNode }: SidebarProps) {
           <div className="space-y-2">
             {nodeTypes.map((node) => (
               <button
-                key={node.type}
-                onClick={() => handleAddNode(node.type)}
+                key={`${node.type}-${node.nodeType || 'default'}`}
+                onClick={() => handleAddNode(node.type, node.nodeType)}
                 className="w-full flex items-center gap-3 p-3 bg-[#1a1a1a] hover:bg-[#222222] rounded-lg transition-colors group"
               >
                 <div
@@ -87,6 +89,24 @@ export function Sidebar({ onAddNode }: SidebarProps) {
                 </span>
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {activePanel === 'notes' && (
+        <div className="w-[280px] bg-[#0f0f0f] border-r border-[#1a1a1a] p-4 flex flex-col">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-white text-sm font-medium">Workflow Notes</h3>
+            <StickyNote className="w-4 h-4 text-[#8b7355]" />
+          </div>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Add notes about your workflow...&#10;&#10;• Ideas&#10;• Settings&#10;• Reminders"
+            className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-3 text-sm text-white placeholder:text-[#666666] focus:outline-none focus:border-[#8b7355] resize-none"
+          />
+          <div className="mt-2 text-xs text-[#666666] text-right">
+            {notes.length} characters
           </div>
         </div>
       )}
