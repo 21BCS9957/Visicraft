@@ -1,10 +1,19 @@
 import { supabase } from './client';
 
 export async function signInWithGoogle() {
+  // Get the correct redirect URL based on environment
+  const redirectUrl = typeof window !== 'undefined' 
+    ? `${window.location.origin}/auth/callback`
+    : process.env.NEXT_PUBLIC_SITE_URL 
+      ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`
+      : 'http://localhost:3000/auth/callback';
+
+  console.log('🔐 Attempting Google sign-in with redirect:', redirectUrl);
+
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: `${window.location.origin}/auth/callback`,
+      redirectTo: redirectUrl,
       queryParams: {
         access_type: 'offline',
         prompt: 'consent',
@@ -13,10 +22,11 @@ export async function signInWithGoogle() {
   });
 
   if (error) {
-    console.error('Error signing in with Google:', error);
+    console.error('❌ Error signing in with Google:', error);
     throw error;
   }
 
+  console.log('✅ Google sign-in initiated successfully');
   return data;
 }
 
