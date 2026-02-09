@@ -17,15 +17,40 @@ export async function POST(request: NextRequest) {
       userId,
     } = body;
 
+    console.log('🔍 Payment verification request:', {
+      razorpay_order_id,
+      razorpay_payment_id,
+      userId,
+      credits,
+      amount,
+    });
+
+    // Check if RAZORPAY_KEY_SECRET is configured
+    if (!process.env.RAZORPAY_KEY_SECRET) {
+      console.error('❌ RAZORPAY_KEY_SECRET is not configured');
+      return NextResponse.json(
+        { success: false, error: 'Payment gateway not configured' },
+        { status: 500 }
+      );
+    }
+
     // Verify signature
     const sign = razorpay_order_id + '|' + razorpay_payment_id;
     const expectedSign = crypto
-      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET!)
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
       .update(sign.toString())
       .digest('hex');
 
+    console.log('🔐 Signature verification:', {
+      received: razorpay_signature,
+      expected: expectedSign,
+      match: razorpay_signature === expectedSign,
+    });
+
     if (razorpay_signature === expectedSign) {
       // Payment is verified - Add credits to user account
+      console.log('✅ Signature verified, adding credits to user:', userId);
+      
       const supabase = await createClient();
       
       // Get current credits
@@ -36,12 +61,21 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (fetchError && fetchError.code !== 'PGRST116') {
-        console.error('Error fetching credits:', fetchError);
-        throw new Error('Failed to fetch current credits');
+        console.error('❌ Error fetching credits:', fetchError);
+        return NextResponse.json(
+          { success: false, error: 'Failed to fetch current credits', details: fetchError.message },
+          { status: 500 }
+        );
       }
 
       const currentCredits = currentData?.credits || 0;
       const newCredits = currentCredits + credits;
+
+      console.log('💳 Credit calculation:', {
+        currentCredits,
+        creditsToAdd: credits,
+        newCredits,
+      });
 
       // Update or insert credits
       const { error: upsertError } = await supabase
@@ -55,11 +89,14 @@ export async function POST(request: NextRequest) {
         });
 
       if (upsertError) {
-        console.error('Error updating credits:', upsertError);
-        throw new Error('Failed to add credits');
+        console.error('❌ Error updating credits:', upsertError);
+        return NextResponse.json(
+          { success: false, error: 'Failed to add credits', details: upsertError.message },
+          { status: 500 }
+        );
       }
 
-      // Log the transaction (optional - create a payments table if needed)
+      // Log the transaction
       console.log('✅ Payment verified and credits added:', {
         userId,
         planName,
@@ -81,15 +118,16 @@ export async function POST(request: NextRequest) {
         newBalance: newCredits,
       });
     } else {
+      console.error('❌ Signature verification failed');
       return NextResponse.json(
         { success: false, error: 'Invalid signature' },
         { status: 400 }
       );
     }
-  } catch (error) {
-    console.error('Error verifying payment:', error);
+  } catch (error: any) {
+    console.error('❌ Error verifying payment:', error);
     return NextResponse.json(
-      { success: false, error: 'Payment verification failed' },
+      { success: false, error: 'Payment verification failed', details: error.message },
       { status: 500 }
     );
   }

@@ -244,6 +244,7 @@ export default function PricingPage() {
           billingCycle,
           credits: totalCredits,
           planId: tier.id,
+          userId: user.id,
         }),
       });
 
@@ -288,6 +289,8 @@ export default function PricingPage() {
         },
         handler: async function (response: any) {
           try {
+            console.log('💳 Payment completed, verifying...', response);
+            
             // Verify payment on backend
             const verifyResponse = await fetch('/api/payment/verify', {
               method: 'POST',
@@ -306,6 +309,7 @@ export default function PricingPage() {
             });
 
             const verifyData = await verifyResponse.json();
+            console.log('📋 Verification response:', verifyData);
 
             if (verifyData.success) {
               toast.success(`Payment successful! ${totalCredits.toLocaleString()} credits added to your account.`);
@@ -314,11 +318,12 @@ export default function PricingPage() {
                 router.push('/workflow');
               }, 2000);
             } else {
-              toast.error('Payment verification failed');
+              console.error('❌ Verification failed:', verifyData);
+              toast.error(`Payment verification failed: ${verifyData.error || 'Unknown error'}`);
             }
-          } catch (error) {
-            console.error('Payment verification error:', error);
-            toast.error('Payment verification failed');
+          } catch (error: any) {
+            console.error('❌ Payment verification error:', error);
+            toast.error(`Payment verification failed: ${error.message || 'Network error'}`);
           } finally {
             setProcessingPayment(null);
           }
