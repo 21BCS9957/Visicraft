@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { createClient } from '@/lib/supabase/server';
 
 export async function POST(request: NextRequest) {
   try {
@@ -9,7 +10,11 @@ export async function POST(request: NextRequest) {
       razorpay_payment_id,
       razorpay_signature,
       planName,
+      planId,
       amount,
+      credits,
+      billingCycle,
+      userId,
     } = body;
 
     // Verify signature
@@ -20,17 +25,60 @@ export async function POST(request: NextRequest) {
       .digest('hex');
 
     if (razorpay_signature === expectedSign) {
-      // Payment is verified
-      // Here you would typically:
-      // 1. Update user's subscription in database
-      // 2. Add credits to user account
-      // 3. Send confirmation email
+      // Payment is verified - Add credits to user account
+      const supabase = await createClient();
+      
+      // Get current credits
+      const { data: currentData, error: fetchError } = await supabase
+        .from('user_credits')
+        .select('credits')
+        .eq('user_id', userId)
+        .single();
+
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        console.error('Error fetching credits:', fetchError);
+        throw new Error('Failed to fetch current credits');
+      }
+
+      const currentCredits = currentData?.credits || 0;
+      const newCredits = currentCredits + credits;
+
+      // Update or insert credits
+      const { error: upsertError } = await supabase
+        .from('user_credits')
+        .upsert({
+          user_id: userId,
+          credits: newCredits,
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: 'user_id'
+        });
+
+      if (upsertError) {
+        console.error('Error updating credits:', upsertError);
+        throw new Error('Failed to add credits');
+      }
+
+      // Log the transaction (optional - create a payments table if needed)
+      console.log('✅ Payment verified and credits added:', {
+        userId,
+        planName,
+        planId,
+        amount,
+        credits,
+        billingCycle,
+        paymentId: razorpay_payment_id,
+        orderId: razorpay_order_id,
+        newBalance: newCredits,
+      });
 
       return NextResponse.json({
         success: true,
         message: 'Payment verified successfully',
         paymentId: razorpay_payment_id,
         orderId: razorpay_order_id,
+        creditsAdded: credits,
+        newBalance: newCredits,
       });
     } else {
       return NextResponse.json(

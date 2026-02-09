@@ -4,7 +4,7 @@ import Razorpay from 'razorpay';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { amount, planName, billingCycle } = body;
+    const { amount, planName, billingCycle, credits, planId } = body;
 
     if (!amount || !planName) {
       return NextResponse.json(
@@ -26,8 +26,18 @@ export async function POST(request: NextRequest) {
       receipt: `receipt_${Date.now()}`,
       notes: {
         planName,
+        planId: planId || '',
         billingCycle: billingCycle || 'monthly',
+        credits: credits || 0,
       },
+    });
+
+    console.log('✅ Razorpay order created:', {
+      orderId: order.id,
+      amount: amount,
+      planName,
+      billingCycle,
+      credits,
     });
 
     return NextResponse.json({

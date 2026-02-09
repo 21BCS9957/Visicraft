@@ -185,8 +185,23 @@ export default function PricingPage() {
       return;
     }
 
-    const amount = tier[billingCycle];
-    if (!amount) return;
+    const pricePerMonth = tier[billingCycle];
+    if (!pricePerMonth) return;
+
+    // Calculate total amount based on billing cycle
+    let totalAmount = pricePerMonth;
+    let months = 1;
+    
+    if (billingCycle === 'quarterly') {
+      months = 3;
+      totalAmount = pricePerMonth * 3;
+    } else if (billingCycle === 'yearly') {
+      months = 12;
+      totalAmount = pricePerMonth * 12;
+    }
+
+    // Calculate total credits
+    const totalCredits = typeof tier.credits === 'number' ? tier.credits * months : 0;
 
     setProcessingPayment(tier.id);
 
@@ -196,9 +211,11 @@ export default function PricingPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount,
+          amount: totalAmount,
           planName: tier.name,
           billingCycle,
+          credits: totalCredits,
+          planId: tier.id,
         }),
       });
 
@@ -225,7 +242,7 @@ export default function PricingPage() {
         amount: orderAmount,
         currency: 'INR',
         name: 'Visicraft',
-        description: `${tier.name} Plan - ${billingCycle}`,
+        description: `${tier.name} Plan - ${billingCycle} (${totalCredits.toLocaleString()} credits)`,
         order_id: orderId,
         prefill: {
           email: user.email || '',
@@ -252,16 +269,22 @@ export default function PricingPage() {
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature: response.razorpay_signature,
                 planName: tier.name,
-                amount,
+                planId: tier.id,
+                amount: totalAmount,
+                credits: totalCredits,
+                billingCycle,
+                userId: user.id,
               }),
             });
 
             const verifyData = await verifyResponse.json();
 
             if (verifyData.success) {
-              toast.success('Payment successful! Your plan is now active.');
+              toast.success(`Payment successful! ${totalCredits.toLocaleString()} credits added to your account.`);
               // Redirect to dashboard or workflow
-              router.push('/workflow');
+              setTimeout(() => {
+                router.push('/workflow');
+              }, 2000);
             } else {
               toast.error('Payment verification failed');
             }
