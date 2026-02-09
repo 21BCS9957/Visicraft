@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { createClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/server';
 
 // Razorpay webhook endpoint
 // This provides a backup mechanism for payment verification
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Add credits to user account
-      const supabase = await createClient();
+      const supabase = createServiceClient();
 
       const { data: currentData, error: fetchError } = await supabase
         .from('user_credits')

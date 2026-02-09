@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { createClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/server';
 
 export async function POST(request: NextRequest) {
   try {
@@ -51,7 +51,8 @@ export async function POST(request: NextRequest) {
       // Payment is verified - Add credits to user account
       console.log('✅ Signature verified, adding credits to user:', userId);
       
-      const supabase = await createClient();
+      // Use service role client to bypass RLS
+      const supabase = createServiceClient();
       
       // Get current credits
       const { data: currentData, error: fetchError } = await supabase
