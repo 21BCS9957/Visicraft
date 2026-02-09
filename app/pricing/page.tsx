@@ -19,34 +19,6 @@ type BillingCycle = 'monthly' | 'quarterly' | 'yearly';
 
 const pricingTiers = [
   {
-    id: 'test',
-    name: 'Test Plan',
-    description: 'For testing payment integration',
-    icon: 'ph:test-tube-fill',
-    gradient: 'linear-gradient(135deg, #00f260 0%, #0575e6 100%)',
-    borderColor: '#00f260',
-    badge: 'TEST ONLY',
-    badgeColor: '#00f260',
-    monthly: 1,
-    quarterly: 1,
-    yearly: 1,
-    credits: 10,
-    creditCost: 0.10,
-    features: {
-      included: [
-        '10 test credits',
-        'Test payment flow',
-        'Verify Razorpay integration',
-        'Check credit allocation',
-      ],
-      excluded: [
-        'Not for production use',
-      ],
-    },
-    popular: false,
-    cta: 'Test Payment (₹1)',
-  },
-  {
     id: 'starter',
     name: 'Starter',
     description: 'Perfect for beginners and hobbyists',
@@ -417,7 +389,7 @@ export default function PricingPage() {
         </motion.div>
 
         {/* Pricing Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {pricingTiers.map((tier, index) => (
             <motion.div
               key={tier.id}
