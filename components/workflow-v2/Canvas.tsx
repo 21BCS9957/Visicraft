@@ -13,6 +13,7 @@ import ReactFlow, {
   Edge,
   Node,
   ReactFlowProvider,
+  ConnectionLineType,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -47,6 +48,23 @@ const defaultEdgeOptions = {
 
 const proOptions = { hideAttribution: true };
 
+// Mobile detection hook
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  return isMobile;
+}
+
 function FlowCanvas() {
   const searchParams = useSearchParams();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -58,6 +76,7 @@ function FlowCanvas() {
   const [showGrid, setShowGrid] = useState(true);
   const [gridSize] = useState(20);
   const [gridVariant, setGridVariant] = useState<BackgroundVariant>(BackgroundVariant.Dots);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (!templateLoaded) {
@@ -211,11 +230,20 @@ function FlowCanvas() {
             nodesConnectable
             elementsSelectable
             selectNodesOnDrag={false}
-            panOnDrag
-            minZoom={0.2}
-            maxZoom={4}
-            onlyRenderVisibleElements
+            panOnDrag={isMobile ? [1, 2] : true}
+            panOnScroll={!isMobile}
+            zoomOnScroll={!isMobile}
+            zoomOnPinch={isMobile}
+            zoomOnDoubleClick={false}
+            minZoom={isMobile ? 0.3 : 0.2}
+            maxZoom={isMobile ? 2 : 4}
+            onlyRenderVisibleElements={false}
             nodeOrigin={[0.5, 0.5]}
+            elevateNodesOnSelect={false}
+            elevateEdgesOnSelect={true}
+            connectionLineStyle={{ stroke: '#06b6d4', strokeWidth: 2 }}
+            connectionLineType={ConnectionLineType.SmoothStep}
+            defaultViewport={{ x: 0, y: 0, zoom: isMobile ? 0.6 : 1 }}
           >
             {showGrid && (
               <Background
@@ -227,16 +255,20 @@ function FlowCanvas() {
               />
             )}
             
-            <MiniMap
-              nodeColor={nodeColor}
-              maskColor="rgba(0, 0, 0, 0.9)"
-              className="!bg-[#0a0a0a] !border !border-[#2a2a2a] !rounded-lg"
-              style={{ position: 'absolute', bottom: 100, right: 24 }}
-            />
+            {!isMobile && (
+              <MiniMap
+                nodeColor={nodeColor}
+                maskColor="rgba(0, 0, 0, 0.9)"
+                className="!bg-[#0a0a0a] !border !border-[#2a2a2a] !rounded-lg"
+                style={{ position: 'absolute', bottom: 100, right: 24 }}
+              />
+            )}
           </ReactFlow>
         </div>
         
-        <PropertiesPanel selectedNode={selectedNode} onClose={() => setSelectedNode(null)} />
+        {!isMobile && (
+          <PropertiesPanel selectedNode={selectedNode} onClose={() => setSelectedNode(null)} />
+        )}
       </div>
       
       <RunControls onRun={handleRun} isRunning={isRunning} />

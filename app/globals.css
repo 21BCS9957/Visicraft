@@ -356,3 +356,401 @@ button:hover,
 a:hover {
   will-change: transform, box-shadow;
 }
+
+
+/* ============================================
+   Professional Node & Connection System
+   Imagine.art Style - Production Grade
+   ============================================ */
+
+/* Base handle styling - HOLLOW by default */
+.react-flow__handle {
+  width: 12px;
+  height: 12px;
+  background: transparent !important;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+/* Source handles (output) */
+.react-flow__handle-right {
+  right: -6px; /* Half of width for perfect flush positioning */
+}
+
+/* Target handles (input) */
+.react-flow__handle-left {
+  left: -6px;
+}
+
+/* Hollow state - NOT connected */
+.react-flow__handle:not(.connected) {
+  background: transparent !important;
+  border-width: 2px;
+}
+
+/* Filled state - CONNECTED */
+.react-flow__handle.connected {
+  background: currentColor !important;
+  border-width: 2px;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.8); /* Black outline for contrast */
+}
+
+/* Hover effect */
+.react-flow__handle:hover {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.1);
+}
+
+/* Different colors for different handle types */
+.react-flow__handle.handle-reference {
+  color: #f97316; /* Orange */
+}
+
+.react-flow__handle.handle-source {
+  color: #eab308; /* Yellow */
+}
+
+.react-flow__handle.handle-prompt {
+  color: #06b6d4; /* Cyan */
+}
+
+.react-flow__handle.handle-output {
+  color: #10b981; /* Green */
+}
+
+.react-flow__handle.handle-image {
+  color: #3b82f6; /* Blue */
+}
+
+/* Connecting state (while dragging) */
+.react-flow__handle-connecting {
+  background: white !important;
+  border-color: white !important;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(255, 255, 255, 0);
+  }
+}
+
+/* Valid connection target */
+.react-flow__handle-valid {
+  background: #10b981 !important;
+  border-color: #10b981 !important;
+}
+
+/* Invalid connection target */
+.react-flow__handle-invalid {
+  background: #ef4444 !important;
+  border-color: #ef4444 !important;
+}
+
+/* Edge/connection line styling - SMOOTH */
+.react-flow__edge-path {
+  stroke-width: 2px;
+  stroke-linecap: round; /* Rounded line endings - prevents overlap */
+  stroke-linejoin: round;
+  fill: none;
+  transition: none !important; /* Remove transition for instant updates */
+}
+
+/* Animated edges */
+.react-flow__edge.animated path {
+  stroke-dasharray: 5;
+  animation: dashdraw 0.5s linear infinite;
+}
+
+@keyframes dashdraw {
+  from {
+    stroke-dashoffset: 10;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Edge selection */
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke-width: 2.5px;
+}
+
+/* Edge hover */
+.react-flow__edge:hover .react-flow__edge-path {
+  stroke-width: 2.5px;
+}
+
+/* Remove default edge interaction area (prevents overlap issues) */
+.react-flow__edge-interaction {
+  stroke: transparent;
+  stroke-width: 20px; /* Larger for easier clicking */
+  fill: none;
+}
+
+/* Base node styling - SMOOTH DRAGGING */
+.react-flow__node {
+  cursor: grab;
+  border-radius: 16px;
+  box-shadow: 
+    0 4px 6px -1px rgba(0, 0, 0, 0.3),
+    0 2px 4px -1px rgba(0, 0, 0, 0.2);
+  transition: box-shadow 0.2s ease; /* Only transition shadow, not transform */
+}
+
+.react-flow__node:hover {
+  box-shadow: 
+    0 10px 15px -3px rgba(0, 0, 0, 0.4),
+    0 4px 6px -2px rgba(0, 0, 0, 0.3);
+}
+
+.react-flow__node.selected {
+  box-shadow: 
+    0 0 0 2px rgba(6, 182, 212, 0.5),
+    0 10px 15px -3px rgba(0, 0, 0, 0.4);
+}
+
+.react-flow__node.dragging {
+  cursor: grabbing !important;
+  opacity: 0.9;
+}
+
+/* Remove default node selection border */
+.react-flow__node.selected::before {
+  display: none;
+}
+
+/* Connection line while dragging - smooth and colored */
+.react-flow__connectionline {
+  stroke: #06b6d4;
+  stroke-width: 2px;
+}
+
+.react-flow__connectionline path {
+  stroke: #06b6d4;
+  stroke-width: 2px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+
+/* ============================================
+   Mobile Optimization - Senior Dev Approach
+   ============================================ */
+
+/* Touch-friendly interactions */
+@media (hover: none) and (pointer: coarse) {
+  /* Increase tap targets for mobile */
+  button,
+  a,
+  .react-flow__handle {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Larger handles for touch */
+  .react-flow__handle {
+    width: 16px !important;
+    height: 16px !important;
+  }
+  
+  /* Remove hover states on touch devices */
+  *:hover {
+    transition: none;
+  }
+}
+
+/* Mobile viewport optimizations */
+@media (max-width: 768px) {
+  /* Prevent zoom on input focus */
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+  
+  /* Full-width nodes on mobile */
+  .react-flow__node {
+    min-width: 280px !important;
+    max-width: calc(100vw - 32px) !important;
+  }
+  
+  /* Adjust minimap for mobile */
+  .react-flow__minimap {
+    display: none !important;
+  }
+  
+  /* Mobile-friendly controls */
+  .react-flow__controls {
+    bottom: 80px !important;
+    right: 16px !important;
+  }
+  
+  /* Compact node styling */
+  .react-flow__node {
+    font-size: 14px;
+  }
+  
+  /* Mobile toast positioning */
+  .mobile-toast {
+    margin: 8px !important;
+    font-size: 14px !important;
+  }
+  
+  /* Adjust edge width for visibility */
+  .react-flow__edge-path {
+    stroke-width: 3px !important;
+  }
+  
+  .react-flow__edge.selected .react-flow__edge-path {
+    stroke-width: 4px !important;
+  }
+}
+
+/* Small mobile devices */
+@media (max-width: 480px) {
+  /* Even more compact */
+  .react-flow__node {
+    min-width: 260px !important;
+    border-radius: 12px;
+  }
+  
+  /* Smaller text */
+  body {
+    font-size: 14px;
+  }
+  
+  /* Compact buttons */
+  button {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+}
+
+/* Landscape mobile optimization */
+@media (max-width: 896px) and (orientation: landscape) {
+  /* Maximize canvas space */
+  .react-flow__controls {
+    scale: 0.8;
+  }
+  
+  /* Compact nodes in landscape */
+  .react-flow__node {
+    transform: scale(0.9);
+  }
+}
+
+/* Tablet optimization */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .react-flow__node {
+    min-width: 300px;
+  }
+  
+  .react-flow__minimap {
+    scale: 0.8;
+  }
+}
+
+/* High DPI displays (Retina) */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .react-flow__edge-path {
+    stroke-width: 2px;
+  }
+  
+  .react-flow__handle {
+    border-width: 1.5px;
+  }
+}
+
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Dark mode optimization (already dark, but ensure consistency) */
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #0a0a0a;
+  }
+}
+
+/* Safe area insets for notched devices (iPhone X+) */
+@supports (padding: max(0px)) {
+  body {
+    padding-left: max(0px, env(safe-area-inset-left));
+    padding-right: max(0px, env(safe-area-inset-right));
+    padding-bottom: max(0px, env(safe-area-inset-bottom));
+  }
+}
+
+/* PWA optimization */
+@media (display-mode: standalone) {
+  /* Hide browser UI elements when installed as PWA */
+  body {
+    padding-top: max(20px, env(safe-area-inset-top));
+  }
+}
+
+/* Touch action optimization */
+.react-flow__pane {
+  touch-action: none;
+}
+
+.react-flow__node {
+  touch-action: none;
+}
+
+/* Prevent text selection during drag */
+.react-flow__node.dragging {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Smooth scrolling for mobile */
+* {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Optimize font rendering on mobile */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Mobile-specific performance optimizations */
+@media (max-width: 768px) {
+  /* Reduce shadow complexity on mobile */
+  .react-flow__node {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3) !important;
+  }
+  
+  .react-flow__node:hover {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4) !important;
+  }
+  
+  /* Disable expensive effects on mobile */
+  .react-flow__edge {
+    filter: none !important;
+  }
+  
+  /* Simplify animations */
+  @keyframes pulse {
+    0%, 100% {
+      box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4);
+    }
+    50% {
+      box-shadow: 0 0 0 4px rgba(255, 255, 255, 0);
+    }
+  }
+}

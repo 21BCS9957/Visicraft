@@ -23,39 +23,49 @@ export function Topbar({
   onOrganizeNodes 
 }: TopbarProps) {
   const [showGridMenu, setShowGridMenu] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  React.useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   return (
-    <div className="h-14 bg-[#0a0a0a] border-b border-[#1a1a1a] flex items-center justify-between px-4">
-      <div className="flex items-center gap-3">
-        <button className="flex items-center gap-2 text-white hover:text-gray-300 transition-colors">
-          <div className="w-6 h-6 bg-gradient-to-br from-purple-500 to-pink-500 rounded" />
-          <ChevronDown className="w-4 h-4" />
+    <div className="h-14 bg-[#0a0a0a] border-b border-[#1a1a1a] flex items-center justify-between px-2 md:px-4">
+      <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0">
+        <button className="flex items-center gap-2 text-white hover:text-gray-300 transition-colors flex-shrink-0">
+          <div className="w-5 h-5 md:w-6 md:h-6 bg-gradient-to-br from-purple-500 to-pink-500 rounded" />
+          {!isMobile && <ChevronDown className="w-4 h-4" />}
         </button>
         
         <input
           type="text"
-          defaultValue="YouTube Thumbnail Workflow"
-          className="bg-transparent text-white text-sm border-none outline-none w-[220px] focus:w-[280px] transition-all"
+          defaultValue={isMobile ? "Workflow" : "YouTube Thumbnail Workflow"}
+          className="bg-transparent text-white text-xs md:text-sm border-none outline-none w-full max-w-[120px] md:max-w-[220px] focus:max-w-[160px] md:focus:max-w-[280px] transition-all"
         />
         
-        <div className="flex items-center gap-2 text-[#666666] text-xs">
-          <span>📄</span>
-          <span>Page 1</span>
-        </div>
+        {!isMobile && (
+          <div className="flex items-center gap-2 text-[#666666] text-xs">
+            <span>📄</span>
+            <span>Page 1</span>
+          </div>
+        )}
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1 md:gap-3 flex-shrink-0">
         {/* Grid Toggle with Dropdown */}
         <div className="relative">
           <button 
             onClick={() => setShowGridMenu(!showGridMenu)}
-            className={`px-3 py-1.5 text-sm rounded transition-colors flex items-center gap-2 ${
+            className={`px-2 md:px-3 py-1.5 text-xs md:text-sm rounded transition-colors flex items-center gap-1 md:gap-2 ${
               showGrid ? 'bg-[#1a1a1a] text-white' : 'text-gray-400 hover:bg-[#1a1a1a] hover:text-white'
             }`}
             title="Grid Settings"
           >
-            <Grid3x3 className="w-4 h-4" />
-            Grid
+            <Grid3x3 className="w-3 h-3 md:w-4 md:h-4" />
+            {!isMobile && 'Grid'}
           </button>
           
           {showGridMenu && (

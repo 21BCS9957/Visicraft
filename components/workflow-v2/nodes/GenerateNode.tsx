@@ -1,15 +1,16 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Handle, Position, NodeProps, useReactFlow } from 'reactflow';
+import { Position, NodeProps, useReactFlow } from 'reactflow';
 import { MoreVertical, Zap, Play, Loader2, Download, Copy, Trash2, RefreshCw, Maximize2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useCredits } from '@/lib/contexts/CreditsContext';
+import { SmartHandle } from '../SmartHandle';
 
 export function GenerateNode({ data, selected, id }: NodeProps) {
   const { setNodes, getNodes, setEdges, getEdges } = useReactFlow();
-  const { deductCredits, refreshCredits } = useCredits();
+  const { deductCredits, refreshCredits, addCredits } = useCredits();
   const [showMenu, setShowMenu] = useState(false);
   const [showFullscreen, setShowFullscreen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -162,31 +163,28 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
   };
 
   const handleRun = async () => {
-    if (isRunning) return;
+    // Prevent running if already processing
+    if (isRunning) {
+      toast.error('Generation already in progress');
+      return;
+    }
 
     // Flexible validation: Need at least ONE image (reference OR source) AND a prompt
     const hasReferenceImage = !!data.referenceImageUrl;
     const hasSourceImage = !!data.sourceImageUrl;
     const hasPrompt = !!data.promptText;
 
-    console.log('🎯 Generate Node Validation:', {
-      nodeId: id,
-      hasReferenceImage,
-      hasSourceImage,
-      hasPrompt,
-    });
-
     // Validation: Need at least one image
     if (!hasReferenceImage && !hasSourceImage) {
-      toast.error('Connect at least one image (reference or source)');
-      return;
+      toast.error('Connect at least one image to get started');
+      return; // Exit BEFORE deducting credits
     }
 
     // Validation: If only one image, must have prompt
     if ((hasReferenceImage && !hasSourceImage) || (!hasReferenceImage && hasSourceImage)) {
       if (!hasPrompt) {
-        toast.error('When using only one image, a prompt is required');
-        return;
+        toast.error('Add a prompt to bring your vision to life');
+        return; // Exit BEFORE deducting credits
       }
     }
 
@@ -201,19 +199,8 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     };
     
     const creditCost = CREDIT_COSTS[model]?.[resolution] || 50;
-    
-    console.log('💳 Credit cost for generation:', creditCost);
 
-    // Deduct credits BEFORE generation
-    const deducted = await deductCredits(creditCost);
-    if (!deducted) {
-      toast.error(`Insufficient credits! Need ${creditCost} credits`);
-      return;
-    }
-
-    console.log('✅ Credits deducted:', creditCost);
-
-    // Update status to processing
+    // Update status to processing FIRST (prevents double-clicks)
     setNodes((nds) =>
       nds.map((node) =>
         node.id === id
@@ -222,8 +209,23 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       )
     );
 
+    // Deduct credits AFTER validation passes
+    const deducted = await deductCredits(creditCost);
+    if (!deducted) {
+      // Revert status if credit deduction fails
+      setNodes((nds) =>
+        nds.map((node) =>
+          node.id === id
+            ? { ...node, data: { ...node.data, status: 'idle' } }
+            : node
+        )
+      );
+      toast.error('Not enough credits. Upgrade to keep creating!');
+      return;
+    }
+
     try {
-      toast.loading('Generating thumbnail...', { id: `generate-${id}` });
+      toast.loading('Creating your masterpiece...', { id: `generate-${id}` });
 
       // Build request based on available inputs
       const requestBody: any = {
@@ -238,20 +240,15 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
         // Both images available - full transformation
         requestBody.referenceImage = data.referenceImageUrl;
         requestBody.sourceImages = [data.sourceImageUrl];
-        console.log('📤 Mode: Full transformation (reference + source + prompt)');
       } else if (hasSourceImage) {
         // Only source image - use it as both reference and source
         requestBody.referenceImage = data.sourceImageUrl;
         requestBody.sourceImages = [data.sourceImageUrl];
-        console.log('📤 Mode: Source + Prompt (using source as reference too)');
       } else if (hasReferenceImage) {
         // Only reference image - use it as both
         requestBody.referenceImage = data.referenceImageUrl;
         requestBody.sourceImages = [data.referenceImageUrl];
-        console.log('📤 Mode: Reference + Prompt (using reference as source too)');
       }
-
-      console.log('📤 API Request:', requestBody);
 
       // Call the API
       const response = await fetch('/api/generate', {
@@ -261,19 +258,14 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       });
 
       const result = await response.json();
-      console.log('📥 API Response:', { status: response.status, result });
-      console.log('📥 Generated images:', result.images);
-      console.log('📥 First image URL:', result.images?.[0]);
 
       if (!response.ok) {
         throw new Error(result.error || 'Generation failed');
       }
 
       const generatedImageUrl = result.images?.[0];
-      console.log('✅ Setting generatedImageUrl:', generatedImageUrl);
 
       if (generatedImageUrl) {
-        console.log('📝 Updating node with generated image...');
         // Update node with generated image
         setNodes((nds) =>
           nds.map((node) =>
@@ -290,12 +282,10 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
           )
         );
         
-        console.log('✅ Node updated successfully');
-        
         // Refresh credits to show updated balance
         await refreshCredits();
         
-        toast.success('Thumbnail generated!', { id: `generate-${id}` });
+        toast.success('✨ Amazing! Your image is ready', { id: `generate-${id}` });
       } else {
         throw new Error('No image returned from API');
       }
@@ -303,8 +293,9 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       console.error('❌ Generation error:', error);
       
       // Refund credits on error
-      // Note: You might want to implement a refund function in CreditsContext
-      console.log('⚠️ Generation failed, credits were already deducted');
+      console.log('💰 Refunding credits due to generation failure:', creditCost);
+      await addCredits(creditCost);
+      await refreshCredits();
       
       // Update status to error
       setNodes((nds) =>
@@ -316,7 +307,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       );
       
       toast.error(
-        error instanceof Error ? error.message : 'Generation failed',
+        'Oops! Something went wrong. No worries, try again!',
         { id: `generate-${id}` }
       );
     }
@@ -324,84 +315,91 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
 
   return (
     <motion.div
-      initial={{ scale: 0.9, opacity: 0 }}
+      initial={{ scale: 0.95, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
+      whileHover={{ scale: 1.01 }}
       className={`
         group
-        bg-[#2d1b1b]
-        border-2 border-[#ef4444]/30
-        rounded-lg
-        shadow-2xl
+        bg-[#1a1a1a]
+        border border-[#2a2a2a]
+        rounded-2xl
+        shadow-xl
         min-w-[300px]
-        ${selected ? 'ring-2 ring-[#ef4444] ring-opacity-50' : ''}
+        transition-all
+        ${selected ? 'ring-2 ring-cyan-500/50' : ''}
       `}
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-3 border-b border-[#ef4444]/20">
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-5 bg-[#ef4444]/20 rounded flex items-center justify-center">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M13 2L3 14H12L11 22L21 10H12L13 2Z" fill="#ef4444" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+      <div className="px-4 py-3 border-b border-[#2a2a2a]">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shadow-lg">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M13 2L3 14H12L11 22L21 10H12L13 2Z" fill="white" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-white font-semibold text-sm">Generate</h3>
+              <p className="text-gray-500 text-xs">AI Image Generation</p>
+            </div>
           </div>
-          <span className="text-[13px] text-white font-medium">AI Generate</span>
-        </div>
-        <div className="relative" ref={menuRef}>
-          <button
-            onClick={() => setShowMenu(!showMenu)}
-            className="text-[#666666] hover:text-white transition-colors"
-          >
-            <MoreVertical className="w-4 h-4" />
-          </button>
-          
-          {/* Dropdown Menu */}
-          <AnimatePresence>
-            {showMenu && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: -10 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                transition={{ duration: 0.1 }}
-                className="absolute right-0 top-full mt-1 w-48 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl z-50 overflow-hidden"
-              >
-                <button
-                  onClick={handleDownload}
-                  disabled={!result}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setShowMenu(!showMenu)}
+              className="text-[#666666] hover:text-white transition-colors"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+            
+            {/* Dropdown Menu */}
+            <AnimatePresence>
+              {showMenu && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                  transition={{ duration: 0.1 }}
+                  className="absolute right-0 top-full mt-1 w-48 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl z-50 overflow-hidden"
                 >
-                  <Download className="w-4 h-4" />
-                  Download Image
-                </button>
-                
-                <button
-                  onClick={handleDuplicate}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors"
-                >
-                  <Copy className="w-4 h-4" />
-                  Duplicate Node
-                </button>
-                
-                <button
-                  onClick={handleReset}
-                  disabled={!result && status === 'idle'}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Reset Node
-                </button>
-                
-                <div className="border-t border-[#2a2a2a]" />
-                
-                <button
-                  onClick={handleDelete}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-red-400 hover:bg-[#2a2a2a] transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Delete Node
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                  <button
+                    onClick={handleDownload}
+                    disabled={!result}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download Image
+                  </button>
+                  
+                  <button
+                    onClick={handleDuplicate}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors"
+                  >
+                    <Copy className="w-4 h-4" />
+                    Duplicate Node
+                  </button>
+                  
+                  <button
+                    onClick={handleReset}
+                    disabled={!result && status === 'idle'}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    Reset Node
+                  </button>
+                  
+                  <div className="border-t border-[#2a2a2a]" />
+                  
+                  <button
+                    onClick={handleDelete}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-red-400 hover:bg-[#2a2a2a] transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete Node
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </div>
 
@@ -500,12 +498,12 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
           {isRunning ? (
             <>
               <Loader2 className="w-3 h-3 animate-spin" />
-              Generating...
+              Creating...
             </>
           ) : (
             <>
               <Play className="w-3 h-3" />
-              Run Generation
+              Create
             </>
           )}
         </button>
@@ -524,55 +522,42 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
         </div>
       )}
 
-      {/* Input Handles - Only 2 handles */}
-      {/* Images Handle (accepts both reference and source) */}
-      <div className="absolute left-0 top-[35%] -translate-x-full -translate-y-1/2 pr-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <div className="text-[10px] text-[#f97316] whitespace-nowrap font-medium">
-          Images (Reference/Source) →
-        </div>
-      </div>
-      <Handle
+      {/* Input Handles */}
+      <SmartHandle
+        nodeId={id}
+        handleId="referenceImage"
+        handleType="reference"
         type="target"
         position={Position.Left}
-        id="referenceImage"
         style={{ top: '35%' }}
-        className="!w-3 !h-3 !bg-[#f97316] !border-2 !border-black"
       />
       
-      {/* Also accept source images on the same handle */}
-      <Handle
+      <SmartHandle
+        nodeId={id}
+        handleId="sourceImage"
+        handleType="source"
         type="target"
         position={Position.Left}
-        id="sourceImage"
-        style={{ top: '35%' }}
-        className="!w-3 !h-3 !bg-[#f97316] !border-2 !border-black !opacity-0 pointer-events-none"
+        style={{ top: '35%', opacity: 0, pointerEvents: 'none' }}
       />
       
-      {/* Prompt Handle */}
-      <div className="absolute left-0 top-[65%] -translate-x-full -translate-y-1/2 pr-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <div className="text-[10px] text-[#06b6d4] whitespace-nowrap font-medium">
-          Prompt (optional) →
-        </div>
-      </div>
-      <Handle
+      <SmartHandle
+        nodeId={id}
+        handleId="prompt"
+        handleType="prompt"
         type="target"
         position={Position.Left}
-        id="prompt"
         style={{ top: '65%' }}
-        className="!w-3 !h-3 !bg-[#06b6d4] !border-2 !border-black"
       />
 
-      {/* Output Handle with Label */}
-      <div className="absolute right-0 top-1/2 translate-x-full -translate-y-1/2 pl-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <div className="text-[10px] text-[#10b981] whitespace-nowrap font-medium">
-          ← Generated
-        </div>
-      </div>
-      <Handle
+      {/* Output Handle */}
+      <SmartHandle
+        nodeId={id}
+        handleId="generatedImage"
+        handleType="output"
         type="source"
         position={Position.Right}
-        id="generatedImage"
-        className="!w-3 !h-3 !bg-[#10b981] !border-2 !border-black"
+        style={{ top: '50%' }}
       />
     </motion.div>
   );

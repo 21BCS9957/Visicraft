@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Handle, Position, NodeProps, useReactFlow } from 'reactflow';
+import { Position, NodeProps, useReactFlow } from 'reactflow';
 import { MoreVertical, Upload, Image as ImageIcon, Copy, Trash2, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { uploadImage } from '@/lib/supabase/storage';
 import toast from 'react-hot-toast';
+import { SmartHandle } from '../SmartHandle';
 
 export function ImportNode({ data, selected, id }: NodeProps) {
   const { setNodes, getEdges, getNodes, setEdges } = useReactFlow();
@@ -177,88 +178,95 @@ export function ImportNode({ data, selected, id }: NodeProps) {
 
   return (
     <motion.div
-      initial={{ scale: 0.9, opacity: 0 }}
+      initial={{ scale: 0.95, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
+      whileHover={{ scale: 1.01 }}
       className={`
         group
         bg-[#1a1a1a]
         border border-[#2a2a2a]
-        rounded-lg
+        rounded-2xl
         shadow-xl
         min-w-[280px]
-        ${selected ? 'ring-2 ring-[#3b82f6] ring-opacity-50' : ''}
+        transition-all
+        ${selected ? 'ring-2 ring-blue-500/50' : ''}
       `}
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-3 border-b border-[#2a2a2a]">
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-5 bg-[#3b82f6]/20 rounded flex items-center justify-center">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M4 16L8.586 11.414C9.367 10.633 10.633 10.633 11.414 11.414L16 16M14 14L15.586 12.414C16.367 11.633 17.633 11.633 18.414 12.414L20 14M14 8H14.01M6 20H18C19.105 20 20 19.105 20 18V6C20 4.895 19.105 4 18 4H6C4.895 4 4 4.895 4 6V18C4 19.105 4.895 20 6 20Z" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+      <div className="px-4 py-3 border-b border-[#2a2a2a]">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 16L8.586 11.414C9.367 10.633 10.633 10.633 11.414 11.414L16 16M14 14L15.586 12.414C16.367 11.633 17.633 11.633 18.414 12.414L20 14M14 8H14.01M6 20H18C19.105 20 20 19.105 20 18V6C20 4.895 19.105 4 18 4H6C4.895 4 4 4.895 4 6V18C4 19.105 4.895 20 6 20Z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-white font-semibold text-sm">{nodeLabel}</h3>
+              <p className="text-gray-500 text-xs">Source Image</p>
+            </div>
           </div>
-          <span className="text-[13px] text-white font-medium">{nodeLabel}</span>
-        </div>
-        <div className="relative" ref={menuRef}>
-          <button
-            onClick={() => setShowMenu(!showMenu)}
-            className="text-[#666666] hover:text-white transition-colors"
-          >
-            <MoreVertical className="w-4 h-4" />
-          </button>
-          
-          {/* Dropdown Menu */}
-          <AnimatePresence>
-            {showMenu && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: -10 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                transition={{ duration: 0.1 }}
-                className="absolute right-0 top-full mt-1 w-48 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl z-50 overflow-hidden"
-              >
-                <button
-                  onClick={handleDuplicate}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors"
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setShowMenu(!showMenu)}
+              className="text-[#666666] hover:text-white transition-colors"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+            
+            {/* Dropdown Menu */}
+            <AnimatePresence>
+              {showMenu && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                  transition={{ duration: 0.1 }}
+                  className="absolute right-0 top-full mt-1 w-48 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl z-50 overflow-hidden"
                 >
-                  <Copy className="w-4 h-4" />
-                  Duplicate Node
-                </button>
-                
-                <button
-                  onClick={handleReset}
-                  disabled={!image}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Clear Image
-                </button>
-                
-                <div className="border-t border-[#2a2a2a]" />
-                
-                <button
-                  onClick={handleDelete}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-red-400 hover:bg-[#2a2a2a] transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Delete Node
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                  <button
+                    onClick={handleDuplicate}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors"
+                  >
+                    <Copy className="w-4 h-4" />
+                    Duplicate Node
+                  </button>
+                  
+                  <button
+                    onClick={handleReset}
+                    disabled={!image}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    Clear Image
+                  </button>
+                  
+                  <div className="border-t border-[#2a2a2a]" />
+                  
+                  <button
+                    onClick={handleDelete}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-red-400 hover:bg-[#2a2a2a] transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete Node
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </div>
 
       {/* Image Preview or Upload Zone */}
-      <div className="p-3">
+      <div className="p-4">
         {image ? (
           <div className="relative group">
             <img
               src={image}
               alt="Imported"
-              className="w-full h-[160px] object-cover rounded"
+              className="w-full h-40 object-cover rounded-lg"
             />
-            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
               <label className="cursor-pointer">
                 <input
                   type="file"
@@ -267,7 +275,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
                   className="hidden"
                   disabled={uploading}
                 />
-                <div className="text-white text-xs px-3 py-1.5 bg-[#2a2a2a] rounded hover:bg-[#333333] transition-colors">
+                <div className="px-4 py-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg text-white text-xs font-medium hover:bg-white/20 transition-colors">
                   {uploading ? 'Uploading...' : 'Replace Image'}
                 </div>
               </label>
@@ -282,45 +290,22 @@ export function ImportNode({ data, selected, id }: NodeProps) {
               className="hidden"
               disabled={uploading}
             />
-            <div className="border-2 border-dashed border-[#2a2a2a] rounded h-[160px] flex flex-col items-center justify-center hover:border-[#3a3a3a] transition-colors">
-              <Upload className="w-6 h-6 text-[#666666] mb-2" />
-              <span className="text-xs text-[#666666]">
-                {uploading ? 'Uploading...' : 'Click to upload'}
-              </span>
+            <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg h-40 flex flex-col items-center justify-center hover:border-[#3a3a3a] hover:bg-[#1a1a1a] transition-all">
+              <Upload className="w-8 h-8 text-gray-600 mb-2" />
+              <span className="text-xs text-gray-600">{uploading ? 'Uploading...' : 'Click to upload'}</span>
             </div>
           </label>
         )}
       </div>
 
-      {/* Replace Image Button */}
-      {image && (
-        <div className="px-3 pb-3">
-          <label className="w-full">
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleFileUpload}
-              className="hidden"
-              disabled={uploading}
-            />
-            <div className="w-full text-center py-1.5 text-xs text-[#a0a0a0] hover:text-white bg-[#1a1a1a] border border-[#2a2a2a] rounded hover:bg-[#222222] transition-colors cursor-pointer">
-              + Replace Image
-            </div>
-          </label>
-        </div>
-      )}
-
-      {/* Output Handle with Label */}
-      <div className="absolute right-0 top-1/2 translate-x-full -translate-y-1/2 pl-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <div className="text-[10px] text-[#3b82f6] whitespace-nowrap font-medium">
-          ← Image
-        </div>
-      </div>
-      <Handle
+      {/* Output Handle */}
+      <SmartHandle
+        nodeId={id}
+        handleId="image"
+        handleType="image"
         type="source"
         position={Position.Right}
-        id="image"
-        className="!w-3 !h-3 !bg-[#3b82f6] !border-2 !border-black"
+        style={{ top: '50%' }}
       />
     </motion.div>
   );

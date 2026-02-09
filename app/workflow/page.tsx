@@ -24,12 +24,14 @@ export default function WorkflowPage() {
       <Canvas />
       
       <Toaster
-        position="bottom-right"
+        position="top-center"
         toastOptions={{
+          className: 'mobile-toast',
           style: {
             background: '#1a1a1a',
             color: '#fff',
             border: '1px solid #2a2a2a',
+            maxWidth: '90vw',
           },
           success: {
             iconTheme: {

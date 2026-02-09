@@ -9,6 +9,7 @@ interface CreditsContextType {
   loading: boolean;
   refreshCredits: () => Promise<void>;
   deductCredits: (amount: number) => Promise<boolean>;
+  addCredits: (amount: number) => Promise<boolean>;
 }
 
 const CreditsContext = createContext<CreditsContextType>({
@@ -16,6 +17,7 @@ const CreditsContext = createContext<CreditsContextType>({
   loading: true,
   refreshCredits: async () => {},
   deductCredits: async () => false,
+  addCredits: async () => false,
 });
 
 export function CreditsProvider({ children }: { children: React.ReactNode }) {
@@ -113,12 +115,41 @@ export function CreditsProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const addCredits = async (amount: number): Promise<boolean> => {
+    if (!user) {
+      console.error('❌ Cannot add credits: No user logged in');
+      return false;
+    }
+
+    try {
+      const newCredits = credits + amount;
+      console.log('💰 Adding credits (refund):', { amount, oldBalance: credits, newBalance: newCredits });
+      
+      const { error } = await supabase
+        .from('user_credits')
+        .update({ credits: newCredits })
+        .eq('user_id', user.id);
+
+      if (!error) {
+        console.log('✅ Credits added successfully');
+        setCredits(newCredits);
+        return true;
+      } else {
+        console.error('❌ Failed to add credits:', error);
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ Error adding credits:', error);
+      return false;
+    }
+  };
+
   useEffect(() => {
     refreshCredits();
   }, [user]);
 
   return (
-    <CreditsContext.Provider value={{ credits, loading, refreshCredits, deductCredits }}>
+    <CreditsContext.Provider value={{ credits, loading, refreshCredits, deductCredits, addCredits }}>
       {children}
     </CreditsContext.Provider>
   );

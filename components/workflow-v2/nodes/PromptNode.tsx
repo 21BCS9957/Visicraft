@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Handle, Position, NodeProps, useReactFlow } from 'reactflow';
+import { Position, NodeProps, useReactFlow } from 'reactflow';
 import { MoreVertical, MessageSquare, Copy, Trash2, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
+import { SmartHandle } from '../SmartHandle';
 
 export function PromptNode({ data, selected, id }: NodeProps) {
   const { setNodes, getNodes, setEdges, getEdges } = useReactFlow();
@@ -122,114 +123,118 @@ export function PromptNode({ data, selected, id }: NodeProps) {
 
   return (
     <motion.div
-      initial={{ scale: 0.9, opacity: 0 }}
+      initial={{ scale: 0.95, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
+      whileHover={{ scale: 1.01 }}
       className={`
         group
-        bg-[#1a1a2e]
-        border border-[#2a2a4a]
-        rounded-lg
+        bg-[#1a1a1a]
+        border border-[#2a2a2a]
+        rounded-2xl
         shadow-xl
         min-w-[280px]
-        ${selected ? 'ring-2 ring-[#8b5cf6] ring-opacity-50' : ''}
+        transition-all
+        ${selected ? 'ring-2 ring-purple-500/50' : ''}
       `}
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-3 border-b border-[#2a2a4a]">
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-5 bg-[#8b5cf6]/20 rounded flex items-center justify-center">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M9 12H15M12 9V15M21 12C21 16.971 16.971 21 12 21C7.029 21 3 16.971 3 12C3 7.029 7.029 3 12 3C16.971 3 21 7.029 21 12Z" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M8 8L16 16M16 8L8 16" stroke="#8b5cf6" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
+      <div className="px-4 py-3 border-b border-[#2a2a2a]">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center shadow-lg">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M8 12H16M8 8H16M8 16H12M6 20H18C19.105 20 20 19.105 20 18V6C20 4.895 19.105 4 18 4H6C4.895 4 4 4.895 4 6V18C4 19.105 4.895 20 6 20Z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-white font-semibold text-sm">Prompt</h3>
+              <p className="text-gray-500 text-xs">Text Input</p>
+            </div>
           </div>
-          <span className="text-[13px] text-white font-medium">Prompt</span>
-        </div>
-        <div className="relative" ref={menuRef}>
-          <button
-            onClick={() => setShowMenu(!showMenu)}
-            className="text-[#666666] hover:text-white transition-colors"
-          >
-            <MoreVertical className="w-4 h-4" />
-          </button>
-          
-          {/* Dropdown Menu */}
-          <AnimatePresence>
-            {showMenu && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: -10 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                transition={{ duration: 0.1 }}
-                className="absolute right-0 top-full mt-1 w-48 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl z-50 overflow-hidden"
-              >
-                <button
-                  onClick={handleDuplicate}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors"
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setShowMenu(!showMenu)}
+              className="text-[#666666] hover:text-white transition-colors"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+            
+            {/* Dropdown Menu */}
+            <AnimatePresence>
+              {showMenu && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                  transition={{ duration: 0.1 }}
+                  className="absolute right-0 top-full mt-1 w-48 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl z-50 overflow-hidden"
                 >
-                  <Copy className="w-4 h-4" />
-                  Duplicate Node
-                </button>
-                
-                <button
-                  onClick={handleReset}
-                  disabled={!prompt}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Clear Prompt
-                </button>
-                
-                <div className="border-t border-[#2a2a2a]" />
-                
-                <button
-                  onClick={handleDelete}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-red-400 hover:bg-[#2a2a2a] transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Delete Node
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                  <button
+                    onClick={handleDuplicate}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors"
+                  >
+                    <Copy className="w-4 h-4" />
+                    Duplicate Node
+                  </button>
+                  
+                  <button
+                    onClick={handleReset}
+                    disabled={!prompt}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    Clear Prompt
+                  </button>
+                  
+                  <div className="border-t border-[#2a2a2a]" />
+                  
+                  <button
+                    onClick={handleDelete}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-red-400 hover:bg-[#2a2a2a] transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete Node
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </div>
 
       {/* Textarea */}
-      <div className="p-3">
+      <div className="p-4">
         <textarea
           value={prompt}
           onChange={handleChange}
-          placeholder="Enter your prompt... (e.g., 'Make it vibrant with dramatic lighting')"
-          maxLength={2000}
+          placeholder="Describe your desired output..."
           className="
-            w-full h-[120px]
-            bg-[#0f0f1f]
-            border border-[#2a2a4a]
-            rounded
+            w-full h-32
+            bg-[#0f0f0f]
+            border border-[#2a2a2a]
+            rounded-lg
             px-3 py-2
-            text-xs text-white
-            placeholder:text-[#666666]
-            focus:outline-none focus:border-[#8b5cf6]
+            text-sm text-white
+            placeholder:text-gray-600
+            focus:outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50
             resize-none
+            transition-all
           "
+          maxLength={500}
         />
-        <div className="text-right text-[10px] text-[#666666] mt-1">
-          {prompt.length} / 2000 characters
+        <div className="text-right text-xs text-gray-600 mt-1">
+          {prompt.length} / 500
         </div>
       </div>
 
-      {/* Output Handle with Label */}
-      <div className="absolute right-0 top-1/2 translate-x-full -translate-y-1/2 pl-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <div className="text-[10px] text-[#8b5cf6] whitespace-nowrap font-medium">
-          ← Text
-        </div>
-      </div>
-      <Handle
+      {/* Output Handle */}
+      <SmartHandle
+        nodeId={id}
+        handleId="prompt"
+        handleType="prompt"
         type="source"
         position={Position.Right}
-        id="prompt"
-        className="!w-3 !h-3 !bg-[#8b5cf6] !border-2 !border-black"
+        style={{ top: '50%' }}
       />
     </motion.div>
   );

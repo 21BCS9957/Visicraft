@@ -34,6 +34,14 @@ const nodeTypes = [
 export function Sidebar({ onAddNode }: SidebarProps) {
   const [activePanel, setActivePanel] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
+  const [isMobile, setIsMobile] = useState(false);
+
+  React.useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const handleAddNode = (type: string, nodeType?: string) => {
     const position = {
@@ -41,35 +49,39 @@ export function Sidebar({ onAddNode }: SidebarProps) {
       y: Math.random() * 300 + 100,
     };
     onAddNode(type, position, nodeType);
+    // Close panel on mobile after adding node
+    if (isMobile) {
+      setActivePanel(null);
+    }
   };
 
   return (
     <div className="flex h-full">
       {/* Icon Bar */}
-      <div className="w-[60px] bg-[#0a0a0a] border-r border-[#1a1a1a] flex flex-col items-center py-4 gap-2">
-        <button className="w-10 h-10 rounded-lg bg-[#1a1a1a] hover:bg-[#222222] flex items-center justify-center mb-4 transition-colors">
-          <div className="w-6 h-6 bg-gradient-to-br from-purple-500 to-pink-500 rounded" />
+      <div className={`${isMobile ? 'w-[50px]' : 'w-[60px]'} bg-[#0a0a0a] border-r border-[#1a1a1a] flex flex-col items-center py-4 gap-2`}>
+        <button className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} rounded-lg bg-[#1a1a1a] hover:bg-[#222222] flex items-center justify-center mb-4 transition-colors`}>
+          <div className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} bg-gradient-to-br from-purple-500 to-pink-500 rounded`} />
         </button>
 
         {tools.map((tool) => (
           <button
             key={tool.id}
             onClick={() => setActivePanel(activePanel === tool.id ? null : tool.id)}
-            className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${
+            className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} rounded-lg flex items-center justify-center transition-colors ${
               activePanel === tool.id
                 ? 'bg-[#1a1a1a] text-white'
                 : 'hover:bg-[#1a1a1a] text-[#666666] hover:text-white'
             }`}
             title={tool.label}
           >
-            <tool.icon className="w-5 h-5" />
+            <tool.icon className={`${isMobile ? 'w-4 h-4' : 'w-5 h-5'}`} />
           </button>
         ))}
       </div>
 
       {/* Expandable Panel */}
       {activePanel === 'nodes' && (
-        <div className="w-[240px] bg-[#0f0f0f] border-r border-[#1a1a1a] p-4">
+        <div className={`${isMobile ? 'w-[200px]' : 'w-[240px]'} bg-[#0f0f0f] border-r border-[#1a1a1a] p-4 ${isMobile ? 'absolute left-[50px] top-0 bottom-0 z-50 shadow-2xl' : ''}`}>
           <h3 className="text-white text-sm font-medium mb-4">Add Nodes</h3>
           <div className="space-y-2">
             {nodeTypes.map((node) => (
@@ -79,12 +91,12 @@ export function Sidebar({ onAddNode }: SidebarProps) {
                 className="w-full flex items-center gap-3 p-3 bg-[#1a1a1a] hover:bg-[#222222] rounded-lg transition-colors group"
               >
                 <div
-                  className="w-8 h-8 rounded flex items-center justify-center"
+                  className={`${isMobile ? 'w-6 h-6' : 'w-8 h-8'} rounded flex items-center justify-center`}
                   style={{ backgroundColor: `${node.color}20` }}
                 >
-                  <node.icon className="w-4 h-4" style={{ color: node.color }} />
+                  <node.icon className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'}`} style={{ color: node.color }} />
                 </div>
-                <span className="text-sm text-[#a0a0a0] group-hover:text-white transition-colors">
+                <span className={`${isMobile ? 'text-xs' : 'text-sm'} text-[#a0a0a0] group-hover:text-white transition-colors`}>
                   {node.label}
                 </span>
               </button>
@@ -94,7 +106,7 @@ export function Sidebar({ onAddNode }: SidebarProps) {
       )}
 
       {activePanel === 'notes' && (
-        <div className="w-[280px] bg-[#0f0f0f] border-r border-[#1a1a1a] p-4 flex flex-col">
+        <div className={`${isMobile ? 'w-[240px] absolute left-[50px] top-0 bottom-0 z-50 shadow-2xl' : 'w-[280px]'} bg-[#0f0f0f] border-r border-[#1a1a1a] p-4 flex flex-col`}>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-white text-sm font-medium">Workflow Notes</h3>
             <StickyNote className="w-4 h-4 text-[#8b7355]" />
