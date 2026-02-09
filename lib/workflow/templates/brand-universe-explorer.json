@@ -1,0 +1,460 @@
+{
+  "id": "brand-universe-explorer",
+  "name": "Brand Universe Explorer",
+  "description": "Explore your brand across different universes and aesthetics. Generate cohesive brand visuals in multiple artistic dimensions - from cyberpunk to cottagecore, helping you discover your brand's versatile identity.",
+  "category": "Branding",
+  "difficulty": "expert",
+  "estimatedCredits": 210,
+  "thumbnail": "/templates/brand-universe.jpg",
+  "nodes": [
+    {
+      "id": "logo-import",
+      "type": "import",
+      "position": { "x": 50, "y": 200 },
+      "data": {
+        "label": "Brand Logo/Icon",
+        "description": "Upload your brand logo or key visual element",
+        "placeholder": "Upload logo...",
+        "acceptedFormats": ["image/png", "image/svg"],
+        "maxSize": 5242880
+      }
+    },
+    {
+      "id": "product-import",
+      "type": "import",
+      "position": { "x": 50, "y": 350 },
+      "data": {
+        "label": "Product/Mascot",
+        "description": "Upload your product or brand mascot",
+        "placeholder": "Upload product...",
+        "acceptedFormats": ["image/jpeg", "image/png"],
+        "maxSize": 10485760
+      }
+    },
+    {
+      "id": "cyberpunk-prompt",
+      "type": "prompt",
+      "position": { "x": 400, "y": 50 },
+      "data": {
+        "label": "🌃 Cyberpunk Neon",
+        "prompt": "Cyberpunk aesthetic, neon lights, futuristic cityscape, holographic elements, purple and cyan color scheme, rain-slicked streets, blade runner vibes, high-tech low-life, glowing signs, dystopian future, digital art style, 4K quality",
+        "temperature": 0.85,
+        "style": "cyberpunk"
+      }
+    },
+    {
+      "id": "cottagecore-prompt",
+      "type": "prompt",
+      "position": { "x": 400, "y": 170 },
+      "data": {
+        "label": "🌿 Cottagecore Dream",
+        "prompt": "Cottagecore aesthetic, soft pastel colors, wildflowers and greenery, cozy countryside vibes, handmade artisan feel, warm natural lighting, vintage charm, peaceful rural setting, watercolor style, whimsical and romantic, sustainable living aesthetic",
+        "temperature": 0.8,
+        "style": "cottagecore"
+      }
+    },
+    {
+      "id": "vaporwave-prompt",
+      "type": "prompt",
+      "position": { "x": 400, "y": 290 },
+      "data": {
+        "label": "🌊 Vaporwave Retro",
+        "prompt": "Vaporwave aesthetic, retro 80s/90s vibes, pink and turquoise gradient, geometric shapes, glitch art elements, Roman statues, palm trees, sunset grid, nostalgic internet culture, surreal dreamlike quality, lo-fi aesthetic, Y2K nostalgia",
+        "temperature": 0.9,
+        "style": "vaporwave"
+      }
+    },
+    {
+      "id": "brutalist-prompt",
+      "type": "prompt",
+      "position": { "x": 400, "y": 410 },
+      "data": {
+        "label": "🏛️ Brutalist Bold",
+        "prompt": "Brutalist design aesthetic, raw concrete textures, bold geometric shapes, monochromatic with accent color, stark minimalism, architectural photography, strong shadows, industrial materials, modernist composition, powerful and unapologetic, Swiss design influence",
+        "temperature": 0.7,
+        "style": "brutalist"
+      }
+    },
+    {
+      "id": "solarpunk-prompt",
+      "type": "prompt",
+      "position": { "x": 400, "y": 530 },
+      "data": {
+        "label": "☀️ Solarpunk Future",
+        "prompt": "Solarpunk aesthetic, optimistic eco-future, green technology, solar panels and wind turbines, lush vegetation integrated with architecture, bright hopeful colors, sustainable innovation, art nouveau meets sci-fi, harmony between nature and technology, utopian vision",
+        "temperature": 0.85,
+        "style": "solarpunk"
+      }
+    },
+    {
+      "id": "dark-academia-prompt",
+      "type": "prompt",
+      "position": { "x": 400, "y": 650 },
+      "data": {
+        "label": "📚 Dark Academia",
+        "prompt": "Dark academia aesthetic, vintage library setting, leather-bound books, candlelight, rich burgundy and forest green, classical architecture, intellectual atmosphere, moody lighting, oil painting style, gothic romance, scholarly elegance, timeless sophistication",
+        "temperature": 0.75,
+        "style": "dark-academia"
+      }
+    },
+    {
+      "id": "afrofuturism-prompt",
+      "type": "prompt",
+      "position": { "x": 400, "y": 770 },
+      "data": {
+        "label": "✨ Afrofuturism",
+        "prompt": "Afrofuturism aesthetic, vibrant African patterns and textiles, futuristic technology, gold and royal purple accents, cosmic elements, cultural heritage meets sci-fi, powerful and regal, intricate geometric designs, celebration of Black culture and innovation, visionary art",
+        "temperature": 0.9,
+        "style": "afrofuturism"
+      }
+    },
+    {
+      "id": "gen-cyber",
+      "type": "generate",
+      "position": { "x": 750, "y": 50 },
+      "data": {
+        "label": "Generate Cyberpunk",
+        "model": "banana-pro-2k",
+        "resolution": "2048x2048",
+        "quality": "high"
+      }
+    },
+    {
+      "id": "gen-cottage",
+      "type": "generate",
+      "position": { "x": 750, "y": 170 },
+      "data": {
+        "label": "Generate Cottagecore",
+        "model": "banana-pro-2k",
+        "resolution": "2048x2048",
+        "quality": "high"
+      }
+    },
+    {
+      "id": "gen-vapor",
+      "type": "generate",
+      "position": { "x": 750, "y": 290 },
+      "data": {
+        "label": "Generate Vaporwave",
+        "model": "banana-pro-2k",
+        "resolution": "2048x2048",
+        "quality": "high"
+      }
+    },
+    {
+      "id": "gen-brutal",
+      "type": "generate",
+      "position": { "x": 750, "y": 410 },
+      "data": {
+        "label": "Generate Brutalist",
+        "model": "banana-pro-2k",
+        "resolution": "2048x2048",
+        "quality": "high"
+      }
+    },
+    {
+      "id": "gen-solar",
+      "type": "generate",
+      "position": { "x": 750, "y": 530 },
+      "data": {
+        "label": "Generate Solarpunk",
+        "model": "banana-pro-2k",
+        "resolution": "2048x2048",
+        "quality": "high"
+      }
+    },
+    {
+      "id": "gen-academia",
+      "type": "generate",
+      "position": { "x": 750, "y": 650 },
+      "data": {
+        "label": "Generate Academia",
+        "model": "banana-pro-2k",
+        "resolution": "2048x2048",
+        "quality": "high"
+      }
+    },
+    {
+      "id": "gen-afro",
+      "type": "generate",
+      "position": { "x": 750, "y": 770 },
+      "data": {
+        "label": "Generate Afrofuturism",
+        "model": "banana-pro-2k",
+        "resolution": "2048x2048",
+        "quality": "high"
+      }
+    },
+    {
+      "id": "out-cyber",
+      "type": "output",
+      "position": { "x": 1050, "y": 50 },
+      "data": {
+        "label": "Cyberpunk Brand",
+        "format": "png",
+        "filename": "brand-cyberpunk-universe"
+      }
+    },
+    {
+      "id": "out-cottage",
+      "type": "output",
+      "position": { "x": 1050, "y": 170 },
+      "data": {
+        "label": "Cottagecore Brand",
+        "format": "png",
+        "filename": "brand-cottagecore-universe"
+      }
+    },
+    {
+      "id": "out-vapor",
+      "type": "output",
+      "position": { "x": 1050, "y": 290 },
+      "data": {
+        "label": "Vaporwave Brand",
+        "format": "png",
+        "filename": "brand-vaporwave-universe"
+      }
+    },
+    {
+      "id": "out-brutal",
+      "type": "output",
+      "position": { "x": 1050, "y": 410 },
+      "data": {
+        "label": "Brutalist Brand",
+        "format": "png",
+        "filename": "brand-brutalist-universe"
+      }
+    },
+    {
+      "id": "out-solar",
+      "type": "output",
+      "position": { "x": 1050, "y": 530 },
+      "data": {
+        "label": "Solarpunk Brand",
+        "format": "png",
+        "filename": "brand-solarpunk-universe"
+      }
+    },
+    {
+      "id": "out-academia",
+      "type": "output",
+      "position": { "x": 1050, "y": 650 },
+      "data": {
+        "label": "Academia Brand",
+        "format": "png",
+        "filename": "brand-dark-academia-universe"
+      }
+    },
+    {
+      "id": "out-afro",
+      "type": "output",
+      "position": { "x": 1050, "y": 770 },
+      "data": {
+        "label": "Afrofuturism Brand",
+        "format": "png",
+        "filename": "brand-afrofuturism-universe"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "logo-import",
+      "target": "cyberpunk-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "reference"
+    },
+    {
+      "id": "e2",
+      "source": "logo-import",
+      "target": "cottagecore-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "reference"
+    },
+    {
+      "id": "e3",
+      "source": "logo-import",
+      "target": "vaporwave-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "reference"
+    },
+    {
+      "id": "e4",
+      "source": "logo-import",
+      "target": "brutalist-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "reference"
+    },
+    {
+      "id": "e5",
+      "source": "logo-import",
+      "target": "solarpunk-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "reference"
+    },
+    {
+      "id": "e6",
+      "source": "logo-import",
+      "target": "dark-academia-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "reference"
+    },
+    {
+      "id": "e7",
+      "source": "logo-import",
+      "target": "afrofuturism-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "reference"
+    },
+    {
+      "id": "e8",
+      "source": "product-import",
+      "target": "cyberpunk-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "source"
+    },
+    {
+      "id": "e9",
+      "source": "product-import",
+      "target": "cottagecore-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "source"
+    },
+    {
+      "id": "e10",
+      "source": "product-import",
+      "target": "vaporwave-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "source"
+    },
+    {
+      "id": "e11",
+      "source": "product-import",
+      "target": "brutalist-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "source"
+    },
+    {
+      "id": "e12",
+      "source": "product-import",
+      "target": "solarpunk-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "source"
+    },
+    {
+      "id": "e13",
+      "source": "product-import",
+      "target": "dark-academia-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "source"
+    },
+    {
+      "id": "e14",
+      "source": "product-import",
+      "target": "afrofuturism-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "source"
+    },
+    {
+      "id": "e15",
+      "source": "cyberpunk-prompt",
+      "target": "gen-cyber"
+    },
+    {
+      "id": "e16",
+      "source": "cottagecore-prompt",
+      "target": "gen-cottage"
+    },
+    {
+      "id": "e17",
+      "source": "vaporwave-prompt",
+      "target": "gen-vapor"
+    },
+    {
+      "id": "e18",
+      "source": "brutalist-prompt",
+      "target": "gen-brutal"
+    },
+    {
+      "id": "e19",
+      "source": "solarpunk-prompt",
+      "target": "gen-solar"
+    },
+    {
+      "id": "e20",
+      "source": "dark-academia-prompt",
+      "target": "gen-academia"
+    },
+    {
+      "id": "e21",
+      "source": "afrofuturism-prompt",
+      "target": "gen-afro"
+    },
+    {
+      "id": "e22",
+      "source": "gen-cyber",
+      "target": "out-cyber"
+    },
+    {
+      "id": "e23",
+      "source": "gen-cottage",
+      "target": "out-cottage"
+    },
+    {
+      "id": "e24",
+      "source": "gen-vapor",
+      "target": "out-vapor"
+    },
+    {
+      "id": "e25",
+      "source": "gen-brutal",
+      "target": "out-brutal"
+    },
+    {
+      "id": "e26",
+      "source": "gen-solar",
+      "target": "out-solar"
+    },
+    {
+      "id": "e27",
+      "source": "gen-academia",
+      "target": "out-academia"
+    },
+    {
+      "id": "e28",
+      "source": "gen-afro",
+      "target": "out-afro"
+    }
+  ],
+  "metadata": {
+    "version": "1.0",
+    "createdAt": "2026-02-09",
+    "tags": ["branding", "aesthetics", "multiverse", "creative-exploration", "expert"],
+    "useCases": [
+      "Brand identity exploration",
+      "Finding your brand's aesthetic fit",
+      "Creating diverse marketing materials",
+      "Targeting different audience segments",
+      "Social media content variety",
+      "Rebranding research and development"
+    ],
+    "tips": [
+      "This is an exploratory workflow - not all aesthetics will fit your brand",
+      "Use results to identify which aesthetic resonates with your target audience",
+      "Each universe represents a different cultural and visual language",
+      "Consider your brand values when choosing which aesthetics to pursue",
+      "Mix and match elements from different universes for unique hybrid styles",
+      "This workflow uses ~210 credits (30 per generation × 7 universes)",
+      "Disable universes that don't align with your brand to save credits"
+    ],
+    "aestheticGuide": {
+      "cyberpunk": "Tech-forward, edgy, urban, rebellious brands",
+      "cottagecore": "Sustainable, artisan, wellness, natural brands",
+      "vaporwave": "Nostalgic, ironic, internet-native, Gen-Z brands",
+      "brutalist": "Bold, minimalist, architectural, luxury brands",
+      "solarpunk": "Eco-tech, optimistic, innovative, future-positive brands",
+      "darkAcademia": "Intellectual, sophisticated, timeless, premium brands",
+      "afrofuturism": "Cultural, innovative, powerful, visionary brands"
+    }
+  }
+}

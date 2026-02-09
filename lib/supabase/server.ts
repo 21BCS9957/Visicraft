@@ -15,13 +15,20 @@ export async function createClient() {
         },
         setAll(cookiesToSet: Array<{ name: string; value: string; options?: CookieOptions }>) {
           try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            );
-          } catch {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              // Ensure cookies work in production with proper settings
+              const cookieOptions = {
+                ...options,
+                sameSite: 'lax' as const,
+                secure: process.env.NODE_ENV === 'production',
+                path: '/',
+              };
+              cookieStore.set(name, value, cookieOptions);
+            });
+          } catch (error) {
             // The `setAll` method was called from a Server Component.
-            // This can be ignored if you have middleware refreshing
-            // user sessions.
+            // This can be ignored if you have middleware refreshing user sessions.
+            console.error('Cookie set error:', error);
           }
         },
       },

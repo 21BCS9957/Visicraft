@@ -1,14 +1,29 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
-import { ChevronDown, Share, Crown, MessageCircle, Plus } from 'lucide-react';
+import { ChevronDown, Share, Crown, MessageCircle, Plus, Grid3x3, FolderKanban, Check } from 'lucide-react';
+import { BackgroundVariant } from 'reactflow';
 
 interface TopbarProps {
   onNewWorkflow?: () => void;
+  showGrid?: boolean;
+  onToggleGrid?: () => void;
+  gridVariant?: BackgroundVariant;
+  onChangeGridVariant?: (variant: BackgroundVariant) => void;
+  onOrganizeNodes?: () => void;
 }
 
-export function Topbar({ onNewWorkflow }: TopbarProps) {
+export function Topbar({ 
+  onNewWorkflow, 
+  showGrid = true, 
+  onToggleGrid,
+  gridVariant = BackgroundVariant.Dots,
+  onChangeGridVariant,
+  onOrganizeNodes 
+}: TopbarProps) {
+  const [showGridMenu, setShowGridMenu] = useState(false);
+
   return (
     <div className="h-14 bg-[#0a0a0a] border-b border-[#1a1a1a] flex items-center justify-between px-4">
       <div className="flex items-center gap-3">
@@ -30,6 +45,84 @@ export function Topbar({ onNewWorkflow }: TopbarProps) {
       </div>
 
       <div className="flex items-center gap-3">
+        {/* Grid Toggle with Dropdown */}
+        <div className="relative">
+          <button 
+            onClick={() => setShowGridMenu(!showGridMenu)}
+            className={`px-3 py-1.5 text-sm rounded transition-colors flex items-center gap-2 ${
+              showGrid ? 'bg-[#1a1a1a] text-white' : 'text-gray-400 hover:bg-[#1a1a1a] hover:text-white'
+            }`}
+            title="Grid Settings"
+          >
+            <Grid3x3 className="w-4 h-4" />
+            Grid
+          </button>
+          
+          {showGridMenu && (
+            <div className="absolute top-full mt-2 right-0 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl p-2 w-48 z-50">
+              <button
+                onClick={() => {
+                  onToggleGrid?.();
+                  setShowGridMenu(false);
+                }}
+                className="w-full px-3 py-2 text-sm text-left text-white hover:bg-[#2a2a2a] rounded flex items-center justify-between"
+              >
+                <span>Show Grid</span>
+                {showGrid && <Check className="w-4 h-4 text-green-500" />}
+              </button>
+              
+              <div className="border-t border-[#2a2a2a] my-2" />
+              
+              <div className="px-3 py-1 text-xs text-gray-400">Grid Style</div>
+              
+              <button
+                onClick={() => {
+                  onChangeGridVariant?.(BackgroundVariant.Dots);
+                  setShowGridMenu(false);
+                }}
+                className="w-full px-3 py-2 text-sm text-left text-white hover:bg-[#2a2a2a] rounded flex items-center justify-between"
+              >
+                <span>Dots</span>
+                {gridVariant === BackgroundVariant.Dots && <Check className="w-4 h-4 text-green-500" />}
+              </button>
+              
+              <button
+                onClick={() => {
+                  onChangeGridVariant?.(BackgroundVariant.Lines);
+                  setShowGridMenu(false);
+                }}
+                className="w-full px-3 py-2 text-sm text-left text-white hover:bg-[#2a2a2a] rounded flex items-center justify-between"
+              >
+                <span>Lines</span>
+                {gridVariant === BackgroundVariant.Lines && <Check className="w-4 h-4 text-green-500" />}
+              </button>
+              
+              <button
+                onClick={() => {
+                  onChangeGridVariant?.(BackgroundVariant.Cross);
+                  setShowGridMenu(false);
+                }}
+                className="w-full px-3 py-2 text-sm text-left text-white hover:bg-[#2a2a2a] rounded flex items-center justify-between"
+              >
+                <span>Cross</span>
+                {gridVariant === BackgroundVariant.Cross && <Check className="w-4 h-4 text-green-500" />}
+              </button>
+            </div>
+          )}
+        </div>
+        
+        {/* Organize Nodes Button */}
+        {onOrganizeNodes && (
+          <button 
+            onClick={onOrganizeNodes}
+            className="px-3 py-1.5 text-sm text-white hover:bg-[#1a1a1a] rounded transition-colors flex items-center gap-2"
+            title="Auto-organize nodes in a grid"
+          >
+            <FolderKanban className="w-4 h-4" />
+            Organize
+          </button>
+        )}
+        
         {onNewWorkflow && (
           <button 
             onClick={onNewWorkflow}

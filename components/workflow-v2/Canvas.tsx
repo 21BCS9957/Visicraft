@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useRef, useState, useMemo, useEffect } from 'react';
+import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import ReactFlow, {
   Background,
@@ -13,8 +13,6 @@ import ReactFlow, {
   Edge,
   Node,
   ReactFlowProvider,
-  NodeChange,
-  EdgeChange,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -31,7 +29,6 @@ import { executeWorkflow } from '@/lib/workflow/executor';
 import { loadTemplate } from '@/lib/workflow/templateLoader';
 import toast from 'react-hot-toast';
 
-// Define node and edge types outside component to prevent recreation
 const nodeTypes = {
   import: ImportNode,
   prompt: PromptNode,
@@ -43,13 +40,11 @@ const edgeTypes = {
   custom: CustomEdge,
 };
 
-// Memoized default edge options
 const defaultEdgeOptions = {
   type: 'custom',
   animated: false,
 };
 
-// Memoized ReactFlow props
 const proOptions = { hideAttribution: true };
 
 function FlowCanvas() {
@@ -60,8 +55,10 @@ function FlowCanvas() {
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [templateLoaded, setTemplateLoaded] = useState(false);
+  const [showGrid, setShowGrid] = useState(true);
+  const [gridSize] = useState(20);
+  const [gridVariant, setGridVariant] = useState<BackgroundVariant>(BackgroundVariant.Dots);
 
-  // Load template from URL parameter on mount
   useEffect(() => {
     if (!templateLoaded) {
       const template = searchParams.get('template') || 'custom';
@@ -70,33 +67,13 @@ function FlowCanvas() {
       setEdges(templateEdges);
       setTemplateLoaded(true);
       
-      if (template === 'custom') {
-        toast.success('Blank canvas ready!');
-      } else {
-        const templateName = template.split('-').map(word => 
-          word.charAt(0).toUpperCase() + word.slice(1)
-        ).join(' ');
-        toast.success(`${templateName} template loaded!`);
-      }
+      const templateName = template === 'custom' 
+        ? 'Blank canvas ready!' 
+        : `${template.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')} template loaded!`;
+      toast.success(templateName);
     }
   }, [searchParams, templateLoaded, setNodes, setEdges]);
 
-  const handleSelectTemplate = useCallback((templateId: string) => {
-    const { nodes: templateNodes, edges: templateEdges } = loadTemplate(templateId);
-    setNodes(templateNodes);
-    setEdges(templateEdges);
-    
-    if (templateId === 'custom') {
-      toast.success('Blank canvas ready!');
-    } else {
-      const templateName = templateId.split('-').map(word => 
-        word.charAt(0).toUpperCase() + word.slice(1)
-      ).join(' ');
-      toast.success(`${templateName} template loaded!`);
-    }
-  }, [setNodes, setEdges]);
-
-  // Optimized onConnect with minimal re-renders
   const onConnect = useCallback(
     (params: Connection) => {
       const newEdge: Edge = {
@@ -106,13 +83,10 @@ function FlowCanvas() {
         target: params.target!,
         type: 'custom',
         animated: false,
-        style: {
-          strokeWidth: 2,
-        },
+        style: { strokeWidth: 2 },
       };
       setEdges((eds) => addEdge(newEdge, eds));
       
-      // Batch update target node with source data
       setNodes((nds) => {
         const sourceNode = nds.find(n => n.id === params.source);
         const targetNode = nds.find(n => n.id === params.target);
@@ -149,12 +123,9 @@ function FlowCanvas() {
     [setEdges, setNodes]
   );
 
-  const onNodeClick = useCallback(
-    (_: React.MouseEvent, node: Node) => {
-      setSelectedNode(node);
-    },
-    []
-  );
+  const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+    setSelectedNode(node);
+  }, []);
 
   const handleAddNode = useCallback((type: string, position: { x: number; y: number }, nodeType?: string) => {
     const newNode: Node = {
@@ -178,29 +149,46 @@ function FlowCanvas() {
       await executeWorkflow(nodes as any, edges);
       toast.success('Workflow completed!', { id: 'workflow' });
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : 'Workflow failed',
-        { id: 'workflow' }
-      );
+      toast.error(error instanceof Error ? error.message : 'Workflow failed', { id: 'workflow' });
     } finally {
       setIsRunning(false);
     }
   };
 
-  // Memoize MiniMap node color function
   const nodeColor = useCallback((node: Node) => {
-    if (node.type === 'generate') return '#ef4444';
-    if (node.type === 'import') return '#3b82f6';
-    if (node.type === 'prompt') return '#8b5cf6';
-    return '#666666';
+    switch (node.type) {
+      case 'generate': return '#ef4444';
+      case 'import': return '#3b82f6';
+      case 'prompt': return '#8b5cf6';
+      default: return '#666666';
+    }
   }, []);
+
+  const handleOrganizeNodes = useCallback(() => {
+    const nodeWidth = 250;
+    const nodeHeight = 150;
+    const padding = 50;
+    
+    setNodes((nds) => nds.map((node, index) => ({
+      ...node,
+      position: {
+        x: (index % 4) * (nodeWidth + padding) + padding,
+        y: Math.floor(index / 4) * (nodeHeight + padding) + padding,
+      },
+    })));
+    toast.success('Nodes organized!');
+  }, [setNodes]);
 
   return (
     <div className="w-full h-screen flex flex-col bg-black">
-      <Topbar onNewWorkflow={() => {
-        // Reload with custom template
-        window.location.href = '/workflow?template=custom';
-      }} />
+      <Topbar 
+        onNewWorkflow={() => window.location.href = '/workflow?template=custom'}
+        showGrid={showGrid}
+        onToggleGrid={() => setShowGrid(!showGrid)}
+        gridVariant={gridVariant}
+        onChangeGridVariant={setGridVariant}
+        onOrganizeNodes={handleOrganizeNodes}
+      />
       
       <div className="flex-1 flex relative overflow-hidden">
         <Sidebar onAddNode={handleAddNode} />
@@ -219,44 +207,36 @@ function FlowCanvas() {
             className="bg-black"
             proOptions={proOptions}
             defaultEdgeOptions={defaultEdgeOptions}
-            // Performance optimizations
-            nodesDraggable={true}
-            nodesConnectable={true}
-            elementsSelectable={true}
+            nodesDraggable
+            nodesConnectable
+            elementsSelectable
             selectNodesOnDrag={false}
-            panOnDrag={true}
+            panOnDrag
             minZoom={0.2}
             maxZoom={4}
-            // Disable expensive features during interaction
-            onlyRenderVisibleElements={true}
-            // Reduce re-renders
+            onlyRenderVisibleElements
             nodeOrigin={[0.5, 0.5]}
           >
-            <Background
-              color="#ffffff"
-              gap={20}
-              size={1.5}
-              variant={BackgroundVariant.Dots}
-              className="opacity-20"
-            />
+            {showGrid && (
+              <Background
+                color="#ffffff"
+                gap={gridSize}
+                size={gridVariant === BackgroundVariant.Dots ? 1.5 : 1}
+                variant={gridVariant}
+                className="opacity-20"
+              />
+            )}
             
             <MiniMap
               nodeColor={nodeColor}
               maskColor="rgba(0, 0, 0, 0.9)"
               className="!bg-[#0a0a0a] !border !border-[#2a2a2a] !rounded-lg"
-              style={{
-                position: 'absolute',
-                bottom: 100,
-                right: 24,
-              }}
+              style={{ position: 'absolute', bottom: 100, right: 24 }}
             />
           </ReactFlow>
         </div>
         
-        <PropertiesPanel
-          selectedNode={selectedNode}
-          onClose={() => setSelectedNode(null)}
-        />
+        <PropertiesPanel selectedNode={selectedNode} onClose={() => setSelectedNode(null)} />
       </div>
       
       <RunControls onRun={handleRun} isRunning={isRunning} />

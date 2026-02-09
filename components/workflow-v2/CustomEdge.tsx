@@ -57,7 +57,7 @@ function CustomEdgeComponent({
 
   return (
     <>
-      {/* Main edge path - solid line */}
+      {/* Main edge path - smooth bezier curve */}
       <path
         id={id}
         className="react-flow__edge-path cursor-pointer transition-all"
@@ -66,11 +66,25 @@ function CustomEdgeComponent({
         strokeWidth={selected ? 3 : 2}
         fill="none"
         onClick={handleClick}
+        strokeLinecap="round"
+        strokeLinejoin="round"
         style={{
-          strokeDasharray: 'none',
-          transition: 'stroke-width 0.1s ease',
+          transition: 'stroke-width 0.15s ease, stroke 0.15s ease',
         }}
       />
+      
+      {/* Glow effect when selected */}
+      {selected && (
+        <path
+          d={edgePath}
+          stroke={edgeColor}
+          strokeWidth={8}
+          fill="none"
+          opacity={0.2}
+          strokeLinecap="round"
+          style={{ pointerEvents: 'none' }}
+        />
+      )}
       
       {/* Invisible wider path for easier clicking */}
       <path
@@ -80,6 +94,7 @@ function CustomEdgeComponent({
         fill="none"
         onClick={handleClick}
         className="cursor-pointer"
+        strokeLinecap="round"
         style={{ pointerEvents: 'stroke' }}
       />
     </>

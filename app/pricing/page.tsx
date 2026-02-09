@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { Check, X } from 'lucide-react';
 import { Icon } from '@iconify/react';
 import { useAuth } from '@/lib/contexts/AuthContext';
+import { useCredits } from '@/lib/contexts/CreditsContext';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 
@@ -196,6 +197,7 @@ export default function PricingPage() {
   const [hoveredTier, setHoveredTier] = useState<string | null>(null);
   const [processingPayment, setProcessingPayment] = useState<string | null>(null);
   const { user } = useAuth();
+  const { refreshCredits } = useCredits();
   const router = useRouter();
 
   const handlePayment = async (tier: typeof pricingTiers[0]) => {
@@ -312,7 +314,11 @@ export default function PricingPage() {
             console.log('📋 Verification response:', verifyData);
 
             if (verifyData.success) {
+              // Refresh credits immediately to show updated balance
+              await refreshCredits();
+              
               toast.success(`Payment successful! ${totalCredits.toLocaleString()} credits added to your account.`);
+              
               // Redirect to dashboard or workflow
               setTimeout(() => {
                 router.push('/workflow');

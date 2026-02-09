@@ -1,0 +1,308 @@
+{
+  "id": "viral-thumbnail-factory",
+  "name": "Viral Thumbnail Factory",
+  "description": "Create attention-grabbing YouTube thumbnails with multiple emotion-driven variations. Uses psychology-backed design principles to maximize click-through rates.",
+  "category": "YouTube",
+  "difficulty": "advanced",
+  "estimatedCredits": 120,
+  "thumbnail": "/templates/viral-thumbnail.jpg",
+  "nodes": [
+    {
+      "id": "face-import",
+      "type": "import",
+      "position": { "x": 100, "y": 150 },
+      "data": {
+        "label": "Your Face/Subject",
+        "description": "Upload a clear photo of yourself or your subject with expressive emotion",
+        "placeholder": "Upload face photo...",
+        "acceptedFormats": ["image/jpeg", "image/png"],
+        "maxSize": 10485760
+      }
+    },
+    {
+      "id": "context-import",
+      "type": "import",
+      "position": { "x": 100, "y": 320 },
+      "data": {
+        "label": "Context Image",
+        "description": "Optional: Upload relevant context (product, scene, object)",
+        "placeholder": "Upload context image...",
+        "acceptedFormats": ["image/jpeg", "image/png"],
+        "maxSize": 10485760
+      }
+    },
+    {
+      "id": "shock-prompt",
+      "type": "prompt",
+      "position": { "x": 450, "y": 50 },
+      "data": {
+        "label": "😱 Shock & Awe",
+        "prompt": "YouTube thumbnail, SHOCKED expression, mouth wide open, eyes bulging, dramatic lighting with high contrast, explosive colorful background with motion blur, bright yellow and red accent colors, energy rays, exclamation marks, bold dramatic composition, viral thumbnail style, 16:9 aspect ratio, ultra HD quality",
+        "temperature": 0.85,
+        "style": "dramatic"
+      }
+    },
+    {
+      "id": "curiosity-prompt",
+      "type": "prompt",
+      "position": { "x": 450, "y": 180 },
+      "data": {
+        "label": "🤔 Curiosity Gap",
+        "prompt": "YouTube thumbnail, intrigued expression, raised eyebrow, mysterious smile, dark mysterious background with spotlight effect, question marks floating, purple and blue gradient, enigmatic atmosphere, 'what if' vibe, suspenseful composition, professional thumbnail design, 16:9 format",
+        "temperature": 0.8,
+        "style": "mysterious"
+      }
+    },
+    {
+      "id": "excitement-prompt",
+      "type": "prompt",
+      "position": { "x": 450, "y": 310 },
+      "data": {
+        "label": "🎉 Pure Excitement",
+        "prompt": "YouTube thumbnail, extremely excited expression, huge genuine smile, pointing gesture, vibrant rainbow gradient background, confetti and sparkles, energetic composition, bright saturated colors, celebration vibes, dynamic angle, professional YouTuber thumbnail style, 16:9 aspect ratio",
+        "temperature": 0.9,
+        "style": "energetic"
+      }
+    },
+    {
+      "id": "controversy-prompt",
+      "type": "prompt",
+      "position": { "x": 450, "y": 440 },
+      "data": {
+        "label": "⚡ Controversial Take",
+        "prompt": "YouTube thumbnail, confident smirking expression, arms crossed, bold stance, split background with contrasting colors (red vs blue), versus composition, debate aesthetic, strong opinions vibe, polarizing design, attention-grabbing, professional thumbnail quality, 16:9 format",
+        "temperature": 0.75,
+        "style": "bold"
+      }
+    },
+    {
+      "id": "generate-shock",
+      "type": "generate",
+      "position": { "x": 800, "y": 50 },
+      "data": {
+        "label": "Generate Shock",
+        "model": "banana-pro-2k",
+        "resolution": "1920x1080",
+        "quality": "high",
+        "aspectRatio": "16:9"
+      }
+    },
+    {
+      "id": "generate-curiosity",
+      "type": "generate",
+      "position": { "x": 800, "y": 180 },
+      "data": {
+        "label": "Generate Curiosity",
+        "model": "banana-pro-2k",
+        "resolution": "1920x1080",
+        "quality": "high",
+        "aspectRatio": "16:9"
+      }
+    },
+    {
+      "id": "generate-excitement",
+      "type": "generate",
+      "position": { "x": 800, "y": 310 },
+      "data": {
+        "label": "Generate Excitement",
+        "model": "banana-pro-2k",
+        "resolution": "1920x1080",
+        "quality": "high",
+        "aspectRatio": "16:9"
+      }
+    },
+    {
+      "id": "generate-controversy",
+      "type": "generate",
+      "position": { "x": 800, "y": 440 },
+      "data": {
+        "label": "Generate Controversy",
+        "model": "banana-pro-2k",
+        "resolution": "1920x1080",
+        "quality": "high",
+        "aspectRatio": "16:9"
+      }
+    },
+    {
+      "id": "output-shock",
+      "type": "output",
+      "position": { "x": 1100, "y": 50 },
+      "data": {
+        "label": "Shock Thumbnail",
+        "format": "jpg",
+        "filename": "thumbnail-shock-awe"
+      }
+    },
+    {
+      "id": "output-curiosity",
+      "type": "output",
+      "position": { "x": 1100, "y": 180 },
+      "data": {
+        "label": "Curiosity Thumbnail",
+        "format": "jpg",
+        "filename": "thumbnail-curiosity-gap"
+      }
+    },
+    {
+      "id": "output-excitement",
+      "type": "output",
+      "position": { "x": 1100, "y": 310 },
+      "data": {
+        "label": "Excitement Thumbnail",
+        "format": "jpg",
+        "filename": "thumbnail-pure-excitement"
+      }
+    },
+    {
+      "id": "output-controversy",
+      "type": "output",
+      "position": { "x": 1100, "y": 440 },
+      "data": {
+        "label": "Controversy Thumbnail",
+        "format": "jpg",
+        "filename": "thumbnail-controversial"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "face-import",
+      "target": "shock-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "reference"
+    },
+    {
+      "id": "e2",
+      "source": "face-import",
+      "target": "curiosity-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "reference"
+    },
+    {
+      "id": "e3",
+      "source": "face-import",
+      "target": "excitement-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "reference"
+    },
+    {
+      "id": "e4",
+      "source": "face-import",
+      "target": "controversy-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "reference"
+    },
+    {
+      "id": "e5",
+      "source": "context-import",
+      "target": "shock-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "source"
+    },
+    {
+      "id": "e6",
+      "source": "context-import",
+      "target": "curiosity-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "source"
+    },
+    {
+      "id": "e7",
+      "source": "context-import",
+      "target": "excitement-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "source"
+    },
+    {
+      "id": "e8",
+      "source": "context-import",
+      "target": "controversy-prompt",
+      "sourceHandle": "output",
+      "targetHandle": "source"
+    },
+    {
+      "id": "e9",
+      "source": "shock-prompt",
+      "target": "generate-shock",
+      "sourceHandle": "output",
+      "targetHandle": "prompt"
+    },
+    {
+      "id": "e10",
+      "source": "curiosity-prompt",
+      "target": "generate-curiosity",
+      "sourceHandle": "output",
+      "targetHandle": "prompt"
+    },
+    {
+      "id": "e11",
+      "source": "excitement-prompt",
+      "target": "generate-excitement",
+      "sourceHandle": "output",
+      "targetHandle": "prompt"
+    },
+    {
+      "id": "e12",
+      "source": "controversy-prompt",
+      "target": "generate-controversy",
+      "sourceHandle": "output",
+      "targetHandle": "prompt"
+    },
+    {
+      "id": "e13",
+      "source": "generate-shock",
+      "target": "output-shock",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "e14",
+      "source": "generate-curiosity",
+      "target": "output-curiosity",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "e15",
+      "source": "generate-excitement",
+      "target": "output-excitement",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "e16",
+      "source": "generate-controversy",
+      "target": "output-controversy",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    }
+  ],
+  "metadata": {
+    "version": "1.0",
+    "createdAt": "2026-02-09",
+    "tags": ["youtube", "viral", "thumbnails", "psychology", "emotions", "advanced"],
+    "useCases": [
+      "YouTube video thumbnails",
+      "A/B testing different emotional appeals",
+      "Maximizing click-through rates",
+      "Content creator branding",
+      "Viral content strategy"
+    ],
+    "tips": [
+      "Use a photo with a neutral expression - AI will transform it to match each emotion",
+      "Context image helps ground the thumbnail in your video's topic",
+      "Each emotion targets different psychological triggers for clicks",
+      "Test multiple versions to see which performs best with your audience",
+      "Shock & Curiosity typically have highest CTR for educational content",
+      "Excitement works best for entertainment and lifestyle content",
+      "Controversy is powerful but use carefully to maintain brand trust"
+    ],
+    "psychologyNotes": {
+      "shock": "Triggers immediate attention through surprise and novelty",
+      "curiosity": "Creates information gap that viewers want to close",
+      "excitement": "Positive emotions increase sharing and engagement",
+      "controversy": "Polarization drives strong reactions and comments"
+    }
+  }
+}

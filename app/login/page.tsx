@@ -40,55 +40,40 @@ function LoginContent() {
   }, [router]);
 
   return (
-    <div className="min-h-screen bg-black text-white flex items-center justify-center relative overflow-hidden">
-      {/* Animated Background */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <motion.div
-          className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"
-          animate={{
-            x: [0, 100, 0],
-            y: [0, 50, 0],
-            scale: [1, 1.2, 1],
-          }}
-          transition={{
-            duration: 20,
-            repeat: Infinity,
-            ease: 'easeInOut',
-          }}
-        />
-        <motion.div
-          className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl"
-          animate={{
-            x: [0, -100, 0],
-            y: [0, -50, 0],
-            scale: [1, 1.3, 1],
-          }}
-          transition={{
-            duration: 25,
-            repeat: Infinity,
-            ease: 'easeInOut',
-          }}
-        />
-      </div>
+    <div className="min-h-screen bg-[#0a0a0a] text-white flex items-center justify-center relative overflow-hidden">
+      {/* Subtle Grid Background */}
+      <div 
+        className="absolute inset-0 opacity-[0.08]"
+        style={{
+          backgroundImage: `
+            linear-gradient(to right, #c8b4a0 1px, transparent 1px),
+            linear-gradient(to bottom, #c8b4a0 1px, transparent 1px)
+          `,
+          backgroundSize: '4rem 4rem',
+        }}
+      />
+
+      {/* Gradient Overlay */}
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#0a0a0a]/50 to-[#0a0a0a]" />
 
       <div className="relative z-10 w-full max-w-md px-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-[#0a0a0a]/90 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl"
+          className="bg-[#1a1a1a] backdrop-blur-xl border border-[#8b7355]/30 rounded-2xl p-8 shadow-2xl"
         >
           {/* Logo/Icon */}
           <div className="flex justify-center mb-6">
-            <div className="w-16 h-16 bg-gradient-to-br from-purple-500 via-pink-500 to-cyan-500 rounded-2xl flex items-center justify-center">
+            <div className="w-16 h-16 bg-gradient-to-br from-[#8b7355] to-[#6b5545] rounded-2xl flex items-center justify-center">
               <Sparkles className="w-8 h-8 text-white" />
             </div>
           </div>
 
           {/* Title */}
-          <h1 className="text-3xl font-bold text-center mb-2 bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+          <h1 className="text-3xl font-light text-center mb-2 text-white tracking-wider">
             Welcome to Visicraft
           </h1>
-          <p className="text-center text-gray-400 mb-8">
+          <p className="text-center text-gray-400 font-light mb-8">
             Sign in to start creating stunning AI visuals
           </p>
 
@@ -98,7 +83,7 @@ function LoginContent() {
             whileTap={{ scale: 0.98 }}
             onClick={handleGoogleSignIn}
             disabled={loading}
-            className="w-full bg-white hover:bg-gray-100 text-black font-semibold py-3 px-4 rounded-xl flex items-center justify-center gap-3 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-white hover:bg-gray-100 text-black font-light py-3 px-4 rounded-xl flex items-center justify-center gap-3 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? (
               <>
@@ -133,33 +118,33 @@ function LoginContent() {
           {/* Divider */}
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-white/10"></div>
+              <div className="w-full border-t border-[#8b7355]/20"></div>
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-[#0a0a0a] text-gray-400">
+              <span className="px-2 bg-[#1a1a1a] text-gray-400 font-light">
                 Secure authentication with Supabase
               </span>
             </div>
           </div>
 
           {/* Features */}
-          <div className="space-y-3 text-sm text-gray-400">
+          <div className="space-y-3 text-sm text-gray-400 font-light">
             <div className="flex items-center gap-2">
-              <div className="w-1.5 h-1.5 bg-cyan-400 rounded-full"></div>
+              <div className="w-1.5 h-1.5 bg-[#c8b4a0] rounded-full"></div>
               <span>Access to workflow editor</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-1.5 h-1.5 bg-purple-400 rounded-full"></div>
+              <div className="w-1.5 h-1.5 bg-[#8b7355] rounded-full"></div>
               <span>AI-powered thumbnail generation</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-1.5 h-1.5 bg-pink-400 rounded-full"></div>
+              <div className="w-1.5 h-1.5 bg-[#6b5545] rounded-full"></div>
               <span>Save and manage your creations</span>
             </div>
           </div>
 
           {/* Terms */}
-          <p className="text-xs text-gray-500 text-center mt-6">
+          <p className="text-xs text-gray-500 text-center mt-6 font-light">
             By signing in, you agree to our Terms of Service and Privacy Policy
           </p>
         </motion.div>
@@ -169,11 +154,11 @@ function LoginContent() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.2 }}
-          className="text-center mt-6 text-sm text-gray-400"
+          className="text-center mt-6 text-sm text-gray-400 font-light"
         >
           <p>
             New to Visicraft?{' '}
-            <span className="text-cyan-400">Get started for free</span>
+            <span className="text-[#c8b4a0]">Get started for free</span>
           </p>
         </motion.div>
       </div>

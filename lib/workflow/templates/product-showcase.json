@@ -1,0 +1,333 @@
+{
+  "id": "product-showcase",
+  "name": "Multi-Style Product Showcase",
+  "description": "Transform your product into stunning visuals with multiple artistic styles, backgrounds, and compositions. Perfect for e-commerce, social media, and marketing campaigns.",
+  "category": "E-commerce",
+  "difficulty": "advanced",
+  "estimatedCredits": 150,
+  "thumbnail": "/templates/product-showcase.jpg",
+  "nodes": [
+    {
+      "id": "product-1",
+      "type": "import",
+      "position": { "x": 100, "y": 100 },
+      "data": {
+        "label": "Product Image",
+        "description": "Upload your main product photo (white background recommended)",
+        "placeholder": "Upload product image...",
+        "acceptedFormats": ["image/jpeg", "image/png", "image/webp"],
+        "maxSize": 10485760
+      }
+    },
+    {
+      "id": "lifestyle-ref",
+      "type": "import",
+      "position": { "x": 100, "y": 250 },
+      "data": {
+        "label": "Lifestyle Reference",
+        "description": "Optional: Upload a lifestyle scene for context",
+        "placeholder": "Upload lifestyle reference...",
+        "acceptedFormats": ["image/jpeg", "image/png", "image/webp"],
+        "maxSize": 10485760
+      }
+    },
+    {
+      "id": "style-prompt-1",
+      "type": "prompt",
+      "position": { "x": 400, "y": 80 },
+      "data": {
+        "label": "Minimalist Studio",
+        "prompt": "Professional product photography, minimalist studio setup, soft diffused lighting, clean white background with subtle gradient, floating product with soft shadow, ultra-sharp focus, commercial quality, 8K resolution, studio lighting, premium aesthetic",
+        "temperature": 0.7,
+        "style": "photorealistic"
+      }
+    },
+    {
+      "id": "style-prompt-2",
+      "type": "prompt",
+      "position": { "x": 400, "y": 220 },
+      "data": {
+        "label": "Luxury Dark Mode",
+        "prompt": "Luxury product photography, dramatic dark background with gold accents, moody atmospheric lighting, elegant composition, premium feel, sophisticated color grading, high contrast, cinematic lighting, depth of field, professional commercial shot",
+        "temperature": 0.8,
+        "style": "cinematic"
+      }
+    },
+    {
+      "id": "style-prompt-3",
+      "type": "prompt",
+      "position": { "x": 400, "y": 360 },
+      "data": {
+        "label": "Natural Lifestyle",
+        "prompt": "Natural lifestyle product photography, organic setting with plants and natural materials, warm sunlight streaming through window, cozy atmosphere, authentic lifestyle context, soft natural colors, Instagram-worthy aesthetic, relatable and inviting",
+        "temperature": 0.75,
+        "style": "lifestyle"
+      }
+    },
+    {
+      "id": "style-prompt-4",
+      "type": "prompt",
+      "position": { "x": 400, "y": 500 },
+      "data": {
+        "label": "Vibrant Pop Art",
+        "prompt": "Bold pop art style product photography, vibrant neon colors, dynamic composition, energetic vibe, modern graphic design elements, colorful gradient background, eye-catching and playful, social media optimized, Gen-Z aesthetic, trendy and fun",
+        "temperature": 0.9,
+        "style": "artistic"
+      }
+    },
+    {
+      "id": "style-prompt-5",
+      "type": "prompt",
+      "position": { "x": 400, "y": 640 },
+      "data": {
+        "label": "Futuristic Tech",
+        "prompt": "Futuristic tech product photography, holographic elements, neon blue and purple lighting, sci-fi aesthetic, floating in digital space, glowing particles, cyberpunk vibes, high-tech environment, innovative and cutting-edge feel, 3D rendered look",
+        "temperature": 0.85,
+        "style": "futuristic"
+      }
+    },
+    {
+      "id": "generate-1",
+      "type": "generate",
+      "position": { "x": 750, "y": 80 },
+      "data": {
+        "label": "Generate Minimalist",
+        "model": "banana-pro-2k",
+        "resolution": "2048x2048",
+        "quality": "high",
+        "aspectRatio": "1:1"
+      }
+    },
+    {
+      "id": "generate-2",
+      "type": "generate",
+      "position": { "x": 750, "y": 220 },
+      "data": {
+        "label": "Generate Luxury",
+        "model": "banana-pro-2k",
+        "resolution": "2048x2048",
+        "quality": "high",
+        "aspectRatio": "1:1"
+      }
+    },
+    {
+      "id": "generate-3",
+      "type": "generate",
+      "position": { "x": 750, "y": 360 },
+      "data": {
+        "label": "Generate Lifestyle",
+        "model": "banana-pro-2k",
+        "resolution": "2048x2048",
+        "quality": "high",
+        "aspectRatio": "1:1"
+      }
+    },
+    {
+      "id": "generate-4",
+      "type": "generate",
+      "position": { "x": 750, "y": 500 },
+      "data": {
+        "label": "Generate Pop Art",
+        "model": "banana-pro-2k",
+        "resolution": "2048x2048",
+        "quality": "high",
+        "aspectRatio": "1:1"
+      }
+    },
+    {
+      "id": "generate-5",
+      "type": "generate",
+      "position": { "x": 750, "y": 640 },
+      "data": {
+        "label": "Generate Futuristic",
+        "model": "banana-pro-2k",
+        "resolution": "2048x2048",
+        "quality": "high",
+        "aspectRatio": "1:1"
+      }
+    },
+    {
+      "id": "output-1",
+      "type": "output",
+      "position": { "x": 1050, "y": 80 },
+      "data": {
+        "label": "Minimalist Output",
+        "format": "png",
+        "filename": "product-minimalist-studio"
+      }
+    },
+    {
+      "id": "output-2",
+      "type": "output",
+      "position": { "x": 1050, "y": 220 },
+      "data": {
+        "label": "Luxury Output",
+        "format": "png",
+        "filename": "product-luxury-dark"
+      }
+    },
+    {
+      "id": "output-3",
+      "type": "output",
+      "position": { "x": 1050, "y": 360 },
+      "data": {
+        "label": "Lifestyle Output",
+        "format": "png",
+        "filename": "product-natural-lifestyle"
+      }
+    },
+    {
+      "id": "output-4",
+      "type": "output",
+      "position": { "x": 1050, "y": 500 },
+      "data": {
+        "label": "Pop Art Output",
+        "format": "png",
+        "filename": "product-vibrant-pop"
+      }
+    },
+    {
+      "id": "output-5",
+      "type": "output",
+      "position": { "x": 1050, "y": 640 },
+      "data": {
+        "label": "Futuristic Output",
+        "format": "png",
+        "filename": "product-futuristic-tech"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "product-1",
+      "target": "style-prompt-1",
+      "sourceHandle": "output",
+      "targetHandle": "reference"
+    },
+    {
+      "id": "e2",
+      "source": "product-1",
+      "target": "style-prompt-2",
+      "sourceHandle": "output",
+      "targetHandle": "reference"
+    },
+    {
+      "id": "e3",
+      "source": "product-1",
+      "target": "style-prompt-3",
+      "sourceHandle": "output",
+      "targetHandle": "reference"
+    },
+    {
+      "id": "e4",
+      "source": "product-1",
+      "target": "style-prompt-4",
+      "sourceHandle": "output",
+      "targetHandle": "reference"
+    },
+    {
+      "id": "e5",
+      "source": "product-1",
+      "target": "style-prompt-5",
+      "sourceHandle": "output",
+      "targetHandle": "reference"
+    },
+    {
+      "id": "e6",
+      "source": "lifestyle-ref",
+      "target": "style-prompt-3",
+      "sourceHandle": "output",
+      "targetHandle": "source"
+    },
+    {
+      "id": "e7",
+      "source": "style-prompt-1",
+      "target": "generate-1",
+      "sourceHandle": "output",
+      "targetHandle": "prompt"
+    },
+    {
+      "id": "e8",
+      "source": "style-prompt-2",
+      "target": "generate-2",
+      "sourceHandle": "output",
+      "targetHandle": "prompt"
+    },
+    {
+      "id": "e9",
+      "source": "style-prompt-3",
+      "target": "generate-3",
+      "sourceHandle": "output",
+      "targetHandle": "prompt"
+    },
+    {
+      "id": "e10",
+      "source": "style-prompt-4",
+      "target": "generate-4",
+      "sourceHandle": "output",
+      "targetHandle": "prompt"
+    },
+    {
+      "id": "e11",
+      "source": "style-prompt-5",
+      "target": "generate-5",
+      "sourceHandle": "output",
+      "targetHandle": "prompt"
+    },
+    {
+      "id": "e12",
+      "source": "generate-1",
+      "target": "output-1",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "e13",
+      "source": "generate-2",
+      "target": "output-2",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "e14",
+      "source": "generate-3",
+      "target": "output-3",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "e15",
+      "source": "generate-4",
+      "target": "output-4",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    },
+    {
+      "id": "e16",
+      "source": "generate-5",
+      "target": "output-5",
+      "sourceHandle": "output",
+      "targetHandle": "input"
+    }
+  ],
+  "metadata": {
+    "version": "1.0",
+    "createdAt": "2026-02-09",
+    "tags": ["product", "e-commerce", "marketing", "multi-style", "advanced"],
+    "useCases": [
+      "E-commerce product listings",
+      "Social media marketing campaigns",
+      "Product catalog diversity",
+      "A/B testing different styles",
+      "Brand consistency exploration"
+    ],
+    "tips": [
+      "Use a clean product photo with white background for best results",
+      "The lifestyle reference is optional but enhances the Natural Lifestyle variant",
+      "Each style generates independently - you can disable styles you don't need",
+      "Adjust temperature values in prompts to control creativity vs consistency",
+      "This workflow uses ~150 credits (30 per generation × 5 styles)"
+    ]
+  }
+}
