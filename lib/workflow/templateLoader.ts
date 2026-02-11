@@ -28,7 +28,7 @@ export const templates: Record<string, WorkflowTemplate> = {
   'brand-universe-explorer': brandUniverseTemplate as WorkflowTemplate,
 };
 
-export function loadTemplate(templateId: string): { nodes: Node[]; edges: Edge[] } {
+export function loadTemplate(templateId: string): { nodes: Node[]; edges: Edge[]; viewport?: { x: number; y: number; zoom: number } } {
   if (templateId === 'custom') {
     return { nodes: [], edges: [] };
   }
@@ -41,6 +41,7 @@ export function loadTemplate(templateId: string): { nodes: Node[]; edges: Edge[]
   return {
     nodes: template.nodes,
     edges: template.edges,
+    viewport: (template as any).viewport,
   };
 }
 

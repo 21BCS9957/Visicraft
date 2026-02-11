@@ -89,14 +89,24 @@ function FlowCanvas() {
   const [showFilePanel, setShowFilePanel] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [initialViewport, setInitialViewport] = useState<{ x: number; y: number; zoom: number } | null>(null);
   const isMobile = useIsMobile();
 
   useEffect(() => {
     if (!templateLoaded) {
       const template = searchParams.get('template') || 'custom';
-      const { nodes: templateNodes, edges: templateEdges } = loadTemplate(template);
-      setNodes(templateNodes);
-      setEdges(templateEdges);
+      const templateData = loadTemplate(template);
+      setNodes(templateData.nodes);
+      setEdges(templateData.edges);
+      
+      // Set viewport if template has one
+      if (templateData.viewport) {
+        setInitialViewport(templateData.viewport);
+        setTimeout(() => {
+          reactFlowInstance.setViewport(templateData.viewport);
+        }, 100);
+      }
+      
       setTemplateLoaded(true);
       setHasUnsavedChanges(false); // Reset unsaved changes on initial load
       
@@ -105,7 +115,7 @@ function FlowCanvas() {
         : `${template.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')} template loaded!`;
       toast.success(templateName);
     }
-  }, [searchParams, templateLoaded, setNodes, setEdges]);
+  }, [searchParams, templateLoaded, setNodes, setEdges, reactFlowInstance]);
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -255,9 +265,9 @@ function FlowCanvas() {
 
   const handleSelectTemplate = useCallback((templateId: string) => {
     // Load template directly - no confirmation needed when explicitly selecting from modal
-    const { nodes: templateNodes, edges: templateEdges } = loadTemplate(templateId);
-    setNodes(templateNodes);
-    setEdges(templateEdges);
+    const templateData = loadTemplate(templateId);
+    setNodes(templateData.nodes);
+    setEdges(templateData.edges);
     setHasUnsavedChanges(false);
     setShowTemplateModal(false);
     
@@ -266,9 +276,13 @@ function FlowCanvas() {
       : `${templateId.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')} template loaded!`;
     toast.success(templateName);
     
-    // Fit view after loading template
+    // Apply viewport if template has one, otherwise fit view
     setTimeout(() => {
-      reactFlowInstance.fitView({ padding: 0.2, duration: 400 });
+      if (templateData.viewport) {
+        reactFlowInstance.setViewport(templateData.viewport);
+      } else {
+        reactFlowInstance.fitView({ padding: 0.2, duration: 400 });
+      }
     }, 100);
   }, [setNodes, setEdges, reactFlowInstance]);
 
