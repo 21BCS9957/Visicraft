@@ -99,6 +99,39 @@ function FlowCanvas() {
       setNodes(templateData.nodes);
       setEdges(templateData.edges);
       
+      // Initialize connections for pre-connected nodes in template
+      if (templateData.edges.length > 0) {
+        setTimeout(() => {
+          setNodes((nds) => {
+            return nds.map(node => {
+              if (node.type !== 'generate') return node;
+              
+              const updatedNode = { ...node, data: { ...node.data } };
+              
+              // Find all edges connected to this generate node
+              templateData.edges.forEach(edge => {
+                if (edge.target === node.id) {
+                  const sourceNode = templateData.nodes.find(n => n.id === edge.source);
+                  if (!sourceNode) return;
+                  
+                  const sourceImageUrl = sourceNode.data.supabaseUrl || sourceNode.data.imageUrl;
+                  
+                  if (edge.targetHandle === 'referenceImage' && sourceImageUrl) {
+                    updatedNode.data.referenceImageUrl = sourceImageUrl;
+                  } else if (edge.targetHandle === 'sourceImage' && sourceImageUrl) {
+                    updatedNode.data.sourceImageUrl = sourceImageUrl;
+                  } else if (edge.targetHandle === 'prompt' && sourceNode.data.text) {
+                    updatedNode.data.promptText = sourceNode.data.text;
+                  }
+                }
+              });
+              
+              return updatedNode;
+            });
+          });
+        }, 100);
+      }
+      
       // Set viewport if template has one
       if (templateData.viewport) {
         setInitialViewport(templateData.viewport);
@@ -145,10 +178,13 @@ function FlowCanvas() {
           if (updatedNode.type === 'generate') {
             const handleId = params.targetHandle;
             
-            if (handleId === 'referenceImage' && sourceNode.data.supabaseUrl) {
-              updatedNode.data.referenceImageUrl = sourceNode.data.supabaseUrl;
-            } else if (handleId === 'sourceImage' && sourceNode.data.supabaseUrl) {
-              updatedNode.data.sourceImageUrl = sourceNode.data.supabaseUrl;
+            // Check for both supabaseUrl (uploaded) and imageUrl (template example)
+            const sourceImageUrl = sourceNode.data.supabaseUrl || sourceNode.data.imageUrl;
+            
+            if (handleId === 'referenceImage' && sourceImageUrl) {
+              updatedNode.data.referenceImageUrl = sourceImageUrl;
+            } else if (handleId === 'sourceImage' && sourceImageUrl) {
+              updatedNode.data.sourceImageUrl = sourceImageUrl;
             } else if (handleId === 'prompt' && sourceNode.data.text) {
               updatedNode.data.promptText = sourceNode.data.text;
             }
