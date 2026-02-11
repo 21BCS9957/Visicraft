@@ -103,7 +103,7 @@ function FlowCanvas() {
       if (templateData.viewport) {
         setInitialViewport(templateData.viewport);
         setTimeout(() => {
-          reactFlowInstance.setViewport(templateData.viewport);
+          reactFlowInstance.setViewport(templateData.viewport!);
         }, 100);
       }
       
