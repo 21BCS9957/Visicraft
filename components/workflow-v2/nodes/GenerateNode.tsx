@@ -460,15 +460,15 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/95 backdrop-blur-sm flex items-center justify-center"
-            style={{ zIndex: 99999 }}
+            className="fixed inset-0 bg-black flex items-center justify-center"
+            style={{ zIndex: 999999 }}
             onClick={() => setShowFullscreen(false)}
           >
             {/* Close button */}
             <button
               onClick={() => setShowFullscreen(false)}
               className="fixed top-6 right-6 text-white hover:text-gray-300 transition-colors bg-black/50 hover:bg-black/70 rounded-full p-3"
-              style={{ zIndex: 100001 }}
+              style={{ zIndex: 1000001 }}
             >
               <X className="w-8 h-8" />
             </button>
@@ -481,6 +481,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
               src={result}
               alt="Generated - Fullscreen"
               className="max-w-[95vw] max-h-[95vh] w-auto h-auto object-contain"
+              style={{ zIndex: 1000000 }}
               onClick={(e) => e.stopPropagation()}
             />
             
@@ -488,7 +489,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
             <button
               onClick={handleDownload}
               className="fixed bottom-6 right-6 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-6 py-3 rounded-lg flex items-center gap-2 transition-all shadow-lg"
-              style={{ zIndex: 100001 }}
+              style={{ zIndex: 1000001 }}
             >
               <Download className="w-5 h-5" />
               Download Image
