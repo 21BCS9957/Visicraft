@@ -34,16 +34,16 @@ MarqueeContent.displayName = 'MarqueeContent';
 
 const FeatureCard = memo(({ icon: Icon, title, desc, delay }: { icon: any, title: string, desc: string, delay: number }) => (
   <div
-    className="p-8 rounded-lg border border-white/10 bg-[#1a1a1a] hover:border-[#8b7355]/30 transition-all opacity-0 animate-word-appear group"
+    className="p-6 sm:p-8 rounded-lg border border-white/10 bg-[#1a1a1a] hover:border-[#8b7355]/30 transition-all opacity-0 animate-word-appear group"
     style={{
       animationDelay: `${delay}s`,
       animationFillMode: 'forwards',
     }}
   >
-    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#8b7355]/20 to-[#6b5545]/20 flex items-center justify-center mb-4 border border-[#8b7355]/30">
-      <Icon className="w-6 h-6 text-[#c8b4a0]" />
+    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-gradient-to-br from-[#8b7355]/20 to-[#6b5545]/20 flex items-center justify-center mb-3 sm:mb-4 border border-[#8b7355]/30">
+      <Icon className="w-5 h-5 sm:w-6 sm:h-6 text-[#c8b4a0]" />
     </div>
-    <h3 className="text-white font-light text-xl mb-2 tracking-wide">
+    <h3 className="text-white font-light text-lg sm:text-xl mb-2 tracking-wide">
       {title}
     </h3>
     <p className="text-gray-400 text-sm font-light">
@@ -74,10 +74,10 @@ export function HeroSection() {
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#0a0a0a]/50 to-[#0a0a0a]" />
 
       {/* Content */}
-      <div className="relative z-10 container mx-auto px-4 py-20 flex flex-col items-center justify-center min-h-screen">
-        <div className="text-center space-y-8 max-w-5xl">
+      <div className="relative z-10 container mx-auto px-4 sm:px-6 py-12 sm:py-20 flex flex-col items-center justify-center min-h-screen">
+        <div className="text-center space-y-6 sm:space-y-8 max-w-5xl">
           {/* Animated Title with spacing */}
-          <h1 className="text-6xl md:text-8xl font-light text-white tracking-wider leading-relaxed">
+          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-8xl font-light text-white tracking-wider leading-tight sm:leading-relaxed">
             <span
               className="inline-block animate-word-appear opacity-0"
               style={{
@@ -85,9 +85,9 @@ export function HeroSection() {
                 animationFillMode: 'forwards',
               }}
             >
-              CREATE STUNNING VISUALS
+              CREATE STUNNING
             </span>
-            <br className="my-6" />
+            <br className="my-2 sm:my-6" />
             <span
               className="inline-block animate-word-appear opacity-0"
               style={{
@@ -95,33 +95,45 @@ export function HeroSection() {
                 animationFillMode: 'forwards',
               }}
             >
-              WITH VISICRAFT
+              VISUALS WITH
+            </span>
+            <br className="my-2 sm:my-6" />
+            <span
+              className="inline-block animate-word-appear opacity-0 bg-gradient-to-r from-[#8b7355] to-[#c8b4a0] bg-clip-text text-transparent"
+              style={{
+                animationDelay: '0.6s',
+                animationFillMode: 'forwards',
+              }}
+            >
+              VISICRAFT
             </span>
           </h1>
 
           {/* Subtitle */}
-          <p className="text-lg md:text-xl text-gray-400 font-light max-w-2xl mx-auto mt-12">
+          <p className="text-base sm:text-lg md:text-xl text-gray-400 font-light max-w-2xl mx-auto mt-6 sm:mt-12 px-4">
             Transform ordinary images into eye-catching thumbnails for YouTube, Amazon, and social media
           </p>
 
           {/* CTA Button */}
-          <div className="pt-8">
+          <div className="pt-6 sm:pt-8">
             <Link href="/workflow">
               <Button
                 size="lg"
-                className="bg-gradient-to-r from-[#8b7355] to-[#6b5545] hover:shadow-lg hover:shadow-[#8b7355]/20 text-white font-light text-lg px-8 py-6 tracking-wide transition-all rounded-lg"
+                className="bg-gradient-to-r from-[#8b7355] to-[#6b5545] hover:shadow-lg hover:shadow-[#8b7355]/20 text-white font-light text-base sm:text-lg px-6 sm:px-8 py-4 sm:py-6 tracking-wide transition-all rounded-lg w-full sm:w-auto"
               >
-                <Sparkles className="mr-2 h-5 w-5" />
+                <Sparkles className="mr-2 h-4 w-4 sm:h-5 sm:w-5" />
                 Start Creating
               </Button>
             </Link>
           </div>
 
           {/* Marquee Ribbon */}
-          <MarqueeContent />
+          <div className="hidden sm:block">
+            <MarqueeContent />
+          </div>
 
           {/* Features */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-20">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 pt-12 sm:pt-20">
             <FeatureCard 
               icon={Upload}
               title="Upload Images"

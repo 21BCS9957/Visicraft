@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, X, Play, Loader2, Sparkles, AlertCircle } from 'lucide-react';
+import { Icon } from '@iconify/react';
 import { useReactFlow } from 'reactflow';
 import { AnimatePresence, motion } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -12,33 +13,83 @@ interface PropertiesPanelProps {
   onClose: () => void;
 }
 
+// AI Models with proper logos
+const AI_MODELS = [
+  {
+    id: 'gpt-image',
+    name: 'GPT-4o Image',
+    provider: 'OpenAI',
+    icon: 'simple-icons:openai',
+    iconType: 'icon',
+    color: '#10A37F',
+  },
+  {
+    id: 'nano-banana-pro',
+    name: 'Nano Banana Pro',
+    provider: 'Gemini 3 Pro',
+    icon: 'emojione:banana',
+    iconType: 'icon',
+    color: '#FFD700',
+  },
+  {
+    id: 'midjourney',
+    name: 'Midjourney',
+    provider: 'Midjourney AI',
+    icon: 'https://logo.clearbit.com/midjourney.com',
+    iconType: 'image',
+    color: '#34D399',
+  },
+  {
+    id: 'google-imagen',
+    name: 'Google Imagen 4',
+    provider: 'Google AI',
+    icon: 'simple-icons:google',
+    iconType: 'icon',
+    color: '#4285F4',
+  },
+  {
+    id: 'flux-2-max',
+    name: 'Flux 2 Max',
+    provider: 'FLUX Models',
+    icon: 'ph:lightning-fill',
+    iconType: 'icon',
+    color: '#8b7355',
+  },
+];
+
 // Comprehensive credit costs for all model + resolution combinations
 const CREDIT_COSTS: Record<string, Record<string, number>> = {
-  'gemini-2-flash': {
-    '720p': 20,
-    '1080p': 30,
-    '2K': 40,
-    '4K': 50,
+  'gpt-image': {
+    '720p': 25,
+    '1080p': 35,
+    '2K': 45,
+    '4K': 55,
   },
-  'gemini-3-pro': {
+  'nano-banana-pro': {
     '720p': 30,
     '1080p': 40,
     '2K': 50,
     '4K': 60,
   },
-  'banana-pro': {
+  'midjourney': {
+    '720p': 40,
+    '1080p': 50,
+    '2K': 60,
+    '4K': 80,
+  },
+  'google-imagen': {
+    '720p': 30,
+    '1080p': 40,
+    '2K': 50,
+    '4K': 65,
+  },
+  'flux-2-max': {
     '720p': 35,
     '1080p': 45,
-    '2K': 50,
+    '2K': 55,
     '4K': 70,
   },
 };
-
-const MODELS = [
-  { id: 'gemini-2-flash', name: 'Gemini 2 Flash', emoji: '⚡' },
-  { id: 'gemini-3-pro', name: 'Gemini 3 Pro', emoji: '🍌' },
-  { id: 'banana-pro', name: 'Banana Pro', emoji: '👑' },
-];
 
 const ASPECT_RATIOS = [
   { id: '16:9', name: '16:9 (YouTube)', emoji: '⬜' },
@@ -60,7 +111,7 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
   const { credits, deductCredits, refreshCredits } = useCredits();
   
   // Initialize with node data or defaults
-  const [selectedModel, setSelectedModel] = useState(selectedNode?.data?.model || 'gemini-3-pro');
+  const [selectedModel, setSelectedModel] = useState(selectedNode?.data?.model || 'nano-banana-pro');
   const [selectedAspect, setSelectedAspect] = useState(selectedNode?.data?.aspectRatio || '16:9');
   const [selectedResolution, setSelectedResolution] = useState(selectedNode?.data?.resolution || '1080p');
   
@@ -114,8 +165,8 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
     setSelectedModel(modelId);
     updateNodeData('model', modelId);
     setShowModelMenu(false);
-    const modelName = MODELS.find(m => m.id === modelId)?.name;
-    toast.success(`Model: ${modelName}`);
+    const modelData = AI_MODELS.find(m => m.id === modelId);
+    toast.success(`Model: ${modelData?.name}`);
   };
 
   const handleAspectSelect = (aspectId: string) => {
@@ -159,6 +210,9 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
     }
 
     setIsRunning(true);
+    
+    // Update node status to generating
+    updateNodeData('status', 'generating');
 
     try {
       // Deduct credits BEFORE generation
@@ -166,10 +220,11 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
       if (!success) {
         toast.error('Failed to deduct credits');
         setIsRunning(false);
+        updateNodeData('status', 'idle');
         return;
       }
 
-      toast.success(`${creditCost} credits deducted. Generating with ${MODELS.find(m => m.id === selectedModel)?.name}...`);
+      toast.success(`${creditCost} credits deducted. Generating with ${AI_MODELS.find(m => m.id === selectedModel)?.name}...`);
 
       // Build request based on available inputs
       const requestBody: any = {
@@ -219,12 +274,13 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
     } catch (error) {
       console.error('Generation error:', error);
       toast.error(error instanceof Error ? error.message : 'Generation failed');
+      updateNodeData('status', 'error');
     } finally {
       setIsRunning(false);
     }
   };
 
-  const currentModelData = MODELS.find(m => m.id === selectedModel);
+  const currentModelData = AI_MODELS.find(m => m.id === selectedModel);
   const currentAspectData = ASPECT_RATIOS.find(a => a.id === selectedAspect);
   const currentResolutionData = RESOLUTIONS.find(r => r.id === selectedResolution);
 
@@ -269,15 +325,38 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
 
         {/* Model Dropdown */}
         <div ref={modelRef} className="relative">
-          <label className="text-sm text-gray-400 mb-2 block">Model</label>
+          <label className="text-sm text-gray-400 mb-2 block">AI Model</label>
           <button
             onClick={() => setShowModelMenu(!showModelMenu)}
             className="w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-4 py-3 flex items-center justify-between transition-colors"
           >
-            <span className="text-white flex items-center gap-2">
-              <span>{currentModelData?.emoji}</span>
-              <span>{currentModelData?.name}</span>
-            </span>
+            <div className="flex items-center gap-3">
+              <div 
+                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                style={{ backgroundColor: `${currentModelData?.color}15` }}
+              >
+                {currentModelData?.iconType === 'image' ? (
+                  <img 
+                    src={currentModelData.icon} 
+                    alt={currentModelData.name}
+                    className="w-5 h-5 object-contain rounded"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <Icon 
+                    icon={currentModelData?.icon || 'ph:lightning-fill'} 
+                    className="w-5 h-5" 
+                    style={{ color: currentModelData?.color }}
+                  />
+                )}
+              </div>
+              <div className="text-left">
+                <div className="text-white text-sm">{currentModelData?.name}</div>
+                <div className="text-gray-400 text-xs">{currentModelData?.provider}</div>
+              </div>
+            </div>
             <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showModelMenu ? 'rotate-180' : ''}`} />
           </button>
 
@@ -289,16 +368,44 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
                 exit={{ opacity: 0, y: -10 }}
                 className="absolute top-full left-0 right-0 mt-2 bg-[#1a1a1a] border border-white/10 rounded-lg overflow-hidden shadow-xl z-20"
               >
-                {MODELS.map((model) => (
+                {AI_MODELS.map((model) => (
                   <button
                     key={model.id}
                     onClick={() => handleModelSelect(model.id)}
-                    className={`w-full px-4 py-3 text-left hover:bg-white/10 transition-colors flex items-center gap-2 ${
-                      selectedModel === model.id ? 'bg-white/5 text-purple-400' : 'text-white'
+                    className={`w-full px-4 py-3 text-left hover:bg-white/10 transition-colors flex items-center gap-3 border-b border-white/5 last:border-b-0 ${
+                      selectedModel === model.id ? 'bg-white/5' : ''
                     }`}
                   >
-                    <span>{model.emoji}</span>
-                    <span>{model.name}</span>
+                    <div 
+                      className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: `${model.color}15` }}
+                    >
+                      {model.iconType === 'image' ? (
+                        <img 
+                          src={model.icon} 
+                          alt={model.name}
+                          className="w-5 h-5 object-contain rounded"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <Icon 
+                          icon={model.icon} 
+                          className="w-5 h-5" 
+                          style={{ color: model.color }}
+                        />
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <div className={`text-sm ${selectedModel === model.id ? 'text-purple-400' : 'text-white'}`}>
+                        {model.name}
+                      </div>
+                      <div className="text-xs text-gray-400">{model.provider}</div>
+                    </div>
+                    {selectedModel === model.id && (
+                      <Icon icon="ph:check-circle-fill" className="w-5 h-5 text-purple-400" />
+                    )}
                   </button>
                 ))}
               </motion.div>

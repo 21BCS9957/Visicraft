@@ -333,17 +333,18 @@ export default function PricingPage() {
         }} />
       </div>
 
-      <div className="relative z-10 max-w-7xl mx-auto px-4 py-20">
+      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 py-12 sm:py-16 lg:py-20">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-12"
+          className="text-center mb-8 sm:mb-10 lg:mb-12"
         >
-          <h1 className="text-5xl md:text-7xl font-light text-white tracking-wider mb-4">
-            CHOOSE YOUR<br/>CREATIVE POWER
+          <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-7xl font-light text-white tracking-wider mb-3 sm:mb-4 px-4">
+            CHOOSE YOUR<br className="sm:hidden"/>
+            <span className="sm:inline"> </span>CREATIVE POWER
           </h1>
-          <p className="text-lg text-gray-400 font-light max-w-2xl mx-auto">
+          <p className="text-sm sm:text-base lg:text-lg text-gray-400 font-light max-w-2xl mx-auto px-4">
             Generate stunning visuals for YouTube, Amazon, and social media with AI
           </p>
         </motion.div>
@@ -353,15 +354,15 @@ export default function PricingPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="flex justify-center mb-16"
+          className="flex justify-center mb-8 sm:mb-12 lg:mb-16 px-4"
         >
-          <div className="inline-flex bg-[#1a1a1a] p-1.5 rounded-lg border border-white/10">
+          <div className="inline-flex bg-[#1a1a1a] p-1 sm:p-1.5 rounded-lg border border-white/10 w-full sm:w-auto max-w-md">
             {(Object.keys(billingOptions) as BillingCycle[]).map((cycle) => (
               <button
                 key={cycle}
                 onClick={() => setBillingCycle(cycle)}
                 className={`
-                  relative px-6 py-2 rounded-lg text-sm font-light tracking-wide transition-all
+                  relative px-3 sm:px-4 lg:px-6 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-light tracking-wide transition-all flex-1 sm:flex-initial
                   ${billingCycle === cycle
                     ? 'text-white'
                     : 'text-gray-400 hover:text-gray-300'
@@ -379,7 +380,7 @@ export default function PricingPage() {
                   {billingOptions[cycle].label}
                 </span>
                 {billingOptions[cycle].discount && (
-                  <span className="ml-2 text-xs bg-[#8b7355]/20 text-[#c8b4a0] px-2 py-0.5 rounded-full">
+                  <span className="ml-1 sm:ml-2 text-[10px] sm:text-xs bg-[#8b7355]/20 text-[#c8b4a0] px-1.5 sm:px-2 py-0.5 rounded-full">
                     {billingOptions[cycle].discount}
                   </span>
                 )}
@@ -389,7 +390,7 @@ export default function PricingPage() {
         </motion.div>
 
         {/* Pricing Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 lg:gap-6">
           {pricingTiers.map((tier, index) => (
             <motion.div
               key={tier.id}
@@ -405,53 +406,53 @@ export default function PricingPage() {
             >
               {/* Popular Badge */}
               {tier.badge && (
-                <div className="absolute top-4 right-4 z-20 px-3 py-1 rounded-lg text-xs font-light tracking-wide bg-gradient-to-r from-[#8b7355] to-[#6b5545] text-white">
+                <div className="absolute top-3 sm:top-4 right-3 sm:right-4 z-20 px-2 sm:px-3 py-0.5 sm:py-1 rounded-lg text-[10px] sm:text-xs font-light tracking-wide bg-gradient-to-r from-[#8b7355] to-[#6b5545] text-white">
                   {tier.badge}
                 </div>
               )}
 
               {/* Card Content */}
               <div
-                className="relative bg-[#1a1a1a] border rounded-lg p-6 h-full flex flex-col transition-all duration-300"
+                className="relative bg-[#1a1a1a] border rounded-lg p-4 sm:p-5 lg:p-6 h-full flex flex-col transition-all duration-300"
                 style={{
                   borderColor: hoveredTier === tier.id ? 'rgba(139, 115, 85, 0.3)' : 'rgba(255,255,255,0.1)',
                 }}
               >
                 {/* Icon & Name */}
-                <div className="mb-4">
-                  <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#8b7355]/20 to-[#6b5545]/20 flex items-center justify-center mb-3 border border-[#8b7355]/30">
-                    <Icon icon={tier.icon} width={24} height={24} className="text-[#c8b4a0]" />
+                <div className="mb-3 sm:mb-4">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-gradient-to-br from-[#8b7355]/20 to-[#6b5545]/20 flex items-center justify-center mb-2 sm:mb-3 border border-[#8b7355]/30">
+                    <Icon icon={tier.icon} width={20} height={20} className="text-[#c8b4a0] sm:w-6 sm:h-6" />
                   </div>
-                  <h3 className="text-2xl font-light text-white mb-1">{tier.name}</h3>
-                  <p className="text-sm text-gray-400 font-light">{tier.description}</p>
+                  <h3 className="text-xl sm:text-2xl font-light text-white mb-1">{tier.name}</h3>
+                  <p className="text-xs sm:text-sm text-gray-400 font-light">{tier.description}</p>
                 </div>
 
                 {/* Price */}
-                <div className="mb-6">
+                <div className="mb-4 sm:mb-5 lg:mb-6">
                   {tier.monthly !== null ? (
                     <>
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-4xl font-light text-white">
+                      <div className="flex items-baseline gap-1.5 sm:gap-2">
+                        <span className="text-2xl sm:text-3xl lg:text-4xl font-light text-white">
                           ₹{tier[billingCycle]?.toLocaleString('en-IN')}
                         </span>
-                        <span className="text-gray-400 font-light">/month</span>
+                        <span className="text-xs sm:text-sm text-gray-400 font-light">/month</span>
                       </div>
                       {billingCycle !== 'monthly' && (
-                        <p className="text-xs text-gray-500 mt-1 font-light">
+                        <p className="text-[10px] sm:text-xs text-gray-500 mt-1 font-light">
                           Billed {billingCycle === 'quarterly' ? 'quarterly' : 'annually'}
                         </p>
                       )}
                     </>
                   ) : (
-                    <div className="text-3xl font-light text-white">Custom</div>
+                    <div className="text-2xl sm:text-3xl font-light text-white">Custom</div>
                   )}
                 </div>
 
                 {/* Credits */}
-                <div className="mb-6 p-3 rounded-lg bg-[#8b7355]/10 border border-[#8b7355]/20">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Icon icon="ph:sparkle-fill" width={16} height={16} className="text-[#c8b4a0]" />
-                    <span className="font-light text-white">
+                <div className="mb-4 sm:mb-5 lg:mb-6 p-2.5 sm:p-3 rounded-lg bg-[#8b7355]/10 border border-[#8b7355]/20">
+                  <div className="flex items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1">
+                    <Icon icon="ph:sparkle-fill" width={14} height={14} className="text-[#c8b4a0] sm:w-4 sm:h-4" />
+                    <span className="font-light text-white text-xs sm:text-sm">
                       {typeof tier.credits === 'number'
                         ? `${tier.credits.toLocaleString()} credits/month`
                         : tier.credits
@@ -459,7 +460,7 @@ export default function PricingPage() {
                     </span>
                   </div>
                   {typeof tier.creditCost === 'number' && (
-                    <p className="text-xs text-gray-400 ml-6 font-light">
+                    <p className="text-[10px] sm:text-xs text-gray-400 ml-5 sm:ml-6 font-light">
                       ₹{tier.creditCost.toFixed(2)} per credit
                     </p>
                   )}
@@ -472,7 +473,7 @@ export default function PricingPage() {
                   onClick={() => handlePayment(tier)}
                   disabled={processingPayment === tier.id}
                   className={`
-                    w-full py-3 rounded-lg font-light tracking-wide mb-6 transition-all disabled:opacity-50 disabled:cursor-not-allowed
+                    w-full py-2.5 sm:py-3 rounded-lg font-light tracking-wide mb-4 sm:mb-5 lg:mb-6 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base
                     ${tier.popular 
                       ? 'bg-gradient-to-r from-[#8b7355] to-[#6b5545] text-white hover:shadow-lg hover:shadow-[#8b7355]/20' 
                       : 'bg-white/5 border border-white/10 text-white hover:bg-white/10'
@@ -484,16 +485,16 @@ export default function PricingPage() {
 
                 {/* Features */}
                 <div className="flex-1">
-                  <div className="space-y-3">
+                  <div className="space-y-2 sm:space-y-2.5 lg:space-y-3">
                     {tier.features.included.map((feature, idx) => (
-                      <div key={idx} className="flex items-start gap-2 text-sm">
-                        <Check className="w-4 h-4 mt-0.5 flex-shrink-0 text-[#c8b4a0]" />
+                      <div key={idx} className="flex items-start gap-1.5 sm:gap-2 text-xs sm:text-sm">
+                        <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 mt-0.5 flex-shrink-0 text-[#c8b4a0]" />
                         <span className="text-gray-300 font-light">{feature}</span>
                       </div>
                     ))}
                     {tier.features.excluded.map((feature, idx) => (
-                      <div key={idx} className="flex items-start gap-2 text-sm opacity-40">
-                        <X className="w-4 h-4 mt-0.5 flex-shrink-0 text-gray-600" />
+                      <div key={idx} className="flex items-start gap-1.5 sm:gap-2 text-xs sm:text-sm opacity-40">
+                        <X className="w-3.5 h-3.5 sm:w-4 sm:h-4 mt-0.5 flex-shrink-0 text-gray-600" />
                         <span className="text-gray-500 font-light">{feature}</span>
                       </div>
                     ))}
@@ -509,9 +510,9 @@ export default function PricingPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.6 }}
-          className="mt-20 text-center"
+          className="mt-12 sm:mt-16 lg:mt-20 text-center px-4"
         >
-          <p className="text-gray-400 text-sm font-light">
+          <p className="text-gray-400 text-xs sm:text-sm font-light">
             All plans include watermark-free exports •
             Cancel anytime •
             14-day money-back guarantee

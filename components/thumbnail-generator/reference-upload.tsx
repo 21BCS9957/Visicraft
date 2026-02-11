@@ -9,9 +9,11 @@ import { Button } from '@/components/ui/button';
 
 interface ReferenceUploadProps {
   onImageChange: (image: UploadedImage | null) => void;
+  description?: string;
+  title?: string;
 }
 
-export function ReferenceUpload({ onImageChange }: ReferenceUploadProps) {
+export function ReferenceUpload({ onImageChange, description, title }: ReferenceUploadProps) {
   const [image, setImage] = useState<UploadedImage | null>(null);
   const [error, setError] = useState<string>('');
 
@@ -42,11 +44,25 @@ export function ReferenceUpload({ onImageChange }: ReferenceUploadProps) {
     onDrop,
     accept: {
       'image/jpeg': ['.jpg', '.jpeg'],
+      'image/jpg': ['.jpg', '.jpeg'],
       'image/png': ['.png'],
       'image/webp': ['.webp'],
     },
     maxSize: 5 * 1024 * 1024,
     multiple: false,
+    onDropRejected: (fileRejections) => {
+      const rejection = fileRejections[0];
+      if (rejection) {
+        const errorCode = rejection.errors[0]?.code;
+        if (errorCode === 'file-too-large') {
+          setError('File is too large. Maximum size is 5MB');
+        } else if (errorCode === 'file-invalid-type') {
+          setError('Invalid file type. Please upload JPG, PNG, or WebP images');
+        } else {
+          setError('File upload failed. Please try again');
+        }
+      }
+    },
   });
 
   const removeImage = () => {
@@ -58,7 +74,7 @@ export function ReferenceUpload({ onImageChange }: ReferenceUploadProps) {
     <div className="space-y-4">
       <div className="flex items-center gap-2 text-[#c8b4a0] text-sm">
         <Info className="h-4 w-4" />
-        <span>Upload a reference thumbnail that defines the style you want</span>
+        <span>{description || 'Upload a reference thumbnail that defines the style you want'}</span>
       </div>
 
       {!image ? (
@@ -77,7 +93,7 @@ export function ReferenceUpload({ onImageChange }: ReferenceUploadProps) {
           <input {...getInputProps()} />
           <Upload className="mx-auto h-16 w-16 text-[#c8b4a0] mb-4" />
           <p className="text-[#f8f7f5] font-light text-lg mb-2">
-            {isDragActive ? 'Drop reference image here' : 'Upload Reference Thumbnail'}
+            {isDragActive ? 'Drop image here' : (title || 'Upload Reference Thumbnail')}
           </p>
           <p className="text-[#c8b4a0] text-sm">
             Click or drag to upload

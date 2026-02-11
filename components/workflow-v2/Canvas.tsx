@@ -6,6 +6,7 @@ import ReactFlow, {
   Background,
   BackgroundVariant,
   MiniMap,
+  Controls,
   addEdge,
   useNodesState,
   useEdgesState,
@@ -14,6 +15,7 @@ import ReactFlow, {
   Node,
   ReactFlowProvider,
   ConnectionLineType,
+  useReactFlow,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -28,6 +30,7 @@ import { Topbar } from './Topbar';
 import { RunControls } from './RunControls';
 import { executeWorkflow } from '@/lib/workflow/executor';
 import { loadTemplate } from '@/lib/workflow/templateLoader';
+import TemplateSelectionModal from './TemplateSelectionModal';
 import toast from 'react-hot-toast';
 
 const nodeTypes = {
@@ -68,6 +71,7 @@ function useIsMobile() {
 function FlowCanvas() {
   const searchParams = useSearchParams();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
+  const reactFlowInstance = useReactFlow();
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
@@ -76,6 +80,9 @@ function FlowCanvas() {
   const [showGrid, setShowGrid] = useState(true);
   const [gridSize] = useState(20);
   const [gridVariant, setGridVariant] = useState<BackgroundVariant>(BackgroundVariant.Dots);
+  const [showFilePanel, setShowFilePanel] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -85,6 +92,7 @@ function FlowCanvas() {
       setNodes(templateNodes);
       setEdges(templateEdges);
       setTemplateLoaded(true);
+      setHasUnsavedChanges(false); // Reset unsaved changes on initial load
       
       const templateName = template === 'custom' 
         ? 'Blank canvas ready!' 
@@ -105,6 +113,7 @@ function FlowCanvas() {
         style: { strokeWidth: 2 },
       };
       setEdges((eds) => addEdge(newEdge, eds));
+      setHasUnsavedChanges(true);
       
       setNodes((nds) => {
         const sourceNode = nds.find(n => n.id === params.source);
@@ -143,7 +152,12 @@ function FlowCanvas() {
   );
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
-    setSelectedNode(node);
+    // Only open properties panel for Generate nodes that aren't currently generating
+    if (node.type === 'generate' && node.data.status !== 'generating') {
+      setSelectedNode(node);
+    } else if (node.type !== 'generate') {
+      setSelectedNode(node);
+    }
   }, []);
 
   const handleAddNode = useCallback((type: string, position: { x: number; y: number }, nodeType?: string) => {
@@ -154,7 +168,42 @@ function FlowCanvas() {
       data: nodeType ? { nodeType } : {},
     };
     setNodes((nds) => [...nds, newNode]);
-  }, [setNodes]);
+    setHasUnsavedChanges(true);
+    
+    // Auto-zoom to fit new node
+    setTimeout(() => {
+      reactFlowInstance.fitView({ padding: 0.2, duration: 400 });
+    }, 50);
+  }, [setNodes, reactFlowInstance]);
+
+  // Handle drag and drop from sidebar
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+
+      const type = event.dataTransfer.getData('application/reactflow-type');
+      const nodeType = event.dataTransfer.getData('application/reactflow-nodetype');
+
+      if (!type) return;
+
+      const reactFlowBounds = reactFlowWrapper.current?.getBoundingClientRect();
+      if (!reactFlowBounds) return;
+
+      const position = reactFlowInstance.project({
+        x: event.clientX - reactFlowBounds.left,
+        y: event.clientY - reactFlowBounds.top,
+      });
+
+      handleAddNode(type, position, nodeType || undefined);
+      toast.success('Node added!');
+    },
+    [reactFlowInstance, handleAddNode]
+  );
 
   const handleRun = async () => {
     if (nodes.length === 0) {
@@ -198,10 +247,29 @@ function FlowCanvas() {
     toast.success('Nodes organized!');
   }, [setNodes]);
 
+  const handleSelectTemplate = useCallback((templateId: string) => {
+    // Load template directly - no confirmation needed when explicitly selecting from modal
+    const { nodes: templateNodes, edges: templateEdges } = loadTemplate(templateId);
+    setNodes(templateNodes);
+    setEdges(templateEdges);
+    setHasUnsavedChanges(false);
+    setShowTemplateModal(false);
+    
+    const templateName = templateId === 'custom' 
+      ? 'Blank canvas ready!' 
+      : `${templateId.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')} template loaded!`;
+    toast.success(templateName);
+    
+    // Fit view after loading template
+    setTimeout(() => {
+      reactFlowInstance.fitView({ padding: 0.2, duration: 400 });
+    }, 100);
+  }, [setNodes, setEdges, reactFlowInstance]);
+
   return (
     <div className="w-full h-screen flex flex-col bg-black">
       <Topbar 
-        onNewWorkflow={() => window.location.href = '/workflow?template=custom'}
+        onNewWorkflow={() => setShowTemplateModal(true)}
         showGrid={showGrid}
         onToggleGrid={() => setShowGrid(!showGrid)}
         gridVariant={gridVariant}
@@ -209,10 +277,27 @@ function FlowCanvas() {
         onOrganizeNodes={handleOrganizeNodes}
       />
       
+      <TemplateSelectionModal
+        isOpen={showTemplateModal}
+        onClose={() => setShowTemplateModal(false)}
+        onSelectTemplate={handleSelectTemplate}
+      />
+      
       <div className="flex-1 flex relative overflow-hidden">
-        <Sidebar onAddNode={handleAddNode} />
+        <Sidebar 
+          onAddNode={handleAddNode}
+          showGrid={showGrid}
+          onToggleGrid={() => setShowGrid(!showGrid)}
+          showFilePanel={showFilePanel}
+          onToggleFilePanel={() => setShowFilePanel(!showFilePanel)}
+        />
         
-        <div ref={reactFlowWrapper} className="flex-1 relative">
+        <div 
+          ref={reactFlowWrapper} 
+          className="flex-1 relative"
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+        >
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -232,11 +317,11 @@ function FlowCanvas() {
             selectNodesOnDrag={false}
             panOnDrag={isMobile ? [1, 2] : true}
             panOnScroll={!isMobile}
-            zoomOnScroll={!isMobile}
-            zoomOnPinch={isMobile}
-            zoomOnDoubleClick={false}
-            minZoom={isMobile ? 0.3 : 0.2}
-            maxZoom={isMobile ? 2 : 4}
+            zoomOnScroll={true}
+            zoomOnPinch={true}
+            zoomOnDoubleClick={true}
+            minZoom={0.1}
+            maxZoom={4}
             onlyRenderVisibleElements={false}
             nodeOrigin={[0.5, 0.5]}
             elevateNodesOnSelect={false}
@@ -254,6 +339,16 @@ function FlowCanvas() {
                 className="opacity-20"
               />
             )}
+            
+            {/* Zoom Controls */}
+            <Controls 
+              className="!bg-[#0a0a0a] !border !border-[#2a2a2a] !rounded-lg"
+              style={{ position: 'absolute', bottom: isMobile ? 20 : 100, left: 24 }}
+              showZoom={true}
+              showFitView={true}
+              showInteractive={false}
+              fitViewOptions={{ padding: 0.2, duration: 400 }}
+            />
             
             {!isMobile && (
               <MiniMap

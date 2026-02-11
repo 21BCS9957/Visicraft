@@ -49,10 +49,24 @@ export function ImageUploadZone({ onImagesChange, maxImages = MAX_SOURCE_IMAGES 
     onDrop,
     accept: {
       'image/jpeg': ['.jpg', '.jpeg'],
+      'image/jpg': ['.jpg', '.jpeg'],
       'image/png': ['.png'],
       'image/webp': ['.webp'],
     },
     maxSize: 5 * 1024 * 1024,
+    onDropRejected: (fileRejections) => {
+      const rejection = fileRejections[0];
+      if (rejection) {
+        const errorCode = rejection.errors[0]?.code;
+        if (errorCode === 'file-too-large') {
+          setError('File is too large. Maximum size is 5MB');
+        } else if (errorCode === 'file-invalid-type') {
+          setError('Invalid file type. Please upload JPG, PNG, or WebP images');
+        } else {
+          setError('File upload failed. Please try again');
+        }
+      }
+    },
   });
 
   const removeImage = (id: string) => {

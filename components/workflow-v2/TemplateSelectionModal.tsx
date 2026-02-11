@@ -17,8 +17,8 @@ interface Template {
 const templates: Template[] = [
   {
     id: 'custom',
-    name: 'Custom Workflow',
-    description: 'Start from scratch with a blank canvas',
+    name: 'Blank Canvas',
+    description: 'Start from scratch and build your own workflow',
     icon: 'ph:lightning-fill',
     category: 'custom',
     gradient: 'from-gray-600 to-gray-800',
@@ -26,33 +26,17 @@ const templates: Template[] = [
   {
     id: 'youtube-thumbnail',
     name: 'YouTube Thumbnail',
-    description: 'Create eye-catching thumbnails that get clicks',
+    description: 'Optimized workflow for creating viral YouTube thumbnails',
     icon: 'lucide:youtube',
     category: 'youtube',
     gradient: 'from-red-500 to-rose-600',
   },
   {
-    id: 'amazon-creative',
-    name: 'Amazon Product',
-    description: 'Professional product images for listings',
+    id: 'product-showcase',
+    name: 'Product Showcase',
+    description: 'Professional product images for e-commerce platforms',
     icon: 'lucide:shopping-bag',
-    category: 'amazon',
-    gradient: 'from-orange-500 to-amber-600',
-  },
-  {
-    id: 'shopify-creative',
-    name: 'Shopify Product',
-    description: 'E-commerce ready product photos',
-    icon: 'lucide:shopping-cart',
-    category: 'shopify',
-    gradient: 'from-green-500 to-emerald-600',
-  },
-  {
-    id: 'meta-ads',
-    name: 'Meta Ads',
-    description: 'Facebook & Instagram ad creatives',
-    icon: 'lucide:facebook',
-    category: 'meta',
+    category: 'product',
     gradient: 'from-blue-500 to-indigo-600',
   },
 ];
@@ -116,7 +100,7 @@ export default function TemplateSelectionModal({
 
             {/* Templates Grid */}
             <div className="p-6 overflow-y-auto max-h-[calc(80vh-120px)]">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {templates.map((template, index) => (
                   <motion.button
                     key={template.id}

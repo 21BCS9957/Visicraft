@@ -1,7 +1,11 @@
 import { HeroSection } from '@/components/ui/hero-section';
 
 export default function Home() {
-  return <HeroSection />;
+  return (
+    <>
+      <HeroSection />
+    </>
+  );
 }
 
 // Enable static generation for faster loading

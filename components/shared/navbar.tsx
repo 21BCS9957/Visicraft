@@ -2,13 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { History, Home, Workflow, IndianRupee, LogOut, User, Sparkles } from 'lucide-react';
+import { LogOut, User, Sparkles } from 'lucide-react';
 import { Icon } from '@iconify/react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { useState, useRef, useEffect, memo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Logo } from '@/components/brand/Logo';
 
 const WorkflowMenuItem = memo(({ href, label, icon, desc }: { href: string, label: string, icon: string, desc: string }) => (
   <Link
@@ -59,7 +58,6 @@ export function Navbar() {
   const links = [
     { href: '/', label: 'Home', icon: 'ph:house-fill' },
     { href: '/generate', label: 'Generate', icon: 'ph:magic-wand-fill' },
-    { href: '/history', label: 'History', icon: 'ph:clock-counter-clockwise-fill' },
     { href: '/pricing', label: 'Pricing', icon: 'ph:currency-inr' },
   ];
 
@@ -78,33 +76,33 @@ export function Navbar() {
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-[#0a0a0a]/80 backdrop-blur-xl border-b border-white/5">
-      <div className="max-w-7xl mx-auto px-6">
-        <div className="flex items-center justify-between h-16">
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6">
+        <div className="flex items-center justify-between h-14 sm:h-16">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-3 group">
+          <Link href="/" className="flex items-center gap-2 sm:gap-3 group">
             {/* Custom Logo Icon */}
             <div className="relative">
-              <div className="w-10 h-10 rounded-2xl bg-[#8b7355] flex items-center justify-center transition-transform group-hover:scale-110">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-[#8b7355] flex items-center justify-center transition-transform group-hover:scale-110">
                 {/* Sparkle Icon - Custom Design */}
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="sm:w-6 sm:h-6">
                   <path d="M12 2L13.5 8.5L20 10L13.5 11.5L12 18L10.5 11.5L4 10L10.5 8.5L12 2Z" fill="white" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                   <circle cx="18" cy="6" r="1.5" fill="white"/>
                   <circle cx="6" cy="18" r="1" fill="white"/>
                 </svg>
               </div>
             </div>
-            <span className="text-white font-light text-xl tracking-wider hidden sm:block">
+            <span className="text-white font-light text-base sm:text-xl tracking-wider hidden xs:block">
               Visicraft
             </span>
           </Link>
 
           {/* Navigation Links */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5 sm:gap-1">
             {/* Home Link */}
             <Link
               href="/"
               className={`
-                flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-light tracking-wide
+                flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 lg:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-light tracking-wide
                 transition-all duration-200
                 ${pathname === '/' 
                   ? 'text-white bg-white/10' 
@@ -112,7 +110,7 @@ export function Navbar() {
                 }
               `}
             >
-              <Icon icon="ph:house-fill" width={16} height={16} />
+              <Icon icon="ph:house-fill" width={14} height={14} className="sm:w-4 sm:h-4" />
               <span className="hidden md:inline">Home</span>
             </Link>
 
@@ -125,7 +123,7 @@ export function Navbar() {
             >
               <button
                 className={`
-                  flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-light tracking-wide
+                  flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 lg:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-light tracking-wide
                   transition-all duration-200
                   ${pathname === '/workflow' 
                     ? 'text-white bg-white/10' 
@@ -133,13 +131,13 @@ export function Navbar() {
                   }
                 `}
               >
-                <Icon icon="ph:flow-arrow-fill" width={16} height={16} />
+                <Icon icon="ph:flow-arrow-fill" width={14} height={14} className="sm:w-4 sm:h-4" />
                 <span className="hidden md:inline">Workflow</span>
                 <Icon 
                   icon="ph:caret-down-fill" 
-                  width={12} 
-                  height={12}
-                  className={`transition-transform ${showWorkflowMenu ? 'rotate-180' : ''}`}
+                  width={10} 
+                  height={10}
+                  className={`transition-transform hidden md:block sm:w-3 sm:h-3 ${showWorkflowMenu ? 'rotate-180' : ''}`}
                 />
               </button>
 
@@ -184,7 +182,7 @@ export function Navbar() {
                   key={item.href}
                   href={item.href}
                   className={`
-                    flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-light tracking-wide
+                    flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 lg:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-light tracking-wide
                     transition-all duration-200
                     ${isActive 
                       ? 'text-white bg-white/10' 
@@ -192,7 +190,7 @@ export function Navbar() {
                     }
                   `}
                 >
-                  <Icon icon={item.icon} width={16} height={16} />
+                  <Icon icon={item.icon} width={14} height={14} className="sm:w-4 sm:h-4" />
                   <span className="hidden md:inline">{item.label}</span>
                 </Link>
               );
@@ -200,23 +198,32 @@ export function Navbar() {
           </div>
 
           {/* User Profile / Auth */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             {user ? (
               <>
                 {/* Credits Display */}
-                <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-[#8b7355]/20 to-[#6b5545]/20 border border-[#8b7355]/30">
-                  <Sparkles className="w-4 h-4 text-[#c8b4a0]" />
-                  <span className="text-sm font-light text-white">{credits}</span>
-                  <span className="text-xs text-gray-400">credits</span>
+                <div className="hidden sm:flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 lg:px-4 py-1.5 sm:py-2 rounded-lg bg-gradient-to-r from-[#8b7355]/20 to-[#6b5545]/20 border border-[#8b7355]/30">
+                  <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#c8b4a0]" />
+                  <span className="text-xs sm:text-sm font-light text-white">{credits}</span>
+                  <span className="text-[10px] sm:text-xs text-gray-400 hidden lg:inline">credits</span>
                 </div>
 
                 {/* Profile Menu */}
                 <div className="relative" ref={menuRef}>
                   <button
                     onClick={() => setShowUserMenu(!showUserMenu)}
-                    className="w-10 h-10 rounded-full bg-gradient-to-br from-[#8b7355] to-[#6b5545] flex items-center justify-center text-white font-light text-sm hover:scale-110 transition-transform"
+                    className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-[#8b7355] to-[#6b5545] flex items-center justify-center text-white font-light text-xs sm:text-sm hover:scale-110 transition-transform overflow-hidden border-2 border-[#8b7355]/30"
                   >
-                    {user.email?.[0].toUpperCase() || <User className="w-5 h-5" />}
+                    {user.user_metadata?.avatar_url ? (
+                      <img 
+                        src={user.user_metadata.avatar_url} 
+                        alt="Profile" 
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      user.email?.[0].toUpperCase() || <User className="w-5 h-5" />
+                    )}
                   </button>
 
                   <AnimatePresence>
@@ -230,8 +237,24 @@ export function Navbar() {
                       >
                         {/* User Info */}
                         <div className="p-4 border-b border-white/10">
-                          <p className="text-sm text-white font-light truncate">{user.email}</p>
-                          <p className="text-xs text-gray-400 mt-1">Signed in</p>
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#8b7355] to-[#6b5545] flex items-center justify-center text-white font-light overflow-hidden border-2 border-[#8b7355]/30">
+                              {user.user_metadata?.avatar_url ? (
+                                <img 
+                                  src={user.user_metadata.avatar_url} 
+                                  alt="Profile" 
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                user.email?.[0].toUpperCase() || <User className="w-6 h-6" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm text-white font-light truncate">{user.user_metadata?.full_name || user.email}</p>
+                              <p className="text-xs text-gray-400 mt-0.5 truncate">{user.email}</p>
+                            </div>
+                          </div>
                         </div>
 
                         {/* Credits Info */}
@@ -271,7 +294,7 @@ export function Navbar() {
             ) : (
               <Link
                 href="/login"
-                className="px-6 py-2 rounded-lg bg-gradient-to-r from-[#8b7355] to-[#6b5545] text-white text-sm font-light tracking-wide hover:shadow-lg hover:shadow-[#8b7355]/20 transition-all"
+                className="px-3 sm:px-4 lg:px-6 py-1.5 sm:py-2 rounded-lg bg-gradient-to-r from-[#8b7355] to-[#6b5545] text-white text-xs sm:text-sm font-light tracking-wide hover:shadow-lg hover:shadow-[#8b7355]/20 transition-all"
               >
                 Sign In
               </Link>
