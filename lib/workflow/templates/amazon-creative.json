@@ -1,24 +1,29 @@
 {
   "id": "amazon-creative",
-  "name": "Amazon Product Creative",
-  "description": "Professional product images for Amazon listings",
-  "category": "amazon",
+  "name": "Amazon Creative",
+  "description": "Create product images for Amazon listings",
+  "category": "ecommerce",
+  "viewport": {
+    "x": 100,
+    "y": 100,
+    "zoom": 0.55
+  },
   "nodes": [
     {
-      "id": "reference-1",
-      "type": "import",
-      "position": { "x": 150, "y": 100 },
+      "id": "note-instructions",
+      "type": "note",
+      "position": { "x": 1100, "y": 80 },
       "data": {
-        "nodeType": "reference",
-        "label": "Lifestyle Reference (Optional)",
-        "placeholder": "Upload reference for product staging",
-        "status": "idle"
+        "text": "🛒 Amazon Creative Workflow\n\n🖼️ Source (Required): Upload your product photo\n\n✍️ Prompt: Describe the Amazon listing style you want\n\n⚡ Generate: Click 'Create' to generate your product image\n\nTip: Use high-quality product photos for best results!",
+        "color": "yellow",
+        "width": 320,
+        "height": 320
       }
     },
     {
       "id": "source-1",
       "type": "import",
-      "position": { "x": 150, "y": 300 },
+      "position": { "x": 100, "y": 200 },
       "data": {
         "nodeType": "source",
         "label": "Product Photo",
@@ -29,17 +34,17 @@
     {
       "id": "prompt-1",
       "type": "prompt",
-      "position": { "x": 150, "y": 500 },
+      "position": { "x": 100, "y": 550 },
       "data": {
-        "text": "Professional Amazon product photo, clean white background, studio lighting, high quality, commercial photography",
-        "label": "Product Style",
+        "text": "Style: Professional Amazon product listing image, clean white background, high detail, studio lighting, commercial photography.\n\nAspect ratio: 1:1\n\nMake the product centered and prominent with professional e-commerce styling.",
+        "label": "Amazon Style Prompt",
         "status": "idle"
       }
     },
     {
       "id": "generate-1",
       "type": "generate",
-      "position": { "x": 600, "y": 280 },
+      "position": { "x": 700, "y": 350 },
       "data": {
         "aspectRatio": "1:1",
         "resolution": "2K",
@@ -51,15 +56,6 @@
   "edges": [
     {
       "id": "e1",
-      "source": "reference-1",
-      "sourceHandle": "image",
-      "target": "generate-1",
-      "targetHandle": "referenceImage",
-      "type": "custom",
-      "animated": false
-    },
-    {
-      "id": "e2",
       "source": "source-1",
       "sourceHandle": "image",
       "target": "generate-1",
@@ -68,7 +64,7 @@
       "animated": false
     },
     {
-      "id": "e3",
+      "id": "e2",
       "source": "prompt-1",
       "sourceHandle": "prompt",
       "target": "generate-1",

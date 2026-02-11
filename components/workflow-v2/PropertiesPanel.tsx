@@ -211,8 +211,8 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
 
     setIsRunning(true);
     
-    // Update node status to generating
-    updateNodeData('status', 'generating');
+    // Update node status to processing (matches GenerateNode status)
+    updateNodeData('status', 'processing');
 
     try {
       // Deduct credits BEFORE generation
@@ -265,7 +265,7 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
 
       // Update node with result
       updateNodeData('generatedImage', data.images[0]);
-      updateNodeData('status', 'completed');
+      updateNodeData('status', 'complete');
 
       // Refresh credits display
       await refreshCredits();

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import { Position, NodeProps, useReactFlow, NodeResizer } from 'reactflow';
 import { MoreVertical, Zap, Play, Loader2, Download, Copy, Trash2, RefreshCw, Maximize2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -460,49 +461,50 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       </div>
 
       {/* Fullscreen Modal */}
-      <AnimatePresence>
-        {showFullscreen && result && (
+      {showFullscreen && result && ReactDOM.createPortal(
+        <AnimatePresence>
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black flex items-center justify-center"
-            style={{ zIndex: 9999999 }}
+            className="fixed inset-0 bg-black/95 backdrop-blur-sm flex items-center justify-center p-8"
+            style={{ zIndex: 99999999 }}
             onClick={() => setShowFullscreen(false)}
           >
             {/* Close button */}
             <button
               onClick={() => setShowFullscreen(false)}
-              className="fixed top-6 right-6 text-white hover:text-gray-300 transition-colors bg-black/50 hover:bg-black/70 rounded-full p-3"
-              style={{ zIndex: 10000001 }}
+              className="fixed top-8 right-8 text-white hover:text-gray-300 transition-colors bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full p-3 border border-white/20"
+              style={{ zIndex: 100000001 }}
             >
-              <X className="w-8 h-8" />
+              <X className="w-6 h-6" />
             </button>
 
-            {/* Image - fills most of the screen */}
+            {/* Image - centered with padding */}
             <motion.img
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               src={result}
               alt="Generated - Fullscreen"
-              className="max-w-[95vw] max-h-[95vh] w-auto h-auto object-contain"
-              style={{ zIndex: 10000000 }}
+              className="max-w-[85vw] max-h-[85vh] w-auto h-auto object-contain rounded-lg shadow-2xl"
+              style={{ zIndex: 100000000 }}
               onClick={(e) => e.stopPropagation()}
             />
             
             {/* Download button */}
             <button
               onClick={handleDownload}
-              className="fixed bottom-6 right-6 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-6 py-3 rounded-lg flex items-center gap-2 transition-all shadow-lg"
-              style={{ zIndex: 10000001 }}
+              className="fixed bottom-8 right-8 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 transition-all shadow-2xl border border-white/20"
+              style={{ zIndex: 100000001 }}
             >
               <Download className="w-5 h-5" />
               Download Image
             </button>
           </motion.div>
-        )}
-      </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+      )}
 
       {/* Run Button */}
       <div className="px-3 pb-3">

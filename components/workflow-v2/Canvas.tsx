@@ -90,6 +90,7 @@ function FlowCanvas() {
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [initialViewport, setInitialViewport] = useState<{ x: number; y: number; zoom: number } | null>(null);
+  const hasShownToast = useRef(false);
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -143,10 +144,14 @@ function FlowCanvas() {
       setTemplateLoaded(true);
       setHasUnsavedChanges(false); // Reset unsaved changes on initial load
       
-      const templateName = template === 'custom' 
-        ? 'Blank canvas ready!' 
-        : `${template.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')} template loaded!`;
-      toast.success(templateName);
+      // Only show toast once (prevent duplicate in React Strict Mode)
+      if (!hasShownToast.current) {
+        const templateName = template === 'custom' 
+          ? 'Blank canvas ready!' 
+          : `${template.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')} template loaded!`;
+        toast.success(templateName);
+        hasShownToast.current = true;
+      }
     }
   }, [searchParams, templateLoaded, setNodes, setEdges, reactFlowInstance]);
 

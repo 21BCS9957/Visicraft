@@ -4,20 +4,20 @@
   "description": "Create eye-catching YouTube thumbnails",
   "category": "youtube",
   "viewport": {
-    "x": 50,
-    "y": 50,
-    "zoom": 0.7
+    "x": 100,
+    "y": 100,
+    "zoom": 0.55
   },
   "nodes": [
     {
       "id": "note-instructions",
       "type": "note",
-      "position": { "x": 1400, "y": 80 },
+      "position": { "x": 1100, "y": 80 },
       "data": {
-        "text": "🎬 YouTube Thumbnail Workflow\n\n📸 Reference (Optional): Upload a thumbnail style you like\n\n🖼️ Source (Required): Upload your main photo/screenshot\n\n✍️ Prompt: Describe your desired style (editable)\n\n⚡ Generate: Click 'Create' to generate your thumbnail\n\n💾 Output: Shows example result - your actual result appears in the Generate node\n\nTip: You can replace the example images with your own!",
+        "text": "🎬 YouTube Thumbnail Workflow\n\n📸 Reference (Optional): Upload a thumbnail style you like\n\n🖼️ Source (Required): Upload your main photo/screenshot\n\n✍️ Prompt: Describe your desired style (editable)\n\n⚡ Generate: Click 'Create' to generate your thumbnail. The example shows what you can expect!\n\nTip: Replace the example images with your own to create custom thumbnails!",
         "color": "yellow",
         "width": 320,
-        "height": 400
+        "height": 380
       }
     },
     {
@@ -35,7 +35,7 @@
     {
       "id": "source-1",
       "type": "import",
-      "position": { "x": 100, "y": 380 },
+      "position": { "x": 100, "y": 450 },
       "data": {
         "nodeType": "source",
         "label": "Your Photo/Screenshot",
@@ -47,7 +47,7 @@
     {
       "id": "prompt-1",
       "type": "prompt",
-      "position": { "x": 100, "y": 680 },
+      "position": { "x": 100, "y": 800 },
       "data": {
         "text": "Style: MrBeast-style YouTube thumbnail, ultra high detail, 8K resolution, high saturation, high contrast, thumbnail optimized, dramatic composition.\n\nAspect ratio: 16:9\n\nMake the subject positioned slightly left in frame to leave space for bold text on the right side.",
         "label": "Thumbnail Style Prompt",
@@ -57,22 +57,13 @@
     {
       "id": "generate-1",
       "type": "generate",
-      "position": { "x": 700, "y": 380 },
+      "position": { "x": 700, "y": 450 },
       "data": {
         "aspectRatio": "16:9",
         "resolution": "2K",
         "model": "gemini-3-pro",
-        "status": "idle"
-      }
-    },
-    {
-      "id": "output-1",
-      "type": "output",
-      "position": { "x": 1200, "y": 380 },
-      "data": {
-        "label": "Example Output",
-        "imageUrl": "/Youtube Template/Youtube_Generated.png",
-        "status": "idle"
+        "generatedImage": "/Youtube Template/Youtube_Generated.png",
+        "status": "complete"
       }
     }
   ],
@@ -101,15 +92,6 @@
       "sourceHandle": "prompt",
       "target": "generate-1",
       "targetHandle": "prompt",
-      "type": "custom",
-      "animated": false
-    },
-    {
-      "id": "e4",
-      "source": "generate-1",
-      "sourceHandle": "generatedImage",
-      "target": "output-1",
-      "targetHandle": "input",
       "type": "custom",
       "animated": false
     }
