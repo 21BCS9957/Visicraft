@@ -91,7 +91,7 @@ export function Navbar() {
                 </svg>
               </div>
             </div>
-            <span className="text-white font-light text-base sm:text-xl tracking-wider hidden xs:block">
+            <span className="text-white font-light text-base sm:text-xl tracking-wider">
               Visicraft
             </span>
           </Link>
