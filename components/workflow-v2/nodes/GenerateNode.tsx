@@ -169,7 +169,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       return;
     }
 
-    // Flexible validation: Need at least ONE image (reference OR source) AND a prompt
+    // Flexible validation: Need at least ONE image (reference OR source)
     const hasReferenceImage = !!data.referenceImageUrl;
     const hasSourceImage = !!data.sourceImageUrl;
     const hasPrompt = !!data.promptText;
@@ -180,12 +180,11 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       return; // Exit BEFORE deducting credits
     }
 
-    // Validation: If only one image, must have prompt
-    if ((hasReferenceImage && !hasSourceImage) || (!hasReferenceImage && hasSourceImage)) {
-      if (!hasPrompt) {
-        toast.error('Add a prompt to bring your vision to life');
-        return; // Exit BEFORE deducting credits
-      }
+    // Validation: If only one image (not both), must have prompt
+    const hasOnlyOneImage = (hasReferenceImage && !hasSourceImage) || (!hasReferenceImage && hasSourceImage);
+    if (hasOnlyOneImage && !hasPrompt) {
+      toast.error('Add a prompt to bring your vision to life');
+      return; // Exit BEFORE deducting credits
     }
 
     // Calculate credit cost (default values if not set)
