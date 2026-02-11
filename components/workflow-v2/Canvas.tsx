@@ -203,7 +203,13 @@ function FlowCanvas() {
     [setEdges, setNodes]
   );
 
-  const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
+    // Don't open properties panel if clicking on an image or interactive element
+    const target = event.target as HTMLElement;
+    if (target.tagName === 'IMG' || target.tagName === 'BUTTON' || target.closest('button')) {
+      return;
+    }
+    
     // Only open properties panel for Generate nodes that aren't currently generating
     if (node.type === 'generate' && node.data.status !== 'generating') {
       setSelectedNode(node);

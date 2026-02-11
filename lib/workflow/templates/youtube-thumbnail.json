@@ -10,14 +10,14 @@
   },
   "nodes": [
     {
-      "id": "note-welcome",
+      "id": "note-instructions",
       "type": "note",
-      "position": { "x": 100, "y": -120 },
+      "position": { "x": 1400, "y": 80 },
       "data": {
-        "text": "🎬 YouTube Thumbnail Workflow\n\nThis template helps you create viral YouTube thumbnails. Follow the steps below to get started!",
+        "text": "🎬 YouTube Thumbnail Workflow\n\n📸 Reference (Optional): Upload a thumbnail style you like\n\n🖼️ Source (Required): Upload your main photo/screenshot\n\n✍️ Prompt: Describe your desired style (editable)\n\n⚡ Generate: Click 'Create' to generate your thumbnail\n\n💾 Output: Shows example result - your actual result appears in the Generate node\n\nTip: You can replace the example images with your own!",
         "color": "yellow",
         "width": 320,
-        "height": 140
+        "height": 400
       }
     },
     {
@@ -28,19 +28,8 @@
         "nodeType": "reference",
         "label": "Reference Thumbnail (Optional)",
         "placeholder": "Upload a style reference",
-        "imageUrl": "https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=800&q=80",
+        "imageUrl": "/Youtube Template/youtube_Reference.png",
         "status": "idle"
-      }
-    },
-    {
-      "id": "note-reference",
-      "type": "note",
-      "position": { "x": 480, "y": 80 },
-      "data": {
-        "text": "📸 Reference Image (Optional)\n\nUpload a thumbnail you like to match its style. This helps the AI understand the visual aesthetic you want.",
-        "color": "blue",
-        "width": 280,
-        "height": 140
       }
     },
     {
@@ -51,19 +40,8 @@
         "nodeType": "source",
         "label": "Your Photo/Screenshot",
         "placeholder": "Upload your base image",
-        "imageUrl": "https://images.unsplash.com/photo-1560439514-4e9645039924?w=800&q=80",
+        "imageUrl": "/Youtube Template/Youtube _Source.jpg",
         "status": "idle"
-      }
-    },
-    {
-      "id": "note-source",
-      "type": "note",
-      "position": { "x": 480, "y": 380 },
-      "data": {
-        "text": "🖼️ Source Image (Required)\n\nUpload your main photo or screenshot. This is the base image that will be transformed into a thumbnail.",
-        "color": "green",
-        "width": 280,
-        "height": 140
       }
     },
     {
@@ -77,20 +55,9 @@
       }
     },
     {
-      "id": "note-prompt",
-      "type": "note",
-      "position": { "x": 480, "y": 680 },
-      "data": {
-        "text": "✍️ Style Prompt\n\nDescribe how you want your thumbnail to look. Be specific about colors, composition, and style. Edit this to match your brand!",
-        "color": "purple",
-        "width": 280,
-        "height": 160
-      }
-    },
-    {
       "id": "generate-1",
       "type": "generate",
-      "position": { "x": 900, "y": 380 },
+      "position": { "x": 700, "y": 380 },
       "data": {
         "aspectRatio": "16:9",
         "resolution": "2K",
@@ -99,14 +66,13 @@
       }
     },
     {
-      "id": "note-generate",
-      "type": "note",
-      "position": { "x": 900, "y": 120 },
+      "id": "output-1",
+      "type": "output",
+      "position": { "x": 1200, "y": 380 },
       "data": {
-        "text": "⚡ Generate Node\n\nConnect all inputs here and click 'Generate' to create your thumbnail. The result will appear directly in this node. Click the image to preview or download!",
-        "color": "orange",
-        "width": 280,
-        "height": 180
+        "label": "Example Output",
+        "imageUrl": "/Youtube Template/Youtube_Generated.png",
+        "status": "idle"
       }
     }
   ],
@@ -135,6 +101,15 @@
       "sourceHandle": "prompt",
       "target": "generate-1",
       "targetHandle": "prompt",
+      "type": "custom",
+      "animated": false
+    },
+    {
+      "id": "e4",
+      "source": "generate-1",
+      "sourceHandle": "generatedImage",
+      "target": "output-1",
+      "targetHandle": "input",
       "type": "custom",
       "animated": false
     }
