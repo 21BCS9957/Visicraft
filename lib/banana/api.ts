@@ -264,7 +264,16 @@ export async function generateThumbnail(
 
 async function urlToBase64(imageUrl: string): Promise<string> {
   try {
-    const response = await axios.get(imageUrl, { 
+    // Handle relative URLs (convert to absolute)
+    let absoluteUrl = imageUrl;
+    if (imageUrl.startsWith('/')) {
+      // Get the base URL from environment
+      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+      absoluteUrl = `${baseUrl}${imageUrl}`;
+      console.log('📍 Converting relative URL to absolute:', imageUrl, '->', absoluteUrl);
+    }
+    
+    const response = await axios.get(absoluteUrl, { 
       responseType: 'arraybuffer',
       timeout: 30000
     });
@@ -272,7 +281,7 @@ async function urlToBase64(imageUrl: string): Promise<string> {
     return base64;
   } catch (error) {
     console.error('Failed to download image:', imageUrl);
-    throw new Error(`Failed to download image: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error(`Failed to download image: ${error instanceof Error ? error.message : 'Invalid URL'}`);
   }
 }
 

@@ -111,7 +111,7 @@ export function HeroSection() {
 
           {/* Subtitle */}
           <p className="text-base sm:text-lg md:text-xl text-gray-400 font-light max-w-2xl mx-auto mt-6 sm:mt-12 px-4">
-            Transform ordinary images into eye-catching thumbnails for YouTube, Amazon, and social media
+            Transform ordinary images into eye-catching creatives for YouTube, Shopify, Amazon, and social media
           </p>
 
           {/* CTA Button */}
