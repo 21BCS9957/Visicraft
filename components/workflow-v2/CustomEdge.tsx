@@ -60,15 +60,15 @@ function CustomEdgeComponent({
 }: CustomEdgeProps) {
   const { setEdges } = useReactFlow();
   
-  // Get edge style from data or default to smooth
-  const edgeStyle = data?.edgeStyle || 'smooth';
+  // Get edge style from data or default to bezier for smooth curves
+  const edgeStyle = data?.edgeStyle || 'bezier';
   
   // Generate path based on edge style
   let edgePath: string;
   
   switch (edgeStyle) {
     case 'bezier':
-      // Bezier curve - very curvy, organic feel
+      // Bezier curve - very curvy, organic feel (DEFAULT)
       [edgePath] = getBezierPath({
         sourceX,
         sourceY,
@@ -76,7 +76,7 @@ function CustomEdgeComponent({
         targetX,
         targetY,
         targetPosition,
-        curvature: 0.5, // High curvature for smooth curves
+        curvature: 0.25, // Natural curvature for smooth, flowing lines
       });
       break;
       

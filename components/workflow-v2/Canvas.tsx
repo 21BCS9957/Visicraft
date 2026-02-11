@@ -338,8 +338,7 @@ function FlowCanvas() {
               strokeLinecap: 'round',
               strokeLinejoin: 'round',
             }}
-            connectionLineType={ConnectionLineType.SmoothStep}
-            connectionRadius={30}
+            connectionLineType={ConnectionLineType.Bezier}
             defaultViewport={{ x: 0, y: 0, zoom: isMobile ? 0.6 : 1 }}
           >
             {showGrid && (
