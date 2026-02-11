@@ -1,13 +1,16 @@
 'use client';
 
 import React, { memo, useCallback } from 'react';
-import { EdgeProps, getSmoothStepPath, useReactFlow } from 'reactflow';
+import { EdgeProps, getSmoothStepPath, getBezierPath, getStraightPath, useReactFlow } from 'reactflow';
 import toast from 'react-hot-toast';
 
 // Extended EdgeProps to include handle properties
 interface CustomEdgeProps extends EdgeProps {
   sourceHandle?: string | null;
   targetHandle?: string | null;
+  data?: {
+    edgeStyle?: 'smooth' | 'bezier' | 'straight' | 'step';
+  };
 }
 
 // Color map for different handle types - matching SmartHandle colors
@@ -53,19 +56,67 @@ function CustomEdgeComponent({
   sourceHandle,
   targetHandle,
   selected,
+  data,
 }: CustomEdgeProps) {
   const { setEdges } = useReactFlow();
   
-  // Use smooth step path for ultra-smooth curves
-  const [edgePath] = getSmoothStepPath({
-    sourceX,
-    sourceY,
-    sourcePosition,
-    targetX,
-    targetY,
-    targetPosition,
-    borderRadius: 20, // Smooth rounded corners
-  });
+  // Get edge style from data or default to smooth
+  const edgeStyle = data?.edgeStyle || 'smooth';
+  
+  // Generate path based on edge style
+  let edgePath: string;
+  
+  switch (edgeStyle) {
+    case 'bezier':
+      // Bezier curve - very curvy, organic feel
+      [edgePath] = getBezierPath({
+        sourceX,
+        sourceY,
+        sourcePosition,
+        targetX,
+        targetY,
+        targetPosition,
+        curvature: 0.5, // High curvature for smooth curves
+      });
+      break;
+      
+    case 'straight':
+      // Straight line - minimal curviness
+      [edgePath] = getStraightPath({
+        sourceX,
+        sourceY,
+        targetX,
+        targetY,
+      });
+      break;
+      
+    case 'step':
+      // Step path - angular, right angles
+      [edgePath] = getSmoothStepPath({
+        sourceX,
+        sourceY,
+        sourcePosition,
+        targetX,
+        targetY,
+        targetPosition,
+        borderRadius: 8, // Small radius for sharper corners
+      });
+      break;
+      
+    case 'smooth':
+    default:
+      // Smooth step - balanced curviness (default)
+      [edgePath] = getSmoothStepPath({
+        sourceX,
+        sourceY,
+        sourcePosition,
+        targetX,
+        targetY,
+        targetPosition,
+        borderRadius: 30, // Large radius for smooth curves
+      });
+      break;
+  }
 
   const color = getEdgeColor(sourceHandle, targetHandle);
 
@@ -76,46 +127,57 @@ function CustomEdgeComponent({
   }, [id, setEdges]);
 
   return (
-    <g>
+    <g className="react-flow__edge">
       <defs>
-        {/* Solid color for edge - no gradient for better performance */}
-        <filter id={`glow-${id}`} x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
+        {/* Enhanced glow filter for better visual quality */}
+        <filter id={`glow-${id}`} x="-100%" y="-100%" width="300%" height="300%">
+          <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
           <feMerge>
             <feMergeNode in="coloredBlur"/>
             <feMergeNode in="SourceGraphic"/>
           </feMerge>
         </filter>
+        
+        {/* Gradient for selected state */}
+        <linearGradient id={`gradient-${id}`} x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor={color} stopOpacity="0.8"/>
+          <stop offset="50%" stopColor={color} stopOpacity="1"/>
+          <stop offset="100%" stopColor={color} stopOpacity="0.8"/>
+        </linearGradient>
       </defs>
 
-      {/* Glow effect when selected - render behind */}
+      {/* Outer glow when selected */}
       {selected && (
         <path
           d={edgePath}
           stroke={color}
-          strokeWidth={6}
+          strokeWidth={8}
           fill="none"
-          opacity={0.3}
+          opacity={0.2}
           strokeLinecap="round"
           strokeLinejoin="round"
-          style={{ pointerEvents: 'none' }}
+          style={{ 
+            pointerEvents: 'none',
+            filter: `url(#glow-${id})`,
+          }}
         />
       )}
 
-      {/* Main edge path - solid color matching handle */}
+      {/* Main edge path with high quality rendering */}
       <path
         id={id}
         className="react-flow__edge-path"
         d={edgePath}
-        stroke={color}
-        strokeWidth={selected ? 2.5 : 2}
+        stroke={selected ? `url(#gradient-${id})` : color}
+        strokeWidth={selected ? 3 : 2.5}
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="none"
         onClick={handleClick}
         style={{
-          transition: 'none', // Remove transition for instant updates
           cursor: 'pointer',
+          vectorEffect: 'non-scaling-stroke', // Maintain stroke width on zoom
+          shapeRendering: 'geometricPrecision', // High quality rendering
         }}
       />
       
@@ -123,10 +185,11 @@ function CustomEdgeComponent({
       <path
         d={edgePath}
         stroke="transparent"
-        strokeWidth={20}
+        strokeWidth={24}
         fill="none"
         onClick={handleClick}
         strokeLinecap="round"
+        strokeLinejoin="round"
         style={{ 
           pointerEvents: 'stroke',
           cursor: 'pointer',

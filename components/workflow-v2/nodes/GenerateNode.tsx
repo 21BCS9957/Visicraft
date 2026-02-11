@@ -2,11 +2,11 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Position, NodeProps, useReactFlow, NodeResizer } from 'reactflow';
-import { MoreVertical, Play, Loader2, Download, Copy, Trash2, RefreshCw, X, Settings } from 'lucide-react';
-import { Icon } from '@iconify/react';
+import { MoreVertical, Zap, Play, Loader2, Download, Copy, Trash2, RefreshCw, Maximize2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useCredits } from '@/lib/contexts/CreditsContext';
+import { SmartHandle } from '../SmartHandle';
 
 export function GenerateNode({ data, selected, id }: NodeProps) {
   const { setNodes, getNodes, setEdges, getEdges } = useReactFlow();
@@ -15,27 +15,35 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
   const [showFullscreen, setShowFullscreen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   
-  // Reactive to data changes
+  // These need to be reactive to data changes
   const status = data.status || 'idle';
   const result = data.generatedImage || null;
   const isRunning = status === 'processing';
   const aspectRatio = data.aspectRatio || '16:9';
-  const resolution = data.resolution || '2K';
-  const model = data.model || 'gemini-3-pro';
   
   // Calculate preview height based on aspect ratio
   const getPreviewHeight = (ratio: string) => {
     const heightMap: Record<string, string> = {
-      '16:9': 'h-[169px]',
-      '1:1': 'h-[300px]',
-      '4:3': 'h-[225px]',
-      '9:16': 'h-[533px]',
-      '21:9': 'h-[129px]',
+      '16:9': 'h-[169px]',   // 300px width * 9/16 = 169px
+      '1:1': 'h-[300px]',    // Square
+      '4:3': 'h-[225px]',    // 300px * 3/4 = 225px
+      '9:16': 'h-[533px]',   // 300px * 16/9 = 533px (vertical)
+      '21:9': 'h-[129px]',   // 300px * 9/21 = 129px (ultrawide)
     };
     return heightMap[ratio] || 'h-[180px]';
   };
   
   const previewHeight = getPreviewHeight(aspectRatio);
+  
+  // Debug log to see when data changes
+  useEffect(() => {
+    console.log('🔄 GenerateNode data updated:', {
+      nodeId: id,
+      status,
+      hasResult: !!result,
+      resultPreview: result ? result.substring(0, 50) + '...' : 'none'
+    });
+  }, [id, status, result]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -58,6 +66,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     }
 
     try {
+      // If it's a base64 data URL
       if (result.startsWith('data:')) {
         const link = document.createElement('a');
         link.href = result;
@@ -67,6 +76,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
         document.body.removeChild(link);
         toast.success('Image downloaded!');
       } else {
+        // If it's a URL, fetch and download
         const response = await fetch(result);
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
@@ -93,6 +103,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     
     if (!currentNode) return;
 
+    // Create new node with offset position
     const newNode = {
       ...currentNode,
       id: `generate-${Date.now()}`,
@@ -100,9 +111,14 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
         x: currentNode.position.x + 50,
         y: currentNode.position.y + 50,
       },
-      data: { ...currentNode.data, generatedImage: null, status: 'idle' },
+      data: {
+        ...currentNode.data,
+        status: 'idle',
+        generatedImage: null,
+      },
     };
 
+    // Duplicate incoming connections
     const incomingEdges = edges.filter(e => e.target === id);
     const newEdges = incomingEdges.map(edge => ({
       ...edge,
@@ -120,43 +136,62 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     setNodes((nds) =>
       nds.map((node) =>
         node.id === id
-          ? { ...node, data: { ...node.data, generatedImage: null, status: 'idle' } }
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                status: 'idle',
+                generatedImage: null,
+              },
+            }
           : node
       )
     );
-    toast.success('Result cleared!');
+    toast.success('Node reset!');
     setShowMenu(false);
   };
 
   const handleDelete = () => {
+    // Remove node
     setNodes((nds) => nds.filter((node) => node.id !== id));
+    
+    // Remove connected edges
     setEdges((eds) => eds.filter((edge) => edge.source !== id && edge.target !== id));
+    
     toast.success('Node deleted!');
     setShowMenu(false);
   };
 
   const handleRun = async () => {
+    // Prevent running if already processing
     if (isRunning) {
       toast.error('Generation already in progress');
       return;
     }
 
+    // Flexible validation: Need at least ONE image (reference OR source) AND a prompt
     const hasReferenceImage = !!data.referenceImageUrl;
     const hasSourceImage = !!data.sourceImageUrl;
     const hasPrompt = !!data.promptText;
 
+    // Validation: Need at least one image
     if (!hasReferenceImage && !hasSourceImage) {
       toast.error('Connect at least one image to get started');
-      return;
+      return; // Exit BEFORE deducting credits
     }
 
+    // Validation: If only one image, must have prompt
     if ((hasReferenceImage && !hasSourceImage) || (!hasReferenceImage && hasSourceImage)) {
       if (!hasPrompt) {
         toast.error('Add a prompt to bring your vision to life');
-        return;
+        return; // Exit BEFORE deducting credits
       }
     }
 
+    // Calculate credit cost (default values if not set)
+    const model = data.model || 'gemini-3-pro';
+    const resolution = data.resolution || '2K';
+    
     const CREDIT_COSTS: Record<string, Record<string, number>> = {
       'gemini-2-flash': { '720p': 20, '1080p': 30, '2K': 40, '4K': 50 },
       'gemini-3-pro': { '720p': 30, '1080p': 40, '2K': 50, '4K': 60 },
@@ -165,6 +200,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     
     const creditCost = CREDIT_COSTS[model]?.[resolution] || 50;
 
+    // Update status to processing FIRST (prevents double-clicks)
     setNodes((nds) =>
       nds.map((node) =>
         node.id === id
@@ -173,8 +209,10 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       )
     );
 
+    // Deduct credits AFTER validation passes
     const deducted = await deductCredits(creditCost);
     if (!deducted) {
+      // Revert status if credit deduction fails
       setNodes((nds) =>
         nds.map((node) =>
           node.id === id
@@ -187,24 +225,30 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     }
 
     try {
+      // Build request based on available inputs
       const requestBody: any = {
         prompt: data.promptText || 'Create a professional, eye-catching image',
         model: model,
-        aspectRatio: aspectRatio,
+        aspectRatio: data.aspectRatio || '16:9',
         resolution: resolution,
       };
 
+      // Add images if available
       if (hasReferenceImage && hasSourceImage) {
+        // Both images available - full transformation
         requestBody.referenceImage = data.referenceImageUrl;
         requestBody.sourceImages = [data.sourceImageUrl];
       } else if (hasSourceImage) {
+        // Only source image - use it as both reference and source
         requestBody.referenceImage = data.sourceImageUrl;
         requestBody.sourceImages = [data.sourceImageUrl];
       } else if (hasReferenceImage) {
+        // Only reference image - use it as both
         requestBody.referenceImage = data.referenceImageUrl;
         requestBody.sourceImages = [data.referenceImageUrl];
       }
 
+      // Call the API
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -220,6 +264,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       const generatedImageUrl = result.images?.[0];
 
       if (generatedImageUrl) {
+        // Update node with generated image
         setNodes((nds) =>
           nds.map((node) =>
             node.id === id
@@ -235,17 +280,22 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
           )
         );
         
+        // Refresh credits to show updated balance
         await refreshCredits();
-        toast.success('✨ Amazing! Your image is ready');
+        
+        toast.success('✨ Amazing! Your image is ready', { id: `generate-${id}` });
       } else {
         throw new Error('No image returned from API');
       }
     } catch (error) {
       console.error('❌ Generation error:', error);
       
+      // Refund credits on error
+      console.log('💰 Refunding credits due to generation failure:', creditCost);
       await addCredits(creditCost);
       await refreshCredits();
       
+      // Update status to error
       setNodes((nds) =>
         nds.map((node) =>
           node.id === id
@@ -254,203 +304,155 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
         )
       );
       
-      toast.error('Oops! Something went wrong. No worries, try again!');
+      toast.error(
+        'Oops! Something went wrong. No worries, try again!',
+        { id: `generate-${id}` }
+      );
     }
   };
 
-  // Check which handles are connected
-  const edges = getEdges();
-  const hasReferenceConnection = edges.some(e => e.target === id && e.targetHandle === 'reference');
-  const hasSourceConnection = edges.some(e => e.target === id && e.targetHandle === 'source');
-  const hasPromptConnection = edges.some(e => e.target === id && e.targetHandle === 'prompt');
-  const hasOutputConnection = edges.some(e => e.source === id);
-
   return (
-    <div className={`min-w-[300px] bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl transition-all ${selected ? 'ring-2 ring-[#8b7355]' : ''}`}>
+    <motion.div
+      initial={{ scale: 0.95, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      className={`
+        group
+        bg-[#1a1a1a]
+        border-2 border-[#2a2a2a]
+        rounded-2xl
+        shadow-xl
+        min-w-[320px]
+        transition-all
+        ${selected ? 'ring-2 ring-cyan-500/50 border-cyan-500/30' : ''}
+      `}
+      style={{ cursor: 'default' }}
+    >
       {/* Node Resizer */}
       <NodeResizer
         color="#06b6d4"
         isVisible={selected}
-        minWidth={300}
-        minHeight={250}
+        minWidth={320}
+        minHeight={300}
         handleStyle={{
           width: 8,
           height: 8,
           borderRadius: 4,
         }}
       />
-
       {/* Header */}
-      <div className="node-header">
-        <div className="node-header-icon bg-gradient-to-br from-orange-500/20 to-red-500/20">
-          <Icon icon="ph:magic-wand-fill" className="w-4 h-4 text-orange-400" />
-        </div>
-        <span className="node-header-title">Generate</span>
-        <div className="relative" ref={menuRef}>
-          <button
-            onClick={() => setShowMenu(!showMenu)}
-            className="node-header-menu"
-          >
-            <MoreVertical className="w-4 h-4" />
-          </button>
-          
-          {/* Dropdown Menu */}
-          <AnimatePresence>
-            {showMenu && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: -10 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                transition={{ duration: 0.1 }}
-                className="absolute right-0 top-full mt-1 w-48 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl z-50 overflow-hidden"
-              >
-                {result && (
-                  <>
-                    <button
-                      onClick={handleDownload}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors"
-                    >
-                      <Download className="w-4 h-4" />
-                      Download Image
-                    </button>
-                    <div className="border-t border-[#2a2a2a]" />
-                  </>
-                )}
-                
-                <button
-                  onClick={handleDuplicate}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors"
+      <div className="px-4 py-3 border-b border-[#2a2a2a]">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shadow-lg">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M13 2L3 14H12L11 22L21 10H12L13 2Z" fill="white" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-white font-semibold text-sm">Generate</h3>
+              <p className="text-gray-500 text-xs">AI Image Generation</p>
+            </div>
+          </div>
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setShowMenu(!showMenu)}
+              className="text-[#666666] hover:text-white transition-colors"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+            
+            {/* Dropdown Menu */}
+            <AnimatePresence>
+              {showMenu && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                  transition={{ duration: 0.1 }}
+                  className="absolute right-0 top-full mt-1 w-48 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl z-50 overflow-hidden"
                 >
-                  <Copy className="w-4 h-4" />
-                  Duplicate Node
-                </button>
-                
-                <button
-                  onClick={handleReset}
-                  disabled={!result}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Clear Result
-                </button>
-                
-                <div className="border-t border-[#2a2a2a]" />
-                
-                <button
-                  onClick={handleDelete}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-red-400 hover:bg-[#2a2a2a] transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Delete Node
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                  <button
+                    onClick={handleDownload}
+                    disabled={!result}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download Image
+                  </button>
+                  
+                  <button
+                    onClick={handleDuplicate}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors"
+                  >
+                    <Copy className="w-4 h-4" />
+                    Duplicate Node
+                  </button>
+                  
+                  <button
+                    onClick={handleReset}
+                    disabled={!result && status === 'idle'}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    Reset Node
+                  </button>
+                  
+                  <div className="border-t border-[#2a2a2a]" />
+                  
+                  <button
+                    onClick={handleDelete}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-red-400 hover:bg-[#2a2a2a] transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete Node
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="node-content">
+      {/* Preview */}
+      <div className="p-3 relative">
         {result ? (
-          <div className="relative group">
+          <div className="relative">
             <img
               src={result}
               alt="Generated"
-              className={`w-full ${previewHeight} object-cover rounded-lg cursor-pointer`}
+              className={`w-full ${previewHeight} object-cover rounded cursor-pointer`}
               onClick={() => setShowFullscreen(true)}
             />
-            <button
-              onClick={() => setShowFullscreen(true)}
-              className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
-            >
-              <Icon icon="ph:arrows-out-fill" className="w-4 h-4" />
-            </button>
+            {/* Fullscreen button overlay */}
+            {!isRunning && (
+              <button
+                onClick={() => setShowFullscreen(true)}
+                className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white p-2 rounded-lg opacity-0 hover:opacity-100 transition-opacity"
+              >
+                <Maximize2 className="w-4 h-4" />
+              </button>
+            )}
           </div>
         ) : (
-          <div className="space-y-2 text-xs">
-            <div className="flex items-center justify-between py-2 px-3 bg-[#0f0f0f] rounded-lg">
-              <span className="text-gray-400">Reference</span>
-              <span className={data.referenceImageUrl ? "text-orange-400" : "text-gray-600"}>
-                {data.referenceImageUrl ? "✓ Connected" : "Optional"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between py-2 px-3 bg-[#0f0f0f] rounded-lg">
-              <span className="text-gray-400">Source</span>
-              <span className={data.sourceImageUrl ? "text-blue-400" : "text-gray-600"}>
-                {data.sourceImageUrl ? "✓ Connected" : "Required"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between py-2 px-3 bg-[#0f0f0f] rounded-lg">
-              <span className="text-gray-400">Prompt</span>
-              <span className={data.promptText ? "text-purple-400" : "text-gray-600"}>
-                {data.promptText ? "✓ Connected" : "Optional"}
-              </span>
-            </div>
+          <div className={`border border-dashed border-[#ef4444]/30 rounded ${previewHeight} flex flex-col items-center justify-center`}>
+            <Zap className="w-8 h-8 text-[#ef4444]/50 mb-2" />
+            <span className="text-xs text-[#666666]">Result will appear here</span>
+            <span className="text-[10px] text-[#444444] mt-1">{aspectRatio}</span>
+          </div>
+        )}
+        
+        {/* Loading overlay - shows on top of image or placeholder */}
+        {isRunning && (
+          <div className="absolute inset-0 bg-black/70 flex items-center justify-center rounded">
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+            >
+              <Zap className="w-8 h-8 text-[#ef4444]" />
+            </motion.div>
           </div>
         )}
       </div>
-
-      {/* Footer */}
-      <div className="node-footer">
-        <span className="text-xs text-gray-600">{aspectRatio} • {resolution}</span>
-        <button className="text-xs text-gray-500 hover:text-white transition-colors flex items-center gap-1">
-          <Settings className="w-3 h-3" />
-          Settings
-        </button>
-      </div>
-
-      {/* Run Button */}
-      <div className="px-3 pb-3">
-        <button
-          onClick={handleRun}
-          disabled={isRunning}
-          className="w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-orange-500/20 to-red-500/20 hover:from-orange-500/30 hover:to-red-500/30 border border-orange-500/30 rounded-lg text-orange-400 text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isRunning ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Generating...
-            </>
-          ) : (
-            <>
-              <Play className="w-4 h-4" />
-              Generate
-            </>
-          )}
-        </button>
-      </div>
-
-      {/* Input Handles - LEFT (3 handles) */}
-      <div
-        className={`react-flow__handle react-flow__handle-left handle-reference ${hasReferenceConnection ? 'connected' : ''}`}
-        style={{ top: '30%', left: '-6px', position: 'absolute' }}
-        data-handleid="reference"
-        data-nodeid={id}
-        data-handlepos="left"
-      />
-      <div
-        className={`react-flow__handle react-flow__handle-left handle-source ${hasSourceConnection ? 'connected' : ''}`}
-        style={{ top: '50%', left: '-6px', position: 'absolute' }}
-        data-handleid="source"
-        data-nodeid={id}
-        data-handlepos="left"
-      />
-      <div
-        className={`react-flow__handle react-flow__handle-left handle-prompt ${hasPromptConnection ? 'connected' : ''}`}
-        style={{ top: '70%', left: '-6px', position: 'absolute' }}
-        data-handleid="prompt"
-        data-nodeid={id}
-        data-handlepos="left"
-      />
-
-      {/* Output Handle - RIGHT */}
-      <div
-        className={`react-flow__handle react-flow__handle-right handle-output ${hasOutputConnection ? 'connected' : ''}`}
-        style={{ top: '50%', right: '-6px', position: 'absolute' }}
-        data-handleid="output"
-        data-nodeid={id}
-        data-handlepos="right"
-      />
 
       {/* Fullscreen Modal */}
       <AnimatePresence>
@@ -463,6 +465,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
             style={{ zIndex: 99999 }}
             onClick={() => setShowFullscreen(false)}
           >
+            {/* Close button */}
             <button
               onClick={() => setShowFullscreen(false)}
               className="fixed top-6 right-6 text-white hover:text-gray-300 transition-colors bg-black/50 hover:bg-black/70 rounded-full p-3"
@@ -471,6 +474,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
               <X className="w-8 h-8" />
             </button>
 
+            {/* Image - fills most of the screen */}
             <motion.img
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -481,6 +485,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
               onClick={(e) => e.stopPropagation()}
             />
             
+            {/* Download button */}
             <button
               onClick={handleDownload}
               className="fixed bottom-6 right-6 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-6 py-3 rounded-lg flex items-center gap-2 transition-all shadow-lg"
@@ -492,6 +497,78 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+
+      {/* Run Button */}
+      <div className="px-3 pb-3">
+        <button
+          onClick={handleRun}
+          disabled={isRunning}
+          className="w-full flex items-center justify-center gap-2 py-2 bg-[#ef4444]/10 hover:bg-[#ef4444]/20 border border-[#ef4444]/30 rounded text-[#ef4444] text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isRunning ? (
+            <>
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Creating...
+            </>
+          ) : (
+            <>
+              <Play className="w-3 h-3" />
+              Create
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Status Badge */}
+      {status !== 'idle' && status !== 'processing' && (
+        <div className="px-3 pb-2">
+          <div className={`text-xs text-center py-1 rounded ${
+            status === 'complete' ? 'bg-green-500/10 text-green-500' :
+            'bg-red-500/10 text-red-500'
+          }`}>
+            {status === 'complete' && '✓ Complete'}
+            {status === 'error' && '✗ Error'}
+          </div>
+        </div>
+      )}
+
+      {/* Input Handles */}
+      <SmartHandle
+        nodeId={id}
+        handleId="referenceImage"
+        handleType="reference"
+        type="target"
+        position={Position.Left}
+        style={{ top: '35%' }}
+      />
+      
+      <SmartHandle
+        nodeId={id}
+        handleId="sourceImage"
+        handleType="source"
+        type="target"
+        position={Position.Left}
+        style={{ top: '35%', opacity: 0, pointerEvents: 'none' }}
+      />
+      
+      <SmartHandle
+        nodeId={id}
+        handleId="prompt"
+        handleType="prompt"
+        type="target"
+        position={Position.Left}
+        style={{ top: '65%' }}
+      />
+
+      {/* Output Handle */}
+      <SmartHandle
+        nodeId={id}
+        handleId="generatedImage"
+        handleType="output"
+        type="source"
+        position={Position.Right}
+        style={{ top: '50%' }}
+      />
+    </motion.div>
   );
 }

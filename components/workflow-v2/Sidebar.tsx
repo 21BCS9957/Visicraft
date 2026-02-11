@@ -36,6 +36,7 @@ const nodeTypes = [
   { icon: Image, label: 'Source', type: 'import', nodeType: 'source', color: '#3b82f6' },
   { icon: MessageSquare, label: 'Prompt', type: 'prompt', color: '#8b5cf6' },
   { icon: Zap, label: 'Generate', type: 'generate', color: '#ef4444' },
+  { icon: StickyNote, label: 'Note', type: 'note', color: '#fbbf24' },
 ];
 
 export function Sidebar({ onAddNode, showGrid, onToggleGrid, showFilePanel, onToggleFilePanel }: SidebarProps) {
@@ -105,8 +106,12 @@ export function Sidebar({ onAddNode, showGrid, onToggleGrid, showFilePanel, onTo
     <div className="flex h-full">
       {/* Icon Bar */}
       <div className={`${isMobile ? 'w-[50px]' : 'w-[60px]'} bg-[#0a0a0a] border-r border-[#1a1a1a] flex flex-col items-center py-4 gap-2`}>
-        <button className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} rounded-lg bg-[#1a1a1a] hover:bg-[#222222] flex items-center justify-center mb-4 transition-colors`}>
-          <div className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} bg-gradient-to-br from-purple-500 to-pink-500 rounded`} />
+        <button 
+          onClick={() => handleAddNode('note')}
+          className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} rounded-lg bg-[#1a1a1a] hover:bg-[#222222] flex items-center justify-center mb-4 transition-colors group`}
+          title="Add Note"
+        >
+          <StickyNote className={`${isMobile ? 'w-4 h-4' : 'w-5 h-5'} text-[#fbbf24] group-hover:scale-110 transition-transform`} />
         </button>
 
         {tools.map((tool) => (
