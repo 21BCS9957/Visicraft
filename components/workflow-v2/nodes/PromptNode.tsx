@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Position, NodeProps, useReactFlow } from 'reactflow';
+import { Position, NodeProps, useReactFlow, NodeResizer } from 'reactflow';
 import { MoreVertical, MessageSquare, Copy, Trash2, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -137,6 +137,18 @@ export function PromptNode({ data, selected, id }: NodeProps) {
         ${selected ? 'ring-2 ring-purple-500/50' : ''}
       `}
     >
+      {/* Node Resizer - allows dragging bottom edge to resize */}
+      <NodeResizer
+        color="#8b5cf6"
+        isVisible={selected}
+        minWidth={280}
+        minHeight={200}
+        handleStyle={{
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+        }}
+      />
       {/* Header */}
       <div className="px-4 py-3 border-b border-[#2a2a2a]">
         <div className="flex items-center justify-between">
@@ -203,13 +215,13 @@ export function PromptNode({ data, selected, id }: NodeProps) {
       </div>
 
       {/* Textarea */}
-      <div className="p-4">
+      <div className="p-4 h-full flex flex-col">
         <textarea
           value={prompt}
           onChange={handleChange}
           placeholder="Describe your desired output..."
           className="
-            w-full h-32
+            w-full flex-1
             bg-[#0f0f0f]
             border border-[#2a2a2a]
             rounded-lg
@@ -220,10 +232,10 @@ export function PromptNode({ data, selected, id }: NodeProps) {
             resize-none
             transition-all
           "
-          maxLength={500}
+          maxLength={2000}
         />
         <div className="text-right text-xs text-gray-600 mt-1">
-          {prompt.length} / 500
+          {prompt.length} / 2000
         </div>
       </div>
 

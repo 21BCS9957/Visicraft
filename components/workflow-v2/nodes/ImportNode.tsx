@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Position, NodeProps, useReactFlow } from 'reactflow';
+import { Position, NodeProps, useReactFlow, NodeResizer } from 'reactflow';
 import { MoreVertical, Upload, Image as ImageIcon, Copy, Trash2, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { uploadImage } from '@/lib/supabase/storage';
@@ -192,6 +192,18 @@ export function ImportNode({ data, selected, id }: NodeProps) {
         ${selected ? 'ring-2 ring-blue-500/50' : ''}
       `}
     >
+      {/* Node Resizer */}
+      <NodeResizer
+        color="#3b82f6"
+        isVisible={selected}
+        minWidth={280}
+        minHeight={200}
+        handleStyle={{
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+        }}
+      />
       {/* Header */}
       <div className="px-4 py-3 border-b border-[#2a2a2a]">
         <div className="flex items-center justify-between">

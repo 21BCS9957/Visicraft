@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Position, NodeProps, useReactFlow } from 'reactflow';
+import { Position, NodeProps, useReactFlow, NodeResizer } from 'reactflow';
 import { MoreVertical, Zap, Play, Loader2, Download, Copy, Trash2, RefreshCw, Maximize2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -225,8 +225,6 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     }
 
     try {
-      toast.loading('Creating your masterpiece...', { id: `generate-${id}` });
-
       // Build request based on available inputs
       const requestBody: any = {
         prompt: data.promptText || 'Create a professional, eye-catching image',
@@ -329,6 +327,18 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
         ${selected ? 'ring-2 ring-cyan-500/50' : ''}
       `}
     >
+      {/* Node Resizer */}
+      <NodeResizer
+        color="#06b6d4"
+        isVisible={selected}
+        minWidth={300}
+        minHeight={250}
+        handleStyle={{
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+        }}
+      />
       {/* Header */}
       <div className="px-4 py-3 border-b border-[#2a2a2a]">
         <div className="flex items-center justify-between">
@@ -451,7 +461,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black flex items-center justify-center"
+            className="fixed inset-0 bg-black/95 backdrop-blur-sm flex items-center justify-center"
             style={{ zIndex: 99999 }}
             onClick={() => setShowFullscreen(false)}
           >

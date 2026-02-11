@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Position, NodeProps, useReactFlow } from 'reactflow';
+import { Position, NodeProps, useReactFlow, NodeResizer } from 'reactflow';
 import { MoreVertical, MonitorPlay, Download, Copy, Trash2, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -122,6 +122,18 @@ export function OutputNode({ data, selected, id }: NodeProps) {
         ${selected ? 'ring-2 ring-green-500/50' : ''}
       `}
     >
+      {/* Node Resizer */}
+      <NodeResizer
+        color="#10b981"
+        isVisible={selected}
+        minWidth={280}
+        minHeight={200}
+        handleStyle={{
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+        }}
+      />
       {/* Header */}
       <div className="px-4 py-3 border-b border-[#2a2a2a]">
         <div className="flex items-center justify-between">
