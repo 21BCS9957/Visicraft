@@ -23,7 +23,7 @@ import { ImportNode } from './nodes/ImportNode';
 import { PromptNode } from './nodes/PromptNode';
 import { GenerateNode } from './nodes/GenerateNode';
 import { OutputNode } from './nodes/OutputNode';
-import { CustomEdge } from './CustomEdge';
+import UnifiedEdge from './edges/UnifiedEdge';
 import { Sidebar } from './Sidebar';
 import { PropertiesPanel } from './PropertiesPanel';
 import { Topbar } from './Topbar';
@@ -41,12 +41,13 @@ const nodeTypes = {
 };
 
 const edgeTypes = {
-  custom: CustomEdge,
+  default: UnifiedEdge,
 };
 
 const defaultEdgeOptions = {
-  type: 'custom',
+  type: 'default',
   animated: false,
+  style: { strokeWidth: 2.5 },
 };
 
 const proOptions = { hideAttribution: true };
@@ -101,6 +102,23 @@ function FlowCanvas() {
     }
   }, [searchParams, templateLoaded, setNodes, setEdges]);
 
+  // Connection validation
+  const isValidConnection = useCallback((connection: Connection) => {
+    // Prevent self-connections
+    if (connection.source === connection.target) return false;
+    
+    // Prevent duplicate connections
+    const exists = edges.some(
+      edge =>
+        edge.source === connection.source &&
+        edge.target === connection.target &&
+        edge.sourceHandle === connection.sourceHandle &&
+        edge.targetHandle === connection.targetHandle
+    );
+    
+    return !exists;
+  }, [edges]);
+
   const onConnect = useCallback(
     (params: Connection) => {
       const newEdge: Edge = {
@@ -108,9 +126,9 @@ function FlowCanvas() {
         ...params,
         source: params.source!,
         target: params.target!,
-        type: 'custom',
+        type: 'default',
         animated: false,
-        style: { strokeWidth: 2 },
+        style: { strokeWidth: 2.5 },
       };
       setEdges((eds) => addEdge(newEdge, eds));
       setHasUnsavedChanges(true);
@@ -311,6 +329,7 @@ function FlowCanvas() {
             className="bg-black"
             proOptions={proOptions}
             defaultEdgeOptions={defaultEdgeOptions}
+            isValidConnection={isValidConnection}
             nodesDraggable
             nodesConnectable
             elementsSelectable
@@ -326,8 +345,8 @@ function FlowCanvas() {
             nodeOrigin={[0.5, 0.5]}
             elevateNodesOnSelect={false}
             elevateEdgesOnSelect={true}
-            connectionLineStyle={{ stroke: '#06b6d4', strokeWidth: 2 }}
-            connectionLineType={ConnectionLineType.SmoothStep}
+            connectionLineStyle={{ stroke: '#8b7355', strokeWidth: 2.5 }}
+            connectionLineType={ConnectionLineType.Bezier}
             defaultViewport={{ x: 0, y: 0, zoom: isMobile ? 0.6 : 1 }}
           >
             {showGrid && (

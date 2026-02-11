@@ -2,14 +2,13 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Position, NodeProps, useReactFlow, NodeResizer } from 'reactflow';
-import { MoreVertical, MonitorPlay, Download, Copy, Trash2, RefreshCw } from 'lucide-react';
+import { MoreVertical, Download, Copy, Trash2, RefreshCw } from 'lucide-react';
+import { Icon } from '@iconify/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { SmartHandle } from '../SmartHandle';
 
 export function OutputNode({ data, selected, id }: NodeProps) {
   const { setNodes, getNodes, setEdges, getEdges } = useReactFlow();
-  const images = data.images || [];
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -27,33 +26,43 @@ export function OutputNode({ data, selected, id }: NodeProps) {
     }
   }, [showMenu]);
 
-  const handleDownload = async (url: string, index: number) => {
-    try {
-      const response = await fetch(url);
-      const blob = await response.blob();
-      const downloadUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = `thumbnail-${index + 1}.png`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(downloadUrl);
-    } catch (error) {
-      console.error('Download failed:', error);
-    }
-  };
-
-  const handleDownloadAll = async () => {
+  const handleDownload = async () => {
+    const images = data.images || [];
     if (images.length === 0) {
       toast.error('No images to download');
       return;
     }
 
-    for (let i = 0; i < images.length; i++) {
-      await handleDownload(images[i], i);
+    try {
+      for (let i = 0; i < images.length; i++) {
+        const imageUrl = images[i];
+        
+        if (imageUrl.startsWith('data:')) {
+          const link = document.createElement('a');
+          link.href = imageUrl;
+          link.download = `output-${Date.now()}-${i + 1}.png`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        } else {
+          const response = await fetch(imageUrl);
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `output-${Date.now()}-${i + 1}.png`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        }
+      }
+      
+      toast.success(`Downloaded ${images.length} image(s)!`);
+    } catch (error) {
+      console.error('Download failed:', error);
+      toast.error('Download failed');
     }
-    toast.success(`Downloaded ${images.length} image(s)!`);
     setShowMenu(false);
   };
 
@@ -106,22 +115,13 @@ export function OutputNode({ data, selected, id }: NodeProps) {
     setShowMenu(false);
   };
 
+  // Check if handle is connected
+  const edges = getEdges();
+  const isConnected = edges.some(edge => edge.target === id);
+  const images = data.images || [];
+
   return (
-    <motion.div
-      initial={{ scale: 0.95, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      whileHover={{ scale: 1.01 }}
-      className={`
-        group
-        bg-[#1a1a1a]
-        border border-[#2a2a2a]
-        rounded-2xl
-        shadow-xl
-        min-w-[280px]
-        transition-all
-        ${selected ? 'ring-2 ring-green-500/50' : ''}
-      `}
-    >
+    <div className={`min-w-[280px] bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl transition-all ${selected ? 'ring-2 ring-[#8b7355]' : ''}`}>
       {/* Node Resizer */}
       <NodeResizer
         color="#10b981"
@@ -134,117 +134,141 @@ export function OutputNode({ data, selected, id }: NodeProps) {
           borderRadius: 4,
         }}
       />
+
       {/* Header */}
-      <div className="px-4 py-3 border-b border-[#2a2a2a]">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shadow-lg">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M9 12L11 14L15 10M21 12C21 16.971 16.971 21 12 21C7.029 21 3 16.971 3 12C3 7.029 7.029 3 12 3C16.971 3 21 7.029 21 12Z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </div>
-            <div>
-              <h3 className="text-white font-semibold text-sm">Output</h3>
-              <p className="text-gray-500 text-xs">Final Result</p>
-            </div>
-          </div>
-          <div className="relative" ref={menuRef}>
-            <button
-              onClick={() => setShowMenu(!showMenu)}
-              className="text-[#666666] hover:text-white transition-colors"
-            >
-              <MoreVertical className="w-4 h-4" />
-            </button>
-            
-            {/* Dropdown Menu */}
-            <AnimatePresence>
-              {showMenu && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95, y: -10 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                  transition={{ duration: 0.1 }}
-                  className="absolute right-0 top-full mt-1 w-48 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl z-50 overflow-hidden"
+      <div className="node-header">
+        <div className="node-header-icon bg-green-500/20">
+          <Icon icon="ph:sparkle-fill" className="w-4 h-4 text-green-400" />
+        </div>
+        <span className="node-header-title">Output</span>
+        <div className="relative" ref={menuRef}>
+          <button
+            onClick={() => setShowMenu(!showMenu)}
+            className="node-header-menu"
+          >
+            <MoreVertical className="w-4 h-4" />
+          </button>
+          
+          {/* Dropdown Menu */}
+          <AnimatePresence>
+            {showMenu && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                transition={{ duration: 0.1 }}
+                className="absolute right-0 top-full mt-1 w-48 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl z-50 overflow-hidden"
+              >
+                {images.length > 0 && (
+                  <>
+                    <button
+                      onClick={handleDownload}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download All
+                    </button>
+                    <div className="border-t border-[#2a2a2a]" />
+                  </>
+                )}
+                
+                <button
+                  onClick={handleDuplicate}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors"
                 >
-                  <button
-                    onClick={handleDownloadAll}
-                    disabled={images.length === 0}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Download className="w-4 h-4" />
-                    Download All
-                  </button>
-                  
-                  <button
-                    onClick={handleDuplicate}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors"
-                  >
-                    <Copy className="w-4 h-4" />
-                    Duplicate Node
-                  </button>
-                  
-                  <button
-                    onClick={handleReset}
-                    disabled={images.length === 0}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    Clear Output
-                  </button>
-                  
-                  <div className="border-t border-[#2a2a2a]" />
-                  
-                  <button
-                    onClick={handleDelete}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-red-400 hover:bg-[#2a2a2a] transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Delete Node
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+                  <Copy className="w-4 h-4" />
+                  Duplicate Node
+                </button>
+                
+                <button
+                  onClick={handleReset}
+                  disabled={images.length === 0}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Clear Output
+                </button>
+                
+                <div className="border-t border-[#2a2a2a]" />
+                
+                <button
+                  onClick={handleDelete}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-red-400 hover:bg-[#2a2a2a] transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete Node
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
-      {/* Output Display */}
-      <div className="p-4">
-        {images.length === 0 ? (
-          <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg h-40 flex flex-col items-center justify-center">
-            <MonitorPlay className="w-8 h-8 text-gray-600 mb-2" />
-            <span className="text-xs text-gray-600">Waiting for results...</span>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {images.map((url: string, index: number) => (
+      {/* Content */}
+      <div className="node-content">
+        {images.length > 0 ? (
+          <div className="space-y-2">
+            {images.map((imageUrl: string, index: number) => (
               <div key={index} className="relative group">
                 <img
-                  src={url}
+                  src={imageUrl}
                   alt={`Output ${index + 1}`}
-                  className="w-full rounded-lg"
+                  className="w-full h-40 object-cover rounded-lg"
                 />
-                <button
-                  onClick={() => handleDownload(url, index)}
-                  className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <Download className="w-4 h-4" />
-                </button>
+                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-lg">
+                  <button
+                    onClick={async () => {
+                      try {
+                        if (imageUrl.startsWith('data:')) {
+                          const link = document.createElement('a');
+                          link.href = imageUrl;
+                          link.download = `output-${Date.now()}.png`;
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                        } else {
+                          const response = await fetch(imageUrl);
+                          const blob = await response.blob();
+                          const url = URL.createObjectURL(blob);
+                          const link = document.createElement('a');
+                          link.href = url;
+                          link.download = `output-${Date.now()}.png`;
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                          URL.revokeObjectURL(url);
+                        }
+                        toast.success('Image downloaded!');
+                      } catch (error) {
+                        toast.error('Download failed');
+                      }
+                    }}
+                    className="bg-green-500/20 hover:bg-green-500/30 border border-green-500/30 text-green-400 px-4 py-2 rounded-lg flex items-center gap-2 transition-all"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download
+                  </button>
+                </div>
               </div>
             ))}
+          </div>
+        ) : (
+          <div className="h-40 flex flex-col items-center justify-center text-gray-600 text-sm border-2 border-dashed border-[#2a2a2a] rounded-lg">
+            <Icon icon="ph:sparkle-duotone" className="w-8 h-8 mb-2 text-gray-700" />
+            <span>No output yet</span>
+            <span className="text-xs text-gray-700 mt-1">Connect to a Generate node</span>
           </div>
         )}
       </div>
 
-      {/* Input Handle */}
-      <SmartHandle
-        nodeId={id}
-        handleId="image"
-        handleType="output"
-        type="target"
-        position={Position.Left}
-        style={{ top: '50%' }}
+      {/* Handle - LEFT ONLY (input) */}
+      <div
+        className={`react-flow__handle react-flow__handle-left handle-output ${isConnected ? 'connected' : ''}`}
+        style={{ left: '-6px', top: '50%', position: 'absolute' }}
+        data-handleid="input"
+        data-nodeid={id}
+        data-handlepos="left"
       />
-    </motion.div>
+    </div>
   );
 }

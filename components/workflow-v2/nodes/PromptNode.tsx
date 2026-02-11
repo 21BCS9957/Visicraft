@@ -2,10 +2,10 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Position, NodeProps, useReactFlow, NodeResizer } from 'reactflow';
-import { MoreVertical, MessageSquare, Copy, Trash2, RefreshCw } from 'lucide-react';
+import { MoreVertical, Copy, Trash2, RefreshCw } from 'lucide-react';
+import { Icon } from '@iconify/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { SmartHandle } from '../SmartHandle';
 
 export function PromptNode({ data, selected, id }: NodeProps) {
   const { setNodes, getNodes, setEdges, getEdges } = useReactFlow();
@@ -31,19 +31,10 @@ export function PromptNode({ data, selected, id }: NodeProps) {
     const value = e.target.value;
     setPrompt(value);
     
-    // Update node data properly using setNodes
+    // Update node data
     setNodes((nds) =>
       nds.map((node) => {
         if (node.id === id) {
-          // Also update connected Generate nodes
-          const edges = getEdges();
-          const connectedEdges = edges.filter(edge => edge.source === id);
-          
-          // Log for debugging
-          if (connectedEdges.length > 0) {
-            console.log('🔗 Prompt updated, connected to:', connectedEdges.length, 'node(s)');
-          }
-          
           return { ...node, data: { ...node.data, text: value } };
         }
         return node;
@@ -59,7 +50,6 @@ export function PromptNode({ data, selected, id }: NodeProps) {
         nds.map((node) => {
           const isConnected = connectedEdges.some(edge => edge.target === node.id);
           if (isConnected && node.type === 'generate') {
-            console.log('✅ Updated Generate node prompt:', value.substring(0, 50) + '...');
             return {
               ...node,
               data: { ...node.data, promptText: value },
@@ -121,23 +111,13 @@ export function PromptNode({ data, selected, id }: NodeProps) {
     setShowMenu(false);
   };
 
+  // Check if handle is connected
+  const edges = getEdges();
+  const isConnected = edges.some(edge => edge.source === id);
+
   return (
-    <motion.div
-      initial={{ scale: 0.95, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      whileHover={{ scale: 1.01 }}
-      className={`
-        group
-        bg-[#1a1a1a]
-        border border-[#2a2a2a]
-        rounded-2xl
-        shadow-xl
-        min-w-[280px]
-        transition-all
-        ${selected ? 'ring-2 ring-purple-500/50' : ''}
-      `}
-    >
-      {/* Node Resizer - allows dragging bottom edge to resize */}
+    <div className={`min-w-[280px] bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl transition-all ${selected ? 'ring-2 ring-[#8b7355]' : ''}`}>
+      {/* Node Resizer */}
       <NodeResizer
         color="#8b5cf6"
         isVisible={selected}
@@ -149,89 +129,70 @@ export function PromptNode({ data, selected, id }: NodeProps) {
           borderRadius: 4,
         }}
       />
+
       {/* Header */}
-      <div className="px-4 py-3 border-b border-[#2a2a2a]">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center shadow-lg">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M8 12H16M8 8H16M8 16H12M6 20H18C19.105 20 20 19.105 20 18V6C20 4.895 19.105 4 18 4H6C4.895 4 4 4.895 4 6V18C4 19.105 4.895 20 6 20Z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </div>
-            <div>
-              <h3 className="text-white font-semibold text-sm">Prompt</h3>
-              <p className="text-gray-500 text-xs">Text Input</p>
-            </div>
-          </div>
-          <div className="relative" ref={menuRef}>
-            <button
-              onClick={() => setShowMenu(!showMenu)}
-              className="text-[#666666] hover:text-white transition-colors"
-            >
-              <MoreVertical className="w-4 h-4" />
-            </button>
-            
-            {/* Dropdown Menu */}
-            <AnimatePresence>
-              {showMenu && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95, y: -10 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                  transition={{ duration: 0.1 }}
-                  className="absolute right-0 top-full mt-1 w-48 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl z-50 overflow-hidden"
+      <div className="node-header">
+        <div className="node-header-icon bg-purple-500/20">
+          <Icon icon="ph:chat-text-fill" className="w-4 h-4 text-purple-400" />
+        </div>
+        <span className="node-header-title">Prompt</span>
+        <div className="relative" ref={menuRef}>
+          <button
+            onClick={() => setShowMenu(!showMenu)}
+            className="node-header-menu"
+          >
+            <MoreVertical className="w-4 h-4" />
+          </button>
+          
+          {/* Dropdown Menu */}
+          <AnimatePresence>
+            {showMenu && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                transition={{ duration: 0.1 }}
+                className="absolute right-0 top-full mt-1 w-48 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl z-50 overflow-hidden"
+              >
+                <button
+                  onClick={handleDuplicate}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors"
                 >
-                  <button
-                    onClick={handleDuplicate}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors"
-                  >
-                    <Copy className="w-4 h-4" />
-                    Duplicate Node
-                  </button>
-                  
-                  <button
-                    onClick={handleReset}
-                    disabled={!prompt}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    Clear Prompt
-                  </button>
-                  
-                  <div className="border-t border-[#2a2a2a]" />
-                  
-                  <button
-                    onClick={handleDelete}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-red-400 hover:bg-[#2a2a2a] transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Delete Node
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+                  <Copy className="w-4 h-4" />
+                  Duplicate Node
+                </button>
+                
+                <button
+                  onClick={handleReset}
+                  disabled={!prompt}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Clear Prompt
+                </button>
+                
+                <div className="border-t border-[#2a2a2a]" />
+                
+                <button
+                  onClick={handleDelete}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-red-400 hover:bg-[#2a2a2a] transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete Node
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
-      {/* Textarea */}
-      <div className="p-4 h-full flex flex-col">
+      {/* Content */}
+      <div className="node-content h-full flex flex-col">
         <textarea
           value={prompt}
           onChange={handleChange}
           placeholder="Describe your desired output..."
-          className="
-            w-full flex-1
-            bg-[#0f0f0f]
-            border border-[#2a2a2a]
-            rounded-lg
-            px-3 py-2
-            text-sm text-white
-            placeholder:text-gray-600
-            focus:outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50
-            resize-none
-            transition-all
-          "
+          className="w-full flex-1 min-h-[120px] bg-[#0f0f0f] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 resize-none transition-all"
           maxLength={2000}
         />
         <div className="text-right text-xs text-gray-600 mt-1">
@@ -239,15 +200,19 @@ export function PromptNode({ data, selected, id }: NodeProps) {
         </div>
       </div>
 
-      {/* Output Handle */}
-      <SmartHandle
-        nodeId={id}
-        handleId="prompt"
-        handleType="prompt"
-        type="source"
-        position={Position.Right}
-        style={{ top: '50%' }}
+      {/* Output Handle - RIGHT ONLY */}
+      <div
+        className={`react-flow__handle react-flow__handle-right handle-prompt ${isConnected ? 'connected' : ''}`}
+        style={{ 
+          position: 'absolute',
+          right: '-6px',
+          top: '50%',
+          transform: 'translateY(-50%)'
+        }}
+        data-handleid="prompt"
+        data-nodeid={id}
+        data-handlepos="right"
       />
-    </motion.div>
+    </div>
   );
 }
