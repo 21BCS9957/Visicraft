@@ -115,14 +115,19 @@ function FlowCanvas() {
                   const sourceNode = templateData.nodes.find(n => n.id === edge.source);
                   if (!sourceNode) return;
                   
-                  const sourceImageUrl = sourceNode.data.supabaseUrl || sourceNode.data.imageUrl;
-                  
-                  if (edge.targetHandle === 'referenceImage' && sourceImageUrl) {
-                    updatedNode.data.referenceImageUrl = sourceImageUrl;
-                  } else if (edge.targetHandle === 'sourceImage' && sourceImageUrl) {
-                    updatedNode.data.sourceImageUrl = sourceImageUrl;
-                  } else if (edge.targetHandle === 'prompt' && sourceNode.data.text) {
+                  // For images: Only use supabaseUrl (user uploaded), not imageUrl (template example)
+                  // For prompts: Always use the template text
+                  if (edge.targetHandle === 'prompt' && sourceNode.data.text) {
                     updatedNode.data.promptText = sourceNode.data.text;
+                  } else {
+                    // Only initialize images if user has uploaded (has supabaseUrl)
+                    const sourceImageUrl = sourceNode.data.supabaseUrl;
+                    
+                    if (edge.targetHandle === 'referenceImage' && sourceImageUrl) {
+                      updatedNode.data.referenceImageUrl = sourceImageUrl;
+                    } else if (edge.targetHandle === 'sourceImage' && sourceImageUrl) {
+                      updatedNode.data.sourceImageUrl = sourceImageUrl;
+                    }
                   }
                 }
               });
