@@ -40,7 +40,7 @@
         "nodeType": "source",
         "label": "Your Photo/Screenshot",
         "placeholder": "Upload your base image",
-        "imageUrl": "/Youtube Template/Youtube _Source.jpg",
+        "imageUrl": "/Youtube Template/Youtube _Source.png",
         "status": "idle"
       }
     },
@@ -62,7 +62,8 @@
         "aspectRatio": "16:9",
         "resolution": "2K",
         "model": "gemini-3-pro",
-        "status": "idle"
+        "generatedImage": "/Youtube Template/Youtube_Generated.png",
+        "status": "complete"
       }
     }
   ],

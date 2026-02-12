@@ -421,6 +421,8 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
               src={result}
               alt="Generated"
               className={`w-full ${previewHeight} object-cover rounded cursor-pointer`}
+              loading="lazy"
+              decoding="async"
               onClick={(e) => {
                 e.stopPropagation();
                 setShowFullscreen(true);
