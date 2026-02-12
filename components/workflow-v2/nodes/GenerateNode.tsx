@@ -170,20 +170,38 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       return;
     }
 
-    // Flexible validation: Need at least ONE image (reference OR source)
-    const hasReferenceImage = !!data.referenceImageUrl;
-    const hasSourceImage = !!data.sourceImageUrl;
-    const hasPrompt = !!data.promptText;
+    // Get current edges to verify connections
+    const currentEdges = getEdges();
+    const connectedToThis = currentEdges.filter(e => e.target === id);
+    
+    // Verify actual connections and get data only from connected nodes
+    let actualReferenceUrl: string | null = null;
+    let actualSourceUrl: string | null = null;
+    let actualPromptText: string | null = null;
+    
+    connectedToThis.forEach(edge => {
+      const sourceNode = getNodes().find(n => n.id === edge.source);
+      if (!sourceNode) return;
+      
+      if (edge.targetHandle === 'referenceImage') {
+        // Only use uploaded images (supabaseUrl), not template examples
+        actualReferenceUrl = sourceNode.data.supabaseUrl || null;
+      } else if (edge.targetHandle === 'sourceImage') {
+        actualSourceUrl = sourceNode.data.supabaseUrl || null;
+      } else if (edge.targetHandle === 'prompt') {
+        actualPromptText = sourceNode.data.text || null;
+      }
+    });
 
     // Validation: Need at least one image
-    if (!hasReferenceImage && !hasSourceImage) {
+    if (!actualReferenceUrl && !actualSourceUrl) {
       toast.error('Connect at least one image to get started');
       return; // Exit BEFORE deducting credits
     }
 
     // Validation: If only one image (not both), must have prompt
-    const hasOnlyOneImage = (hasReferenceImage && !hasSourceImage) || (!hasReferenceImage && hasSourceImage);
-    if (hasOnlyOneImage && !hasPrompt) {
+    const hasOnlyOneImage = (actualReferenceUrl && !actualSourceUrl) || (!actualReferenceUrl && actualSourceUrl);
+    if (hasOnlyOneImage && !actualPromptText) {
       toast.error('Add a prompt to bring your vision to life');
       return; // Exit BEFORE deducting credits
     }
@@ -227,25 +245,25 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     try {
       // Build request based on available inputs
       const requestBody: any = {
-        prompt: data.promptText || 'Create a professional, eye-catching image',
+        prompt: actualPromptText || 'Create a professional, eye-catching image',
         model: model,
         aspectRatio: data.aspectRatio || '16:9',
         resolution: resolution,
       };
 
       // Add images if available
-      if (hasReferenceImage && hasSourceImage) {
+      if (actualReferenceUrl && actualSourceUrl) {
         // Both images available - full transformation
-        requestBody.referenceImage = data.referenceImageUrl;
-        requestBody.sourceImages = [data.sourceImageUrl];
-      } else if (hasSourceImage) {
+        requestBody.referenceImage = actualReferenceUrl;
+        requestBody.sourceImages = [actualSourceUrl];
+      } else if (actualSourceUrl) {
         // Only source image - use it as both reference and source
-        requestBody.referenceImage = data.sourceImageUrl;
-        requestBody.sourceImages = [data.sourceImageUrl];
-      } else if (hasReferenceImage) {
+        requestBody.referenceImage = actualSourceUrl;
+        requestBody.sourceImages = [actualSourceUrl];
+      } else if (actualReferenceUrl) {
         // Only reference image - use it as both
-        requestBody.referenceImage = data.referenceImageUrl;
-        requestBody.sourceImages = [data.referenceImageUrl];
+        requestBody.referenceImage = actualReferenceUrl;
+        requestBody.sourceImages = [actualReferenceUrl];
       }
 
       // Call the API

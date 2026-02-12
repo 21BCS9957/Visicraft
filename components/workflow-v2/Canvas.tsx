@@ -79,7 +79,7 @@ function FlowCanvas() {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const reactFlowInstance = useReactFlow();
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [edges, setEdges, onEdgesChangeBase] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [templateLoaded, setTemplateLoaded] = useState(false);
@@ -92,6 +92,41 @@ function FlowCanvas() {
   const [initialViewport, setInitialViewport] = useState<{ x: number; y: number; zoom: number } | null>(null);
   const hasShownToast = useRef(false);
   const isMobile = useIsMobile();
+
+  // Custom edge change handler to clear node data when edges are deleted
+  const onEdgesChange = useCallback((changes: any[]) => {
+    // Handle edge deletions
+    changes.forEach(change => {
+      if (change.type === 'remove') {
+        const edge = edges.find(e => e.id === change.id);
+        if (edge && edge.target) {
+          // Clear the data in the target node
+          setNodes((nds) =>
+            nds.map((node) => {
+              if (node.id === edge.target && node.type === 'generate') {
+                const updatedData = { ...node.data };
+                
+                // Clear the specific handle data
+                if (edge.targetHandle === 'referenceImage') {
+                  delete updatedData.referenceImageUrl;
+                } else if (edge.targetHandle === 'sourceImage') {
+                  delete updatedData.sourceImageUrl;
+                } else if (edge.targetHandle === 'prompt') {
+                  delete updatedData.promptText;
+                }
+                
+                return { ...node, data: updatedData };
+              }
+              return node;
+            })
+          );
+        }
+      }
+    });
+    
+    // Call the base handler
+    onEdgesChangeBase(changes);
+  }, [edges, setNodes, onEdgesChangeBase]);
 
   useEffect(() => {
     if (!templateLoaded) {
