@@ -124,6 +124,15 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
   const aspectRef = useRef<HTMLDivElement>(null);
   const resolutionRef = useRef<HTMLDivElement>(null);
 
+  // Sync state when selected node changes
+  useEffect(() => {
+    if (selectedNode?.data) {
+      setSelectedModel(selectedNode.data.model || 'nano-banana-pro');
+      setSelectedAspect(selectedNode.data.aspectRatio || '16:9');
+      setSelectedResolution(selectedNode.data.resolution || '1080p');
+    }
+  }, [selectedNode?.id, selectedNode?.data?.model, selectedNode?.data?.aspectRatio, selectedNode?.data?.resolution]);
+
   // Calculate credit cost
   const creditCost = CREDIT_COSTS[selectedModel]?.[selectedResolution] || 30;
   const hasEnoughCredits = credits >= creditCost;
