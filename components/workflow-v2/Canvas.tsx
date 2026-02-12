@@ -93,6 +93,28 @@ function FlowCanvas() {
   const hasShownToast = useRef(false);
   const isMobile = useIsMobile();
 
+  // Auto-save workflow to localStorage
+  useEffect(() => {
+    if (templateLoaded && hasUnsavedChanges && nodes.length > 0) {
+      const saveTimeout = setTimeout(() => {
+        try {
+          const workflowData = {
+            nodes,
+            edges,
+            timestamp: Date.now(),
+            template: searchParams.get('template') || 'custom',
+          };
+          localStorage.setItem('workflow-autosave', JSON.stringify(workflowData));
+          console.log('💾 Workflow auto-saved');
+        } catch (error) {
+          console.error('Failed to auto-save:', error);
+        }
+      }, 2000); // Save 2 seconds after last change
+
+      return () => clearTimeout(saveTimeout);
+    }
+  }, [nodes, edges, hasUnsavedChanges, templateLoaded, searchParams]);
+
   // Custom edge change handler to clear node data when edges are deleted
   const onEdgesChange = useCallback((changes: any[]) => {
     // Handle edge deletions
@@ -131,7 +153,34 @@ function FlowCanvas() {
   useEffect(() => {
     if (!templateLoaded) {
       const template = searchParams.get('template') || 'custom';
-      const templateData = loadTemplate(template);
+      
+      // Try to restore auto-saved workflow if it matches the current template
+      let templateData;
+      try {
+        const saved = localStorage.getItem('workflow-autosave');
+        if (saved) {
+          const savedData = JSON.parse(saved);
+          // Only restore if it's for the same template and less than 24 hours old
+          const isRecent = Date.now() - savedData.timestamp < 24 * 60 * 60 * 1000;
+          if (savedData.template === template && isRecent && savedData.nodes.length > 0) {
+            templateData = {
+              nodes: savedData.nodes,
+              edges: savedData.edges,
+              viewport: null,
+            };
+            console.log('📂 Restored auto-saved workflow');
+            toast.success('Restored your last session!');
+          }
+        }
+      } catch (error) {
+        console.error('Failed to restore auto-save:', error);
+      }
+      
+      // Load template if no auto-save was restored
+      if (!templateData) {
+        templateData = loadTemplate(template);
+      }
+      
       setNodes(templateData.nodes);
       setEdges(templateData.edges);
       
