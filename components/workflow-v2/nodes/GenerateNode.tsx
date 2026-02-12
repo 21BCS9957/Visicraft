@@ -179,9 +179,21 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     let actualSourceUrl: string | null = null;
     let actualPromptText: string | null = null;
     
+    console.log('🔍 Checking connections for Generate node:', id);
+    console.log('Connected edges:', connectedToThis);
+    
     connectedToThis.forEach(edge => {
       const sourceNode = getNodes().find(n => n.id === edge.source);
       if (!sourceNode) return;
+      
+      console.log('Source node data:', {
+        nodeId: sourceNode.id,
+        type: sourceNode.type,
+        handle: edge.targetHandle,
+        supabaseUrl: sourceNode.data.supabaseUrl,
+        text: sourceNode.data.text,
+        allData: sourceNode.data
+      });
       
       if (edge.targetHandle === 'referenceImage') {
         // Only use uploaded images (supabaseUrl), not template examples
@@ -191,6 +203,12 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       } else if (edge.targetHandle === 'prompt') {
         actualPromptText = sourceNode.data.text || null;
       }
+    });
+
+    console.log('📊 Validation results:', {
+      actualReferenceUrl,
+      actualSourceUrl,
+      actualPromptText
     });
 
     // Validation: Need at least one image
