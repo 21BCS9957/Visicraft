@@ -10,7 +10,8 @@ import { SmartHandle } from '../SmartHandle';
 
 export function ImportNode({ data, selected, id }: NodeProps) {
   const { setNodes, getEdges, getNodes, setEdges } = useReactFlow();
-  const [image, setImage] = useState<string | null>(data.imageUrl || null);
+  // Prioritize supabaseUrl over imageUrl (template example)
+  const [image, setImage] = useState<string | null>(data.supabaseUrl || data.imageUrl || null);
   const [uploading, setUploading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -59,7 +60,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
               ...node,
               data: {
                 ...node.data,
-                imageUrl: url,
+                imageUrl: null, // Clear template example image
                 uploaded: true,
                 supabaseUrl: url,
               },
