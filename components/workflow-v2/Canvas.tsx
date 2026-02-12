@@ -196,7 +196,7 @@ function FlowCanvas() {
               // Find all edges connected to this generate node
               templateData.edges.forEach((edge: Edge) => {
                 if (edge.target === node.id) {
-                  const sourceNode = templateData.nodes.find(n => n.id === edge.source);
+                  const sourceNode = templateData.nodes.find((n: Node) => n.id === edge.source);
                   if (!sourceNode) return;
                   
                   // For images: Only use supabaseUrl (user uploaded), not imageUrl (template example)
