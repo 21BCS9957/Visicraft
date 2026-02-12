@@ -12,6 +12,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
   const { setNodes, getEdges, getNodes, setEdges } = useReactFlow();
   // Prioritize supabaseUrl over imageUrl (template example)
   const [image, setImage] = useState<string | null>(data.supabaseUrl || data.imageUrl || null);
+  const [imageLoading, setImageLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -274,10 +275,31 @@ export function ImportNode({ data, selected, id }: NodeProps) {
       <div className="p-4">
         {image ? (
           <div className="relative group">
+            {/* Loading skeleton */}
+            {imageLoading && (
+              <div className="absolute inset-0 bg-[#1a1a1a] rounded-lg animate-pulse flex items-center justify-center">
+                <div className="text-gray-600 text-xs">Loading...</div>
+              </div>
+            )}
             <img
               src={image}
               alt="Imported"
-              className="w-full h-40 object-cover rounded-lg"
+              className={`w-full h-40 object-cover rounded-lg transition-opacity duration-300 ${imageLoading ? 'opacity-0' : 'opacity-100'}`}
+              loading="lazy"
+              decoding="async"
+              onLoad={() => setImageLoading(false)}
+              onError={(e) => {
+                setImageLoading(false);
+                // Fallback if image fails to load
+                e.currentTarget.style.display = 'none';
+                const parent = e.currentTarget.parentElement;
+                if (parent) {
+                  const fallback = document.createElement('div');
+                  fallback.className = 'w-full h-40 bg-[#1a1a1a] rounded-lg flex items-center justify-center';
+                  fallback.innerHTML = '<span class="text-gray-500 text-xs">Failed to load image</span>';
+                  parent.appendChild(fallback);
+                }
+              }}
             />
             <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
               <label className="cursor-pointer">
