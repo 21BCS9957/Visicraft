@@ -194,7 +194,7 @@ function FlowCanvas() {
               const updatedNode = { ...node, data: { ...node.data } };
               
               // Find all edges connected to this generate node
-              templateData.edges.forEach(edge => {
+              templateData.edges.forEach((edge: Edge) => {
                 if (edge.target === node.id) {
                   const sourceNode = templateData.nodes.find(n => n.id === edge.source);
                   if (!sourceNode) return;
