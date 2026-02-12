@@ -174,6 +174,9 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     const currentEdges = getEdges();
     const connectedToThis = currentEdges.filter(e => e.target === id);
     
+    console.log('🔍 DEBUG: Connected edges:', connectedToThis);
+    console.log('🔍 DEBUG: All nodes:', getNodes().map(n => ({ id: n.id, type: n.type, data: n.data })));
+    
     // Verify actual connections and get data only from connected nodes
     let actualReferenceUrl: string | null = null;
     let actualSourceUrl: string | null = null;
@@ -182,6 +185,14 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     connectedToThis.forEach(edge => {
       const sourceNode = getNodes().find(n => n.id === edge.source);
       if (!sourceNode) return;
+      
+      console.log('🔍 DEBUG: Processing edge:', {
+        targetHandle: edge.targetHandle,
+        sourceNodeId: sourceNode.id,
+        sourceNodeType: sourceNode.type,
+        supabaseUrl: sourceNode.data.supabaseUrl,
+        text: sourceNode.data.text
+      });
       
       if (edge.targetHandle === 'referenceImage') {
         // Only use uploaded images (supabaseUrl), not template examples
@@ -196,13 +207,23 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     // Fallback: Also check the node's own data (set by ImportNode on upload)
     if (!actualReferenceUrl && data.referenceImageUrl) {
       actualReferenceUrl = data.referenceImageUrl;
+      console.log('✅ DEBUG: Using referenceImageUrl from node data:', actualReferenceUrl);
     }
     if (!actualSourceUrl && data.sourceImageUrl) {
       actualSourceUrl = data.sourceImageUrl;
+      console.log('✅ DEBUG: Using sourceImageUrl from node data:', actualSourceUrl);
     }
     if (!actualPromptText && data.promptText) {
       actualPromptText = data.promptText;
+      console.log('✅ DEBUG: Using promptText from node data:', actualPromptText);
     }
+
+    console.log('📊 DEBUG: Final validation state:', {
+      actualReferenceUrl,
+      actualSourceUrl,
+      actualPromptText,
+      hasAtLeastOneImage: !!(actualReferenceUrl || actualSourceUrl)
+    });
 
     // PRODUCTION VALIDATION LOGIC
     // Rule 1: Must have at least one image
