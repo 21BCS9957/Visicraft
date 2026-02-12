@@ -208,8 +208,22 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     console.log('📊 Validation results:', {
       actualReferenceUrl,
       actualSourceUrl,
-      actualPromptText
+      actualPromptText,
+      nodeOwnData: {
+        referenceImageUrl: data.referenceImageUrl,
+        sourceImageUrl: data.sourceImageUrl
+      }
     });
+
+    // Fallback: Also check the node's own data (set by ImportNode on upload)
+    if (!actualReferenceUrl && data.referenceImageUrl) {
+      actualReferenceUrl = data.referenceImageUrl;
+      console.log('✅ Using referenceImageUrl from node data');
+    }
+    if (!actualSourceUrl && data.sourceImageUrl) {
+      actualSourceUrl = data.sourceImageUrl;
+      console.log('✅ Using sourceImageUrl from node data');
+    }
 
     // Validation: Need at least one image
     if (!actualReferenceUrl && !actualSourceUrl) {

@@ -163,12 +163,50 @@ function FlowCanvas() {
           // Only restore if it's for the same template and less than 24 hours old
           const isRecent = Date.now() - savedData.timestamp < 24 * 60 * 60 * 1000;
           if (savedData.template === template && isRecent && savedData.nodes.length > 0) {
+            // Load the original template first
+            const originalTemplate = loadTemplate(template);
+            
+            // Restore structure and prompts, but keep template images
             templateData = {
-              nodes: savedData.nodes,
+              nodes: savedData.nodes.map((savedNode: Node) => {
+                // Find corresponding node in original template
+                const originalNode = originalTemplate.nodes.find((n: Node) => n.id === savedNode.id);
+                
+                // For import nodes: keep template imageUrl, clear user uploads
+                if (savedNode.type === 'import') {
+                  return {
+                    ...savedNode,
+                    data: {
+                      ...savedNode.data,
+                      supabaseUrl: null, // Don't restore user uploads
+                      uploaded: false,
+                      imageUrl: originalNode?.data?.imageUrl || null, // Keep template example
+                    }
+                  };
+                }
+                
+                // For generate nodes: clear generated images and user uploads
+                if (savedNode.type === 'generate') {
+                  return {
+                    ...savedNode,
+                    data: {
+                      ...savedNode.data,
+                      generatedImage: originalNode?.data?.generatedImage || null, // Keep template example
+                      status: originalNode?.data?.status || 'idle',
+                      referenceImageUrl: null, // Clear user uploads
+                      sourceImageUrl: null, // Clear user uploads
+                      // Keep prompt text from saved session
+                    }
+                  };
+                }
+                
+                // For other nodes (prompt, note): restore as-is
+                return savedNode;
+              }),
               edges: savedData.edges,
               viewport: null,
             };
-            console.log('📂 Restored auto-saved workflow');
+            console.log('📂 Restored workflow structure (template images preserved)');
             toast.success('Restored your last session!');
           }
         }
