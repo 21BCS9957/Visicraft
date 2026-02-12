@@ -39,6 +39,46 @@ const templates: Template[] = [
     category: 'product',
     gradient: 'from-blue-500 to-indigo-600',
   },
+  {
+    id: 'amazon-creative',
+    name: 'Amazon Creative',
+    description: 'Eye-catching product images for Amazon listings',
+    icon: 'lucide:package',
+    category: 'ecommerce',
+    gradient: 'from-orange-500 to-amber-600',
+  },
+  {
+    id: 'shopify-creative',
+    name: 'Shopify Creative',
+    description: 'Stunning product visuals for Shopify stores',
+    icon: 'lucide:shopping-cart',
+    category: 'ecommerce',
+    gradient: 'from-green-500 to-emerald-600',
+  },
+  {
+    id: 'meta-ads',
+    name: 'Meta Ads',
+    description: 'High-converting ad creatives for Facebook & Instagram',
+    icon: 'lucide:megaphone',
+    category: 'advertising',
+    gradient: 'from-blue-600 to-purple-600',
+  },
+  {
+    id: 'viral-thumbnail-factory',
+    name: 'Viral Thumbnail Factory',
+    description: 'Create attention-grabbing thumbnails that drive clicks',
+    icon: 'lucide:zap',
+    category: 'youtube',
+    gradient: 'from-pink-500 to-rose-600',
+  },
+  {
+    id: 'brand-universe-explorer',
+    name: 'Brand Universe Explorer',
+    description: 'Explore and create consistent brand visuals',
+    icon: 'lucide:sparkles',
+    category: 'branding',
+    gradient: 'from-violet-500 to-purple-600',
+  },
 ];
 
 interface TemplateSelectionModalProps {
@@ -100,7 +140,7 @@ export default function TemplateSelectionModal({
 
             {/* Templates Grid */}
             <div className="p-6 overflow-y-auto max-h-[calc(80vh-120px)]">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {templates.map((template, index) => (
                   <motion.button
                     key={template.id}

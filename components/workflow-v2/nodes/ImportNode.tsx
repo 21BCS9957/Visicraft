@@ -51,8 +51,6 @@ export function ImportNode({ data, selected, id }: NodeProps) {
       // Upload to Supabase
       const url = await uploadImage(file, 'source-images');
       
-      console.log('✅ Image uploaded:', url);
-      
       // Update this node's data
       setNodes((nds) =>
         nds.map((node) => {
@@ -82,12 +80,6 @@ export function ImportNode({ data, selected, id }: NodeProps) {
             if (isConnected && node.type === 'generate') {
               const edge = connectedEdges.find(e => e.target === node.id);
               const handleId = edge?.targetHandle;
-              
-              console.log('🔗 Updating connected Generate node:', {
-                targetNode: node.id,
-                handle: handleId,
-                url
-              });
               
               if (handleId === 'referenceImage') {
                 return {

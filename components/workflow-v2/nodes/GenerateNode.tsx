@@ -179,21 +179,9 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     let actualSourceUrl: string | null = null;
     let actualPromptText: string | null = null;
     
-    console.log('🔍 Checking connections for Generate node:', id);
-    console.log('Connected edges:', connectedToThis);
-    
     connectedToThis.forEach(edge => {
       const sourceNode = getNodes().find(n => n.id === edge.source);
       if (!sourceNode) return;
-      
-      console.log('Source node data:', {
-        nodeId: sourceNode.id,
-        type: sourceNode.type,
-        handle: edge.targetHandle,
-        supabaseUrl: sourceNode.data.supabaseUrl,
-        text: sourceNode.data.text,
-        allData: sourceNode.data
-      });
       
       if (edge.targetHandle === 'referenceImage') {
         // Only use uploaded images (supabaseUrl), not template examples
@@ -205,37 +193,27 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       }
     });
 
-    console.log('📊 Validation results:', {
-      actualReferenceUrl,
-      actualSourceUrl,
-      actualPromptText,
-      nodeOwnData: {
-        referenceImageUrl: data.referenceImageUrl,
-        sourceImageUrl: data.sourceImageUrl
-      }
-    });
-
     // Fallback: Also check the node's own data (set by ImportNode on upload)
     if (!actualReferenceUrl && data.referenceImageUrl) {
       actualReferenceUrl = data.referenceImageUrl;
-      console.log('✅ Using referenceImageUrl from node data');
     }
     if (!actualSourceUrl && data.sourceImageUrl) {
       actualSourceUrl = data.sourceImageUrl;
-      console.log('✅ Using sourceImageUrl from node data');
+    }
+    if (!actualPromptText && data.promptText) {
+      actualPromptText = data.promptText;
     }
 
-    // Validation: Need at least one image
+    // PRODUCTION VALIDATION LOGIC
+    // Rule 1: Must have at least one image
     if (!actualReferenceUrl && !actualSourceUrl) {
-      toast.error('Connect at least one image to get started');
-      return; // Exit BEFORE deducting credits
+      toast.error('Connect at least one image (reference or source)');
+      return;
     }
 
-    // Validation: If only one image (not both), must have prompt
-    const hasOnlyOneImage = (actualReferenceUrl && !actualSourceUrl) || (!actualReferenceUrl && actualSourceUrl);
-    if (hasOnlyOneImage && !actualPromptText) {
-      toast.error('Add a prompt to bring your vision to life');
-      return; // Exit BEFORE deducting credits
+    // Rule 2: If no prompt provided, use a default one (don't block generation)
+    if (!actualPromptText) {
+      actualPromptText = 'Create a professional, eye-catching image with vibrant colors and sharp details';
     }
 
     // Calculate credit cost (default values if not set)
@@ -277,7 +255,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     try {
       // Build request based on available inputs
       const requestBody: any = {
-        prompt: actualPromptText || 'Create a professional, eye-catching image',
+        prompt: actualPromptText,
         model: model,
         aspectRatio: data.aspectRatio || '16:9',
         resolution: resolution,

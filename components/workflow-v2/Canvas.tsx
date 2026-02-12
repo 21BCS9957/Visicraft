@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useRef, useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import ReactFlow, {
   Background,
   BackgroundVariant,
@@ -76,6 +76,7 @@ function useIsMobile() {
 
 function FlowCanvas() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const reactFlowInstance = useReactFlow();
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
@@ -151,134 +152,134 @@ function FlowCanvas() {
   }, [edges, setNodes, onEdgesChangeBase]);
 
   useEffect(() => {
-    if (!templateLoaded) {
-      const template = searchParams.get('template') || 'custom';
-      
-      // Try to restore auto-saved workflow if it matches the current template
-      let templateData;
-      try {
-        const saved = localStorage.getItem('workflow-autosave');
-        if (saved) {
-          const savedData = JSON.parse(saved);
-          // Only restore if it's for the same template and less than 24 hours old
-          const isRecent = Date.now() - savedData.timestamp < 24 * 60 * 60 * 1000;
-          if (savedData.template === template && isRecent && savedData.nodes.length > 0) {
-            // Load the original template first
-            const originalTemplate = loadTemplate(template);
-            
-            // Restore structure and prompts, but keep template images
-            templateData = {
-              nodes: savedData.nodes.map((savedNode: Node) => {
-                // Find corresponding node in original template
-                const originalNode = originalTemplate.nodes.find((n: Node) => n.id === savedNode.id);
-                
-                // For import nodes: keep template imageUrl, clear user uploads
-                if (savedNode.type === 'import') {
-                  return {
-                    ...savedNode,
-                    data: {
-                      ...savedNode.data,
-                      supabaseUrl: null, // Don't restore user uploads
-                      uploaded: false,
-                      imageUrl: originalNode?.data?.imageUrl || null, // Keep template example
-                    }
-                  };
-                }
-                
-                // For generate nodes: clear generated images and user uploads
-                if (savedNode.type === 'generate') {
-                  return {
-                    ...savedNode,
-                    data: {
-                      ...savedNode.data,
-                      generatedImage: originalNode?.data?.generatedImage || null, // Keep template example
-                      status: originalNode?.data?.status || 'idle',
-                      referenceImageUrl: null, // Clear user uploads
-                      sourceImageUrl: null, // Clear user uploads
-                      // Keep prompt text from saved session
-                    }
-                  };
-                }
-                
-                // For other nodes (prompt, note): restore as-is
-                return savedNode;
-              }),
-              edges: savedData.edges,
-              viewport: null,
-            };
-            console.log('📂 Restored workflow structure (template images preserved)');
-            toast.success('Restored your last session!');
-          }
+    const template = searchParams.get('template') || 'custom';
+    
+    // Skip if already loaded this template
+    if (templateLoaded) return;
+    
+    // Try to restore auto-saved workflow if it matches the current template
+    let templateData;
+    try {
+      const saved = localStorage.getItem('workflow-autosave');
+      if (saved) {
+        const savedData = JSON.parse(saved);
+        // Only restore if it's for the same template and less than 24 hours old
+        const isRecent = Date.now() - savedData.timestamp < 24 * 60 * 60 * 1000;
+        if (savedData.template === template && isRecent && savedData.nodes.length > 0) {
+          // Load the original template first
+          const originalTemplate = loadTemplate(template);
+          
+          // Restore structure and prompts, but keep template images
+          templateData = {
+            nodes: savedData.nodes.map((savedNode: Node) => {
+              // Find corresponding node in original template
+              const originalNode = originalTemplate.nodes.find((n: Node) => n.id === savedNode.id);
+              
+              // For import nodes: keep template imageUrl, clear user uploads
+              if (savedNode.type === 'import') {
+                return {
+                  ...savedNode,
+                  data: {
+                    ...savedNode.data,
+                    supabaseUrl: null, // Don't restore user uploads
+                    uploaded: false,
+                    imageUrl: originalNode?.data?.imageUrl || null, // Keep template example
+                  }
+                };
+              }
+              
+              // For generate nodes: clear generated images and user uploads
+              if (savedNode.type === 'generate') {
+                return {
+                  ...savedNode,
+                  data: {
+                    ...savedNode.data,
+                    generatedImage: originalNode?.data?.generatedImage || null, // Keep template example
+                    status: originalNode?.data?.status || 'idle',
+                    referenceImageUrl: null, // Clear user uploads
+                    sourceImageUrl: null, // Clear user uploads
+                    // Keep prompt text from saved session
+                  }
+                };
+              }
+              
+              // For other nodes (prompt, note): restore as-is
+              return savedNode;
+            }),
+            edges: savedData.edges,
+            viewport: null,
+          };
+          toast.success('Restored your last session!');
         }
-      } catch (error) {
-        console.error('Failed to restore auto-save:', error);
       }
-      
-      // Load template if no auto-save was restored
-      if (!templateData) {
-        templateData = loadTemplate(template);
-      }
-      
-      setNodes(templateData.nodes);
-      setEdges(templateData.edges);
-      
-      // Initialize connections for pre-connected nodes in template
-      if (templateData.edges.length > 0) {
-        setTimeout(() => {
-          setNodes((nds) => {
-            return nds.map(node => {
-              if (node.type !== 'generate') return node;
-              
-              const updatedNode = { ...node, data: { ...node.data } };
-              
-              // Find all edges connected to this generate node
-              templateData.edges.forEach((edge: Edge) => {
-                if (edge.target === node.id) {
-                  const sourceNode = templateData.nodes.find((n: Node) => n.id === edge.source);
-                  if (!sourceNode) return;
+    } catch (error) {
+      console.error('Failed to restore auto-save:', error);
+    }
+    
+    // Load template if no auto-save was restored
+    if (!templateData) {
+      templateData = loadTemplate(template);
+    }
+    
+    setNodes(templateData.nodes);
+    setEdges(templateData.edges);
+    
+    // Initialize connections for pre-connected nodes in template
+    if (templateData.edges.length > 0) {
+      setTimeout(() => {
+        setNodes((nds) => {
+          return nds.map(node => {
+            if (node.type !== 'generate') return node;
+            
+            const updatedNode = { ...node, data: { ...node.data } };
+            
+            // Find all edges connected to this generate node
+            templateData.edges.forEach((edge: Edge) => {
+              if (edge.target === node.id) {
+                const sourceNode = templateData.nodes.find((n: Node) => n.id === edge.source);
+                if (!sourceNode) return;
+                
+                // For images: Only use supabaseUrl (user uploaded), not imageUrl (template example)
+                // For prompts: Always use the template text
+                if (edge.targetHandle === 'prompt' && sourceNode.data.text) {
+                  updatedNode.data.promptText = sourceNode.data.text;
+                } else {
+                  // Only initialize images if user has uploaded (has supabaseUrl)
+                  const sourceImageUrl = sourceNode.data.supabaseUrl;
                   
-                  // For images: Only use supabaseUrl (user uploaded), not imageUrl (template example)
-                  // For prompts: Always use the template text
-                  if (edge.targetHandle === 'prompt' && sourceNode.data.text) {
-                    updatedNode.data.promptText = sourceNode.data.text;
-                  } else {
-                    // Only initialize images if user has uploaded (has supabaseUrl)
-                    const sourceImageUrl = sourceNode.data.supabaseUrl;
-                    
-                    if (edge.targetHandle === 'referenceImage' && sourceImageUrl) {
-                      updatedNode.data.referenceImageUrl = sourceImageUrl;
-                    } else if (edge.targetHandle === 'sourceImage' && sourceImageUrl) {
-                      updatedNode.data.sourceImageUrl = sourceImageUrl;
-                    }
+                  if (edge.targetHandle === 'referenceImage' && sourceImageUrl) {
+                    updatedNode.data.referenceImageUrl = sourceImageUrl;
+                  } else if (edge.targetHandle === 'sourceImage' && sourceImageUrl) {
+                    updatedNode.data.sourceImageUrl = sourceImageUrl;
                   }
                 }
-              });
-              
-              return updatedNode;
+              }
             });
+            
+            return updatedNode;
           });
-        }, 100);
-      }
-      
-      // Set viewport if template has one
-      if (templateData.viewport) {
-        setInitialViewport(templateData.viewport);
-        setTimeout(() => {
-          reactFlowInstance.setViewport(templateData.viewport!);
-        }, 100);
-      }
-      
-      setTemplateLoaded(true);
-      setHasUnsavedChanges(false); // Reset unsaved changes on initial load
-      
-      // Only show toast once (prevent duplicate in React Strict Mode)
-      if (!hasShownToast.current) {
-        const templateName = template === 'custom' 
-          ? 'Blank canvas ready!' 
-          : `${template.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')} template loaded!`;
-        toast.success(templateName);
-        hasShownToast.current = true;
-      }
+        });
+      }, 100);
+    }
+    
+    // Set viewport if template has one
+    if (templateData.viewport) {
+      setInitialViewport(templateData.viewport);
+      setTimeout(() => {
+        reactFlowInstance.setViewport(templateData.viewport!);
+      }, 100);
+    }
+    
+    setTemplateLoaded(true);
+    setHasUnsavedChanges(false); // Reset unsaved changes on initial load
+    
+    // Only show toast once (prevent duplicate in React Strict Mode)
+    if (!hasShownToast.current) {
+      const templateName = template === 'custom' 
+        ? 'Blank canvas ready!' 
+        : `${template.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')} template loaded!`;
+      toast.success(templateName);
+      hasShownToast.current = true;
     }
   }, [searchParams, templateLoaded, setNodes, setEdges, reactFlowInstance]);
 
@@ -438,7 +439,10 @@ function FlowCanvas() {
   }, [setNodes]);
 
   const handleSelectTemplate = useCallback((templateId: string) => {
-    // Load template directly - no confirmation needed when explicitly selecting from modal
+    // Clear auto-save for old template
+    localStorage.removeItem('workflow-autosave');
+    
+    // Load template directly
     const templateData = loadTemplate(templateId);
     setNodes(templateData.nodes);
     setEdges(templateData.edges);
@@ -458,6 +462,9 @@ function FlowCanvas() {
         reactFlowInstance.fitView({ padding: 0.2, duration: 400 });
       }
     }, 100);
+    
+    // Update URL without reload (optional - for bookmarking)
+    window.history.pushState({}, '', `/workflow?template=${templateId}`);
   }, [setNodes, setEdges, reactFlowInstance]);
 
   return (
