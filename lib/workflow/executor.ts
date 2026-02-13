@@ -82,6 +82,7 @@ function validateWorkflow(graph: DependencyGraph, nodes: WorkflowNode[]): { vali
       if (!nodeData.inputs['sourceImage']) {
         errors.push('Generate node must have a Source Image connected');
       }
+      // Prompt is optional - no validation needed
     }
   });
   
@@ -191,10 +192,12 @@ async function executeGenerateNode(node: WorkflowNode, graph: DependencyGraph, e
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      referenceImageUrl,
-      sourceImageUrls: [sourceImageUrl],
-      prompt,
-      settings: generateData.settings,
+      referenceImage: referenceImageUrl,
+      sourceImages: [sourceImageUrl],
+      prompt: prompt || undefined,
+      model: generateData.settings?.model,
+      aspectRatio: generateData.settings?.aspectRatio,
+      resolution: generateData.settings?.resolution,
     }),
   });
   

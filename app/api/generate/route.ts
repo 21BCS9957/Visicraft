@@ -22,14 +22,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // If only one image type provided, prompt is required
+    // Prompt is mandatory when using only one type of image
     const hasReference = !!referenceImage;
     const hasSource = sourceImages && sourceImages.length > 0;
     
     if ((hasReference && !hasSource) || (!hasReference && hasSource)) {
       if (!prompt) {
         return NextResponse.json(
-          { error: 'Prompt is required when using only one image' },
+          { error: 'Please provide a prompt to describe what you want to generate' },
           { status: 400 }
         );
       }
@@ -42,8 +42,8 @@ export async function POST(request: NextRequest) {
     console.log('📐 Aspect Ratio:', aspectRatio || '16:9 (default)');
     console.log('🎬 Resolution:', resolution || '1080p (default)');
     console.log('💬 Prompt:', prompt?.substring(0, 50) || 'Using default prompt');
-    console.log('🖼️  Has Reference:', hasReference);
-    console.log('📸 Has Source:', hasSource);
+    console.log('🖼️  Has Reference:', !!referenceImage);
+    console.log('📸 Has Source:', !!(sourceImages && sourceImages.length > 0));
     console.log('🎨 ========================================');
 
     // Generate thumbnails using Gemini API with selected parameters

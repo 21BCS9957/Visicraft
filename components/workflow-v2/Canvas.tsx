@@ -28,6 +28,7 @@ import { CustomEdge } from './CustomEdge';
 import { Sidebar } from './Sidebar';
 import { PropertiesPanel } from './PropertiesPanel';
 import { Topbar } from './Topbar';
+import { WorkflowContext } from './WorkflowContext';
 import { RunControls } from './RunControls';
 import { executeWorkflow } from '@/lib/workflow/executor';
 import { loadTemplate } from '@/lib/workflow/templateLoader';
@@ -89,45 +90,178 @@ function FlowCanvas() {
   const [gridVariant, setGridVariant] = useState<BackgroundVariant>(BackgroundVariant.Dots);
   const [showFilePanel, setShowFilePanel] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [initialViewport, setInitialViewport] = useState<{ x: number; y: number; zoom: number } | null>(null);
   const hasShownToast = useRef(false);
   const isMobile = useIsMobile();
 
-  // Auto-save workflow to localStorage
-  useEffect(() => {
-    if (templateLoaded && hasUnsavedChanges && nodes.length > 0) {
-      const saveTimeout = setTimeout(() => {
-        try {
-          const workflowData = {
-            nodes,
-            edges,
-            timestamp: Date.now(),
-            template: searchParams.get('template') || 'custom',
-          };
-          localStorage.setItem('workflow-autosave', JSON.stringify(workflowData));
-          console.log('💾 Workflow auto-saved');
-        } catch (error) {
-          console.error('Failed to auto-save:', error);
-        }
-      }, 2000); // Save 2 seconds after last change
-
-      return () => clearTimeout(saveTimeout);
-    }
-  }, [nodes, edges, hasUnsavedChanges, templateLoaded, searchParams]);
-
-  // Reset templateLoaded when the template query param changes so we reload
+  // Get current template early so it can be used in effects
   const currentTemplate = searchParams.get('template') || 'custom';
+
+  // Track if we're in the initial load phase (to skip auto-save during template load)
+  const isInitialLoadRef = useRef(true);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Refs to always have latest nodes/edges for saving on template switch (avoids getNodes() being out of sync)
+  const nodesRef = useRef<Node[]>(nodes);
+  const edgesRef = useRef<Edge[]>(edges);
+
+  // Keep refs in sync (for save on template switch)
+  nodesRef.current = nodes;
+  edgesRef.current = edges;
+
+  // updateNodeData: directly updates React state (bypasses React Flow's internal store)
+  const updateNodeData = useCallback((nodeId: string, newData: Record<string, any>) => {
+    setNodes((nds) =>
+      nds.map((node) =>
+        node.id === nodeId
+          ? { ...node, data: { ...node.data, ...newData } }
+          : node
+      )
+    );
+  }, [setNodes]);
+
+  // Context value for child nodes to update data through Canvas's React state
+  const workflowContextValue = React.useMemo(() => ({
+    updateNodeData,
+    setNodes,
+    setEdges,
+  }), [updateNodeData, setNodes, setEdges]);
+
+  // Auto-save workflow to localStorage with template-specific key
+  // This runs whenever nodes or edges change after template is loaded
+  useEffect(() => {
+    // Skip save during initial template load
+    if (!templateLoaded || isInitialLoadRef.current) {
+      return;
+    }
+
+    // Debounce saves to avoid excessive writes
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(() => {
+      try {
+        // Use nodesRef (synced from React state every render) — now correct since
+        // child nodes update via context → Canvas's setNodes → React state
+        const latestNodes = nodesRef.current;
+        const latestEdges = edgesRef.current;
+        
+        const workflowData = {
+          nodes: latestNodes,
+          edges: latestEdges,
+          timestamp: Date.now(),
+          template: currentTemplate,
+        };
+        const saveKey = `workflow-autosave-${currentTemplate}`;
+        localStorage.setItem(saveKey, JSON.stringify(workflowData));
+
+        // Logging
+        const importNodes = latestNodes.filter(n => n.type === 'import');
+        const promptNodes = latestNodes.filter(n => n.type === 'prompt');
+        console.log('[SAVE] Auto-saved to localStorage', {
+          template: currentTemplate,
+          saveKey,
+          totalNodes: latestNodes.length,
+          importHasUrl: importNodes.map(n => !!n.data?.supabaseUrl),
+          promptHasText: promptNodes.map(n => !!(n.data?.text && n.data.text.length > 0)),
+        });
+      } catch (error) {
+        console.error('❌ Auto-save failed:', error);
+      }
+    }, 500); // 500ms debounce
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [nodes, edges, templateLoaded, currentTemplate]);
+
+  // When template query param changes: save previous template, then clear and mark for reload.
+  // Save from closure (nodes, edges) not refs - refs can be stale when effect runs after router update.
   const prevTemplateRef = useRef(currentTemplate);
+
   useEffect(() => {
     if (prevTemplateRef.current !== currentTemplate) {
+      const fromTemplate = prevTemplateRef.current;
+      console.log('[SWITCH] Template param changed (effect)', {
+        from: fromTemplate,
+        to: currentTemplate,
+        action: 'flush-save previous, clear canvas, set templateLoaded=false',
+        nodesInClosure: nodes.length,
+        edgesInClosure: edges.length,
+      });
+
+      // CRITICAL: Cancel pending auto-save and save immediately with latest data from React Flow
+      // The closure's nodes/edges may be stale if user just typed/uploaded before clicking
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+        console.log('[SWITCH] Cancelled pending auto-save');
+      }
+
+      // Flush-save: use nodesRef (synced from React state) since child nodes now update via context
+      try {
+        const latestNodes = nodesRef.current;
+        const latestEdges = edgesRef.current;
+        
+        if (latestNodes.length > 0 && !isInitialLoadRef.current) {
+          const saveKey = `workflow-autosave-${fromTemplate}`;
+          
+          // Log ACTUAL data we're about to save
+          const importNodesFlush = latestNodes.filter(n => n.type === 'import');
+          const promptNodesFlush = latestNodes.filter(n => n.type === 'prompt');
+          console.log('[SWITCH] About to save - inspecting nodes (from refs):', {
+            template: fromTemplate,
+            nodeCount: latestNodes.length,
+            importNodes: importNodesFlush.map(n => ({
+              id: n.id,
+              supabaseUrl: n.data?.supabaseUrl?.substring(0, 50) || 'NONE',
+              supabaseUrlLen: n.data?.supabaseUrl?.length ?? 0,
+            })),
+            promptNodes: promptNodesFlush.map(n => ({
+              id: n.id,
+              text: n.data?.text?.substring(0, 50) || 'NONE',
+              textLen: n.data?.text?.length ?? 0,
+            })),
+          });
+          
+          localStorage.setItem(saveKey, JSON.stringify({
+            nodes: latestNodes,
+            edges: latestEdges,
+            timestamp: Date.now(),
+            template: fromTemplate,
+          }));
+          
+          console.log('[SWITCH] Flush-saved before clear (from refs)', {
+            template: fromTemplate,
+            nodeCount: latestNodes.length,
+            importSupabaseLens: importNodesFlush.map(n => n.data?.supabaseUrl?.length ?? 0),
+            promptTextLens: promptNodesFlush.map(n => n.data?.text?.length ?? 0),
+          });
+        } else {
+          console.log('[SWITCH] Skipping save:', {
+            nodesLength: latestNodes.length,
+            isInitialLoad: isInitialLoadRef.current,
+          });
+        }
+      } catch (e) {
+        console.error('[SWITCH] Flush-save failed', e);
+      }
+
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+      }
+
+      setNodes([]);
+      setEdges([]);
+
       prevTemplateRef.current = currentTemplate;
       setTemplateLoaded(false);
       hasShownToast.current = false;
-      // Clear auto-save so the new template loads fresh
-      localStorage.removeItem('workflow-autosave');
+      isInitialLoadRef.current = true;
     }
-  }, [currentTemplate]);
+  }, [currentTemplate, setNodes, setEdges, nodes, edges]);
 
   // Custom edge change handler to clear node data when edges are deleted
   const onEdgesChange = useCallback((changes: any[]) => {
@@ -165,128 +299,150 @@ function FlowCanvas() {
   }, [edges, setNodes, onEdgesChangeBase]);
 
   useEffect(() => {
-    const template = searchParams.get('template') || 'custom';
+    const template = currentTemplate; // Use the stable currentTemplate value
+    console.log('[LOAD] Effect ran', { template, templateLoaded });
+    if (templateLoaded) {
+      console.log('[LOAD] Skipping — templateLoaded is true');
+      return;
+    }
 
-    // Skip if already loaded this template
-    if (templateLoaded) return;
-
-    // Try to restore auto-saved workflow if it matches the current template
     let templateData;
+
+    // Try to restore saved workflow
     try {
-      const saved = localStorage.getItem('workflow-autosave');
+      const saveKey = `workflow-autosave-${template}`;
+      const saved = localStorage.getItem(saveKey);
+
+      console.log('[LOAD] Reading localStorage', {
+        template,
+        saveKey,
+        hasSavedData: !!saved,
+        savedDataLength: saved?.length ?? 0,
+      });
+
       if (saved) {
         const savedData = JSON.parse(saved);
-        // Only restore if it's for the same template and less than 24 hours old
         const isRecent = Date.now() - savedData.timestamp < 24 * 60 * 60 * 1000;
+
         if (savedData.template === template && isRecent && savedData.nodes.length > 0) {
-          // Load the original template first
-          const originalTemplate = loadTemplate(template);
-
-          // Restore structure and prompts, but keep template images
           templateData = {
-            nodes: savedData.nodes.map((savedNode: Node) => {
-              // Find corresponding node in original template
-              const originalNode = originalTemplate.nodes.find((n: Node) => n.id === savedNode.id);
-
-              // For import nodes: keep template imageUrl, clear user uploads
-              if (savedNode.type === 'import') {
-                return {
-                  ...savedNode,
-                  data: {
-                    ...savedNode.data,
-                    supabaseUrl: null, // Don't restore user uploads
-                    uploaded: false,
-                    imageUrl: originalNode?.data?.imageUrl || null, // Keep template example
-                  }
-                };
-              }
-
-              // For generate nodes: clear generated images and user uploads
-              if (savedNode.type === 'generate') {
-                return {
-                  ...savedNode,
-                  data: {
-                    ...savedNode.data,
-                    generatedImage: originalNode?.data?.generatedImage || null, // Keep template example
-                    status: originalNode?.data?.status || 'idle',
-                    referenceImageUrl: null, // Clear user uploads
-                    sourceImageUrl: null, // Clear user uploads
-                    // Keep prompt text from saved session
-                  }
-                };
-              }
-
-              // For other nodes (prompt, note): restore as-is
-              return savedNode;
-            }),
+            nodes: savedData.nodes,
             edges: savedData.edges,
-            viewport: null,
+            viewport: savedData.viewport || null,
           };
-          toast.success('Restored your last session!');
+
+          // Detailed restore logging
+          const importNodes = savedData.nodes.filter((n: Node) => n.type === 'import');
+          const promptNodes = savedData.nodes.filter((n: Node) => n.type === 'prompt');
+          const impSupabaseLens = importNodes.map((n: Node) => (n.data?.supabaseUrl as string)?.length ?? 0);
+          const promptTextLens = promptNodes.map((n: Node) => (n.data?.text as string)?.length ?? 0);
+          console.log('[LOAD] Restored from localStorage', {
+            template,
+            saveKey,
+            totalNodes: savedData.nodes.length,
+            importSupabaseUrlLengths: impSupabaseLens,
+            promptTextLengths: promptTextLens,
+            importNodesData: importNodes.map((n: Node) => ({
+              id: n.id,
+              dataKeys: Object.keys(n.data || {}),
+              hasSupabaseUrl: !!n.data?.supabaseUrl,
+              supabaseUrlLen: (n.data?.supabaseUrl as string)?.length ?? 0,
+              hasImageUrl: !!n.data?.imageUrl,
+              supabaseUrlFirst80: (n.data?.supabaseUrl as string)?.substring(0, 80) ?? null,
+            })),
+            promptNodesData: promptNodes.map((n: Node) => ({
+              id: n.id,
+              dataKeys: Object.keys(n.data || {}),
+              textLen: (n.data?.text as string)?.length ?? 0,
+              textPreview: (n.data?.text as string)?.substring(0, 80) ?? null,
+            })),
+          });
+          if (impSupabaseLens.some((L: number) => L > 0) || promptTextLens.some((L: number) => L > 0)) {
+            console.log('[LOAD] ✅ Restored data HAS image/prompt:', { importSupabaseUrlLengths: impSupabaseLens, promptTextLengths: promptTextLens });
+          } else {
+            console.warn('[LOAD] ⚠️ Restored data has NO image/prompt:', { importSupabaseUrlLengths: impSupabaseLens, promptTextLengths: promptTextLens });
+          }
+        } else {
+          console.log('[LOAD] Not restoring', {
+            template,
+            reason: !isRecent ? 'too old' : savedData.template !== template ? 'template mismatch' : 'empty nodes',
+            savedTemplate: savedData.template,
+            isRecent,
+            nodesLength: savedData.nodes?.length ?? 0,
+          });
         }
       }
     } catch (error) {
-      console.error('Failed to restore auto-save:', error);
+      console.error('❌ Restore failed:', error);
     }
 
-    // Load template if no auto-save was restored
+    // Load fresh template if no saved data
     if (!templateData) {
+      console.log('[LOAD] Using fresh template from JSON', { template });
       templateData = loadTemplate(template);
     }
 
+    const importApplied = templateData.nodes.filter((n: Node) => n.type === 'import');
+    const promptApplied = templateData.nodes.filter((n: Node) => n.type === 'prompt');
+    console.log('[LOAD] Applying to canvas', {
+      template,
+      nodesCount: templateData.nodes.length,
+      edgesCount: templateData.edges.length,
+      importNodesApplied: importApplied.map((n: Node) => ({
+        id: n.id,
+        dataKeys: Object.keys(n.data || {}),
+        hasSupabaseUrl: !!n.data?.supabaseUrl,
+        supabaseUrlLen: (n.data?.supabaseUrl as string)?.length ?? 0,
+      })),
+      promptNodesApplied: promptApplied.map((n: Node) => ({
+        id: n.id,
+        textLen: (n.data?.text as string)?.length ?? 0,
+      })),
+    });
     setNodes(templateData.nodes);
     setEdges(templateData.edges);
 
-    // Initialize connections for pre-connected nodes in template
+    // Initialize generate node connections
     if (templateData.edges.length > 0) {
       setTimeout(() => {
-        setNodes((nds) => {
-          return nds.map(node => {
+        setNodes((nds) =>
+          nds.map(node => {
             if (node.type !== 'generate') return node;
 
             const updatedNode = { ...node, data: { ...node.data } };
 
-            // Find all edges connected to this generate node
             templateData.edges.forEach((edge: Edge) => {
               if (edge.target === node.id) {
                 const sourceNode = templateData.nodes.find((n: Node) => n.id === edge.source);
                 if (!sourceNode) return;
 
-                // For images: Only use supabaseUrl (user uploaded), not imageUrl (template example)
-                // For prompts: Always use the template text
                 if (edge.targetHandle === 'prompt' && sourceNode.data.text) {
                   updatedNode.data.promptText = sourceNode.data.text;
-                } else {
-                  // Only initialize images if user has uploaded (has supabaseUrl)
-                  const sourceImageUrl = sourceNode.data.supabaseUrl;
-
-                  if (edge.targetHandle === 'referenceImage' && sourceImageUrl) {
-                    updatedNode.data.referenceImageUrl = sourceImageUrl;
-                  } else if (edge.targetHandle === 'sourceImage' && sourceImageUrl) {
-                    updatedNode.data.sourceImageUrl = sourceImageUrl;
-                  }
+                } else if (edge.targetHandle === 'referenceImage' && sourceNode.data.supabaseUrl) {
+                  updatedNode.data.referenceImageUrl = sourceNode.data.supabaseUrl;
+                } else if (edge.targetHandle === 'sourceImage' && sourceNode.data.supabaseUrl) {
+                  updatedNode.data.sourceImageUrl = sourceNode.data.supabaseUrl;
                 }
               }
             });
 
             return updatedNode;
-          });
-        });
+          })
+        );
       }, 100);
     }
 
-    // Set viewport if template has one
     if (templateData.viewport) {
-      setInitialViewport(templateData.viewport);
-      setTimeout(() => {
-        reactFlowInstance.setViewport(templateData.viewport!);
-      }, 100);
+      setTimeout(() => reactFlowInstance.setViewport(templateData.viewport!), 100);
     }
 
     setTemplateLoaded(true);
-    setHasUnsavedChanges(false); // Reset unsaved changes on initial load
 
-    // Only show toast once (prevent duplicate in React Strict Mode)
+    // Allow auto-save after a short delay (after initial setup is complete)
+    setTimeout(() => {
+      isInitialLoadRef.current = false;
+    }, 1000);
+
     if (!hasShownToast.current) {
       const templateName = template === 'custom'
         ? 'Blank canvas ready!'
@@ -294,7 +450,7 @@ function FlowCanvas() {
       toast.success(templateName);
       hasShownToast.current = true;
     }
-  }, [searchParams, templateLoaded, setNodes, setEdges, reactFlowInstance]);
+  }, [currentTemplate, templateLoaded, setNodes, setEdges, reactFlowInstance]);
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -308,7 +464,6 @@ function FlowCanvas() {
         style: { strokeWidth: 2 },
       };
       setEdges((eds) => addEdge(newEdge, eds));
-      setHasUnsavedChanges(true);
 
       setNodes((nds) => {
         const sourceNode = nds.find(n => n.id === params.source);
@@ -372,7 +527,6 @@ function FlowCanvas() {
       data: nodeType ? { nodeType } : {},
     };
     setNodes((nds) => [...nds, newNode]);
-    setHasUnsavedChanges(true);
 
     // Auto-zoom to fit new node
     setTimeout(() => {
@@ -452,35 +606,64 @@ function FlowCanvas() {
   }, [setNodes]);
 
   const handleSelectTemplate = useCallback((templateId: string) => {
-    // Clear auto-save for old template
-    localStorage.removeItem('workflow-autosave');
+    const templateWeAreLeaving = searchParams.get('template') || 'custom';
+    // Use refs so we save the actual React state (getNodes() can be out of sync in controlled mode)
+    const currentNodes = nodesRef.current;
+    const currentEdges = edgesRef.current;
 
-    // Load template directly
-    const templateData = loadTemplate(templateId);
-    setNodes(templateData.nodes);
-    setEdges(templateData.edges);
-    setHasUnsavedChanges(false);
+    const importNodesClick = currentNodes.filter(n => n.type === 'import');
+    const promptNodesClick = currentNodes.filter(n => n.type === 'prompt');
+    console.log('[SWITCH] User clicked template in modal', {
+      selectedTemplateId: templateId,
+      leavingTemplate: templateWeAreLeaving,
+      nodesCount: currentNodes.length,
+      importNodesData: importNodesClick.map(n => ({
+        id: n.id,
+        dataKeys: Object.keys(n.data || {}),
+        hasSupabaseUrl: !!n.data?.supabaseUrl,
+        supabaseUrlLen: n.data?.supabaseUrl?.length ?? 0,
+      })),
+      promptNodesData: promptNodesClick.map(n => ({
+        id: n.id,
+        dataKeys: Object.keys(n.data || {}),
+        textLen: n.data?.text?.length ?? 0,
+      })),
+    });
+
+    // 1. Save current template so when we come back we restore it (including uploaded image)
+    if (currentNodes.length > 0 && !isInitialLoadRef.current) {
+      try {
+        const saveKey = `workflow-autosave-${templateWeAreLeaving}`;
+        localStorage.setItem(saveKey, JSON.stringify({
+          nodes: currentNodes,
+          edges: currentEdges,
+          timestamp: Date.now(),
+          template: templateWeAreLeaving,
+        }));
+        console.log('[SWITCH] Saved before navigate', {
+          template: templateWeAreLeaving,
+          nodeCount: currentNodes.length,
+          importHasSupabaseUrl: importNodesClick.some(n => !!n.data?.supabaseUrl),
+          promptHasText: promptNodesClick.some(n => !!(n.data?.text && n.data.text.length > 0)),
+        });
+      } catch (e) {
+        console.error('[SWITCH] Save before navigate failed', e);
+      }
+    }
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+
     setShowTemplateModal(false);
 
-    const templateName = templateId === 'custom'
-      ? 'Blank canvas ready!'
-      : `${templateId.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')} template loaded!`;
-    toast.success(templateName);
-
-    // Apply viewport if template has one, otherwise fit view
-    setTimeout(() => {
-      if (templateData.viewport) {
-        reactFlowInstance.setViewport(templateData.viewport);
-      } else {
-        reactFlowInstance.fitView({ padding: 0.2, duration: 400 });
-      }
-    }, 100);
-
-    // Update URL without reload (optional - for bookmarking)
-    window.history.pushState({}, '', `/workflow?template=${templateId}`);
-  }, [setNodes, setEdges, reactFlowInstance]);
+    // 2. Navigate via router so searchParams updates → effect runs → load effect restores or loads fresh
+    router.replace(`/workflow?template=${templateId}`);
+  }, [searchParams, router]);
 
   return (
+    <WorkflowContext.Provider value={workflowContextValue}>
     <div className="w-full h-screen flex flex-col bg-black">
       <Topbar
         onNewWorkflow={() => setShowTemplateModal(true)}
@@ -587,6 +770,7 @@ function FlowCanvas() {
 
       <RunControls onRun={handleRun} isRunning={isRunning} />
     </div>
+    </WorkflowContext.Provider>
   );
 }
 

@@ -26,12 +26,14 @@ export default function WorkflowPage() {
       <Toaster
         position="top-center"
         toastOptions={{
+          duration: 1000,
           className: 'mobile-toast',
           style: {
             background: '#1a1a1a',
             color: '#fff',
             border: '1px solid #2a2a2a',
             maxWidth: '90vw',
+            pointerEvents: 'none',
           },
           success: {
             iconTheme: {

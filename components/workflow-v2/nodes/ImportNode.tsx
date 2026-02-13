@@ -7,15 +7,26 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { uploadImage } from '@/lib/supabase/storage';
 import toast from 'react-hot-toast';
 import { SmartHandle } from '../SmartHandle';
+import { useWorkflow } from '../WorkflowContext';
 
 export function ImportNode({ data, selected, id }: NodeProps) {
-  const { setNodes, getEdges, getNodes, setEdges } = useReactFlow();
+  const { getEdges, getNodes } = useReactFlow();
+  const { updateNodeData, setNodes, setEdges } = useWorkflow();
   // Prioritize supabaseUrl over imageUrl (template example)
   const [image, setImage] = useState<string | null>(data.supabaseUrl || data.imageUrl || null);
   const [imageLoading, setImageLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  
+  // Update image when data changes (e.g., after restore from localStorage)
+  useEffect(() => {
+    const newImage = data.supabaseUrl || data.imageUrl || null;
+    setImage(newImage);
+    if (newImage) {
+      setImageLoading(true);
+    }
+  }, [data.supabaseUrl, data.imageUrl]);
   
   // Determine node label based on data.nodeType or default to "Import"
   const nodeLabel = data.nodeType === 'reference' ? 'Reference' : data.nodeType === 'source' ? 'Source' : 'Import';
@@ -51,51 +62,31 @@ export function ImportNode({ data, selected, id }: NodeProps) {
       // Upload to Supabase
       const url = await uploadImage(file, 'source-images');
       
-      // Update this node's data
-      setNodes((nds) =>
-        nds.map((node) => {
-          if (node.id === id) {
-            return {
-              ...node,
-              data: {
-                ...node.data,
-                imageUrl: null, // Clear template example image
-                uploaded: true,
-                supabaseUrl: url,
-              },
-            };
-          }
-          return node;
-        })
-      );
+      console.log('🔵 [ImportNode] Upload complete, updating via context:', {
+        nodeId: id,
+        supabaseUrl: url.substring(0, 50),
+        urlLength: url.length,
+      });
+      
+      // Update this node's data via Canvas's React state (NOT useReactFlow)
+      updateNodeData(id, {
+        imageUrl: null, // Clear template example image
+        uploaded: true,
+        supabaseUrl: url,
+      });
 
-      // Update connected nodes
+      // Update connected Generate nodes
       const edges = getEdges();
       const connectedEdges = edges.filter(edge => edge.source === id);
       
       if (connectedEdges.length > 0) {
-        setNodes((nds) =>
-          nds.map((node) => {
-            const isConnected = connectedEdges.some(edge => edge.target === node.id);
-            if (isConnected && node.type === 'generate') {
-              const edge = connectedEdges.find(e => e.target === node.id);
-              const handleId = edge?.targetHandle;
-              
-              if (handleId === 'referenceImage') {
-                return {
-                  ...node,
-                  data: { ...node.data, referenceImageUrl: url },
-                };
-              } else if (handleId === 'sourceImage') {
-                return {
-                  ...node,
-                  data: { ...node.data, sourceImageUrl: url },
-                };
-              }
-            }
-            return node;
-          })
-        );
+        connectedEdges.forEach(edge => {
+          if (edge.targetHandle === 'referenceImage') {
+            updateNodeData(edge.target, { referenceImageUrl: url });
+          } else if (edge.targetHandle === 'sourceImage') {
+            updateNodeData(edge.target, { sourceImageUrl: url });
+          }
+        });
       }
       
       toast.success('Image uploaded!');
@@ -105,7 +96,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
     } finally {
       setUploading(false);
     }
-  }, [id, setNodes, getEdges]);
+  }, [id, updateNodeData, getEdges]);
 
   const handleDuplicate = () => {
     const nodes = getNodes();

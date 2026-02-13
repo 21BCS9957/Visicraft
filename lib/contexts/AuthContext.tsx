@@ -41,6 +41,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = async () => {
+    // Clear all workflow auto-saves from localStorage
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('workflow-autosave-')) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+      console.log('🧹 Cleared workflow auto-saves on sign out');
+    } catch (error) {
+      console.error('Failed to clear workflow auto-saves:', error);
+    }
+
     await supabase.auth.signOut();
     setUser(null);
     router.push('/login');
