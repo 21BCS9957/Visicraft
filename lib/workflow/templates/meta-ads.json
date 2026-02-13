@@ -12,7 +12,10 @@
     {
       "id": "note-instructions",
       "type": "note",
-      "position": { "x": 1100, "y": 80 },
+      "position": {
+        "x": 1100,
+        "y": 80
+      },
       "data": {
         "text": "📱 Meta Ads Workflow\n\n🖼️ Source (Required): Upload your ad image or product\n\n✍️ Prompt: Describe the ad style for Facebook/Instagram\n\n⚡ Generate: Click 'Create' to generate your ad creative\n\nTip: Use eye-catching visuals that stop the scroll!",
         "color": "yellow",
@@ -23,7 +26,10 @@
     {
       "id": "source-1",
       "type": "import",
-      "position": { "x": 100, "y": 200 },
+      "position": {
+        "x": 100,
+        "y": 200
+      },
       "data": {
         "nodeType": "source",
         "label": "Ad Image",
@@ -34,9 +40,12 @@
     {
       "id": "prompt-1",
       "type": "prompt",
-      "position": { "x": 100, "y": 550 },
+      "position": {
+        "x": 100,
+        "y": 550
+      },
       "data": {
-        "text": "Style: Scroll-stopping Meta ad creative, vibrant colors, high engagement, mobile-optimized, attention-grabbing composition.\n\nAspect ratio: 1:1\n\nMake it visually compelling for Facebook and Instagram feeds with strong visual hierarchy.",
+        "text": "",
         "label": "Meta Ads Style Prompt",
         "status": "idle"
       }
@@ -44,7 +53,10 @@
     {
       "id": "generate-1",
       "type": "generate",
-      "position": { "x": 700, "y": 350 },
+      "position": {
+        "x": 700,
+        "y": 350
+      },
       "data": {
         "aspectRatio": "1:1",
         "resolution": "2K",

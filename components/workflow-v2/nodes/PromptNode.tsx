@@ -30,7 +30,7 @@ export function PromptNode({ data, selected, id }: NodeProps) {
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
     setPrompt(value);
-    
+
     // Update node data properly using setNodes
     setNodes((nds) =>
       nds.map((node) => {
@@ -38,22 +38,22 @@ export function PromptNode({ data, selected, id }: NodeProps) {
           // Also update connected Generate nodes
           const edges = getEdges();
           const connectedEdges = edges.filter(edge => edge.source === id);
-          
+
           // Log for debugging
           if (connectedEdges.length > 0) {
             console.log('🔗 Prompt updated, connected to:', connectedEdges.length, 'node(s)');
           }
-          
+
           return { ...node, data: { ...node.data, text: value } };
         }
         return node;
       })
     );
-    
+
     // Update connected Generate nodes immediately
     const edges = getEdges();
     const connectedEdges = edges.filter(edge => edge.source === id);
-    
+
     if (connectedEdges.length > 0) {
       setNodes((nds) =>
         nds.map((node) => {
@@ -75,7 +75,7 @@ export function PromptNode({ data, selected, id }: NodeProps) {
     const nodes = getNodes();
     const edges = getEdges();
     const currentNode = nodes.find(n => n.id === id);
-    
+
     if (!currentNode) return;
 
     const newNode = {
@@ -156,7 +156,7 @@ export function PromptNode({ data, selected, id }: NodeProps) {
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center shadow-lg">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M8 12H16M8 8H16M8 16H12M6 20H18C19.105 20 20 19.105 20 18V6C20 4.895 19.105 4 18 4H6C4.895 4 4 4.895 4 6V18C4 19.105 4.895 20 6 20Z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M8 12H16M8 8H16M8 16H12M6 20H18C19.105 20 20 19.105 20 18V6C20 4.895 19.105 4 18 4H6C4.895 4 4 4.895 4 6V18C4 19.105 4.895 20 6 20Z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
             <div>
@@ -171,7 +171,7 @@ export function PromptNode({ data, selected, id }: NodeProps) {
             >
               <MoreVertical className="w-4 h-4" />
             </button>
-            
+
             {/* Dropdown Menu */}
             <AnimatePresence>
               {showMenu && (
@@ -189,7 +189,7 @@ export function PromptNode({ data, selected, id }: NodeProps) {
                     <Copy className="w-4 h-4" />
                     Duplicate Node
                   </button>
-                  
+
                   <button
                     onClick={handleReset}
                     disabled={!prompt}
@@ -198,9 +198,9 @@ export function PromptNode({ data, selected, id }: NodeProps) {
                     <RefreshCw className="w-4 h-4" />
                     Clear Prompt
                   </button>
-                  
+
                   <div className="border-t border-[#2a2a2a]" />
-                  
+
                   <button
                     onClick={handleDelete}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-red-400 hover:bg-[#2a2a2a] transition-colors"
@@ -220,7 +220,7 @@ export function PromptNode({ data, selected, id }: NodeProps) {
         <textarea
           value={prompt}
           onChange={handleChange}
-          placeholder="Describe your desired output in detail..."
+          placeholder={data.placeholder || "Describe the style, mood, and composition you want.\nE.g. 'Professional product shot, soft studio lighting, clean white background, high detail, 8K resolution'"}
           className="
             w-full flex-1
             bg-[#0f0f0f]

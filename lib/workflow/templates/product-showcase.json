@@ -12,7 +12,10 @@
     {
       "id": "note-instructions",
       "type": "note",
-      "position": { "x": 1100, "y": 80 },
+      "position": {
+        "x": 1100,
+        "y": 80
+      },
       "data": {
         "text": "✨ Product Showcase Workflow\n\n🖼️ Source (Required): Upload your product photo\n\n✍️ Prompt: Describe the showcase style you want\n\n⚡ Generate: Click 'Create' to generate your showcase image\n\nTip: Highlight your product's best features with stunning visuals!",
         "color": "yellow",
@@ -23,7 +26,10 @@
     {
       "id": "source-1",
       "type": "import",
-      "position": { "x": 100, "y": 200 },
+      "position": {
+        "x": 100,
+        "y": 200
+      },
       "data": {
         "nodeType": "source",
         "label": "Product Photo",
@@ -34,9 +40,12 @@
     {
       "id": "prompt-1",
       "type": "prompt",
-      "position": { "x": 100, "y": 550 },
+      "position": {
+        "x": 100,
+        "y": 550
+      },
       "data": {
-        "text": "Style: Premium product showcase, elegant presentation, luxury aesthetic, professional studio lighting, high-end commercial photography.\n\nAspect ratio: 4:3\n\nMake the product look premium and desirable with sophisticated styling and perfect composition.",
+        "text": "",
         "label": "Showcase Style Prompt",
         "status": "idle"
       }
@@ -44,7 +53,10 @@
     {
       "id": "generate-1",
       "type": "generate",
-      "position": { "x": 700, "y": 350 },
+      "position": {
+        "x": 700,
+        "y": 350
+      },
       "data": {
         "aspectRatio": "4:3",
         "resolution": "2K",

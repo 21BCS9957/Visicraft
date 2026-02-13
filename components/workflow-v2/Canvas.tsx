@@ -49,7 +49,7 @@ const edgeTypes = {
 const defaultEdgeOptions = {
   type: 'custom',
   animated: false,
-  style: { 
+  style: {
     strokeWidth: 2.5,
     stroke: '#06b6d4',
   },
@@ -65,7 +65,7 @@ function useIsMobile() {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
     };
-    
+
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
@@ -116,6 +116,19 @@ function FlowCanvas() {
     }
   }, [nodes, edges, hasUnsavedChanges, templateLoaded, searchParams]);
 
+  // Reset templateLoaded when the template query param changes so we reload
+  const currentTemplate = searchParams.get('template') || 'custom';
+  const prevTemplateRef = useRef(currentTemplate);
+  useEffect(() => {
+    if (prevTemplateRef.current !== currentTemplate) {
+      prevTemplateRef.current = currentTemplate;
+      setTemplateLoaded(false);
+      hasShownToast.current = false;
+      // Clear auto-save so the new template loads fresh
+      localStorage.removeItem('workflow-autosave');
+    }
+  }, [currentTemplate]);
+
   // Custom edge change handler to clear node data when edges are deleted
   const onEdgesChange = useCallback((changes: any[]) => {
     // Handle edge deletions
@@ -128,7 +141,7 @@ function FlowCanvas() {
             nds.map((node) => {
               if (node.id === edge.target && node.type === 'generate') {
                 const updatedData = { ...node.data };
-                
+
                 // Clear the specific handle data
                 if (edge.targetHandle === 'referenceImage') {
                   delete updatedData.referenceImageUrl;
@@ -137,7 +150,7 @@ function FlowCanvas() {
                 } else if (edge.targetHandle === 'prompt') {
                   delete updatedData.promptText;
                 }
-                
+
                 return { ...node, data: updatedData };
               }
               return node;
@@ -146,17 +159,17 @@ function FlowCanvas() {
         }
       }
     });
-    
+
     // Call the base handler
     onEdgesChangeBase(changes);
   }, [edges, setNodes, onEdgesChangeBase]);
 
   useEffect(() => {
     const template = searchParams.get('template') || 'custom';
-    
+
     // Skip if already loaded this template
     if (templateLoaded) return;
-    
+
     // Try to restore auto-saved workflow if it matches the current template
     let templateData;
     try {
@@ -168,13 +181,13 @@ function FlowCanvas() {
         if (savedData.template === template && isRecent && savedData.nodes.length > 0) {
           // Load the original template first
           const originalTemplate = loadTemplate(template);
-          
+
           // Restore structure and prompts, but keep template images
           templateData = {
             nodes: savedData.nodes.map((savedNode: Node) => {
               // Find corresponding node in original template
               const originalNode = originalTemplate.nodes.find((n: Node) => n.id === savedNode.id);
-              
+
               // For import nodes: keep template imageUrl, clear user uploads
               if (savedNode.type === 'import') {
                 return {
@@ -187,7 +200,7 @@ function FlowCanvas() {
                   }
                 };
               }
-              
+
               // For generate nodes: clear generated images and user uploads
               if (savedNode.type === 'generate') {
                 return {
@@ -202,7 +215,7 @@ function FlowCanvas() {
                   }
                 };
               }
-              
+
               // For other nodes (prompt, note): restore as-is
               return savedNode;
             }),
@@ -215,30 +228,30 @@ function FlowCanvas() {
     } catch (error) {
       console.error('Failed to restore auto-save:', error);
     }
-    
+
     // Load template if no auto-save was restored
     if (!templateData) {
       templateData = loadTemplate(template);
     }
-    
+
     setNodes(templateData.nodes);
     setEdges(templateData.edges);
-    
+
     // Initialize connections for pre-connected nodes in template
     if (templateData.edges.length > 0) {
       setTimeout(() => {
         setNodes((nds) => {
           return nds.map(node => {
             if (node.type !== 'generate') return node;
-            
+
             const updatedNode = { ...node, data: { ...node.data } };
-            
+
             // Find all edges connected to this generate node
             templateData.edges.forEach((edge: Edge) => {
               if (edge.target === node.id) {
                 const sourceNode = templateData.nodes.find((n: Node) => n.id === edge.source);
                 if (!sourceNode) return;
-                
+
                 // For images: Only use supabaseUrl (user uploaded), not imageUrl (template example)
                 // For prompts: Always use the template text
                 if (edge.targetHandle === 'prompt' && sourceNode.data.text) {
@@ -246,7 +259,7 @@ function FlowCanvas() {
                 } else {
                   // Only initialize images if user has uploaded (has supabaseUrl)
                   const sourceImageUrl = sourceNode.data.supabaseUrl;
-                  
+
                   if (edge.targetHandle === 'referenceImage' && sourceImageUrl) {
                     updatedNode.data.referenceImageUrl = sourceImageUrl;
                   } else if (edge.targetHandle === 'sourceImage' && sourceImageUrl) {
@@ -255,13 +268,13 @@ function FlowCanvas() {
                 }
               }
             });
-            
+
             return updatedNode;
           });
         });
       }, 100);
     }
-    
+
     // Set viewport if template has one
     if (templateData.viewport) {
       setInitialViewport(templateData.viewport);
@@ -269,14 +282,14 @@ function FlowCanvas() {
         reactFlowInstance.setViewport(templateData.viewport!);
       }, 100);
     }
-    
+
     setTemplateLoaded(true);
     setHasUnsavedChanges(false); // Reset unsaved changes on initial load
-    
+
     // Only show toast once (prevent duplicate in React Strict Mode)
     if (!hasShownToast.current) {
-      const templateName = template === 'custom' 
-        ? 'Blank canvas ready!' 
+      const templateName = template === 'custom'
+        ? 'Blank canvas ready!'
         : `${template.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')} template loaded!`;
       toast.success(templateName);
       hasShownToast.current = true;
@@ -296,24 +309,24 @@ function FlowCanvas() {
       };
       setEdges((eds) => addEdge(newEdge, eds));
       setHasUnsavedChanges(true);
-      
+
       setNodes((nds) => {
         const sourceNode = nds.find(n => n.id === params.source);
         const targetNode = nds.find(n => n.id === params.target);
-        
+
         if (!sourceNode || !targetNode) return nds;
 
         return nds.map(node => {
           if (node.id !== params.target) return node;
-          
+
           const updatedNode = { ...node, data: { ...node.data } };
-          
+
           if (updatedNode.type === 'generate') {
             const handleId = params.targetHandle;
-            
+
             // Check for both supabaseUrl (uploaded) and imageUrl (template example)
             const sourceImageUrl = sourceNode.data.supabaseUrl || sourceNode.data.imageUrl;
-            
+
             if (handleId === 'referenceImage' && sourceImageUrl) {
               updatedNode.data.referenceImageUrl = sourceImageUrl;
             } else if (handleId === 'sourceImage' && sourceImageUrl) {
@@ -322,13 +335,13 @@ function FlowCanvas() {
               updatedNode.data.promptText = sourceNode.data.text;
             }
           }
-          
+
           if (sourceNode.type === 'generate' && updatedNode.type === 'output') {
             if (sourceNode.data.generatedImage) {
               updatedNode.data.images = [sourceNode.data.generatedImage];
             }
           }
-          
+
           return updatedNode;
         });
       });
@@ -342,7 +355,7 @@ function FlowCanvas() {
     if (target.tagName === 'IMG' || target.tagName === 'BUTTON' || target.closest('button')) {
       return;
     }
-    
+
     // Only open properties panel for Generate nodes that aren't currently generating
     if (node.type === 'generate' && node.data.status !== 'generating') {
       setSelectedNode(node);
@@ -360,7 +373,7 @@ function FlowCanvas() {
     };
     setNodes((nds) => [...nds, newNode]);
     setHasUnsavedChanges(true);
-    
+
     // Auto-zoom to fit new node
     setTimeout(() => {
       reactFlowInstance.fitView({ padding: 0.2, duration: 400 });
@@ -427,7 +440,7 @@ function FlowCanvas() {
     const nodeWidth = 250;
     const nodeHeight = 150;
     const padding = 50;
-    
+
     setNodes((nds) => nds.map((node, index) => ({
       ...node,
       position: {
@@ -441,19 +454,19 @@ function FlowCanvas() {
   const handleSelectTemplate = useCallback((templateId: string) => {
     // Clear auto-save for old template
     localStorage.removeItem('workflow-autosave');
-    
+
     // Load template directly
     const templateData = loadTemplate(templateId);
     setNodes(templateData.nodes);
     setEdges(templateData.edges);
     setHasUnsavedChanges(false);
     setShowTemplateModal(false);
-    
-    const templateName = templateId === 'custom' 
-      ? 'Blank canvas ready!' 
+
+    const templateName = templateId === 'custom'
+      ? 'Blank canvas ready!'
       : `${templateId.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')} template loaded!`;
     toast.success(templateName);
-    
+
     // Apply viewport if template has one, otherwise fit view
     setTimeout(() => {
       if (templateData.viewport) {
@@ -462,14 +475,14 @@ function FlowCanvas() {
         reactFlowInstance.fitView({ padding: 0.2, duration: 400 });
       }
     }, 100);
-    
+
     // Update URL without reload (optional - for bookmarking)
     window.history.pushState({}, '', `/workflow?template=${templateId}`);
   }, [setNodes, setEdges, reactFlowInstance]);
 
   return (
     <div className="w-full h-screen flex flex-col bg-black">
-      <Topbar 
+      <Topbar
         onNewWorkflow={() => setShowTemplateModal(true)}
         showGrid={showGrid}
         onToggleGrid={() => setShowGrid(!showGrid)}
@@ -477,24 +490,24 @@ function FlowCanvas() {
         onChangeGridVariant={setGridVariant}
         onOrganizeNodes={handleOrganizeNodes}
       />
-      
+
       <TemplateSelectionModal
         isOpen={showTemplateModal}
         onClose={() => setShowTemplateModal(false)}
         onSelectTemplate={handleSelectTemplate}
       />
-      
+
       <div className="flex-1 flex relative overflow-hidden">
-        <Sidebar 
+        <Sidebar
           onAddNode={handleAddNode}
           showGrid={showGrid}
           onToggleGrid={() => setShowGrid(!showGrid)}
           showFilePanel={showFilePanel}
           onToggleFilePanel={() => setShowFilePanel(!showFilePanel)}
         />
-        
-        <div 
-          ref={reactFlowWrapper} 
+
+        <div
+          ref={reactFlowWrapper}
           className="flex-1 relative"
           onDrop={onDrop}
           onDragOver={onDragOver}
@@ -527,8 +540,8 @@ function FlowCanvas() {
             nodeOrigin={[0.5, 0.5]}
             elevateNodesOnSelect={false}
             elevateEdgesOnSelect={true}
-            connectionLineStyle={{ 
-              stroke: '#06b6d4', 
+            connectionLineStyle={{
+              stroke: '#06b6d4',
               strokeWidth: 3,
               strokeLinecap: 'round',
               strokeLinejoin: 'round',
@@ -545,9 +558,9 @@ function FlowCanvas() {
                 className="opacity-20"
               />
             )}
-            
+
             {/* Zoom Controls */}
-            <Controls 
+            <Controls
               className="!bg-[#0a0a0a] !border !border-[#2a2a2a] !rounded-lg"
               style={{ position: 'absolute', bottom: isMobile ? 20 : 100, left: 24 }}
               showZoom={true}
@@ -555,7 +568,7 @@ function FlowCanvas() {
               showInteractive={false}
               fitViewOptions={{ padding: 0.2, duration: 400 }}
             />
-            
+
             {!isMobile && (
               <MiniMap
                 nodeColor={nodeColor}
@@ -566,12 +579,12 @@ function FlowCanvas() {
             )}
           </ReactFlow>
         </div>
-        
+
         {!isMobile && (
           <PropertiesPanel selectedNode={selectedNode} onClose={() => setSelectedNode(null)} />
         )}
       </div>
-      
+
       <RunControls onRun={handleRun} isRunning={isRunning} />
     </div>
   );
