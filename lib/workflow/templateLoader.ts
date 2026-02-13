@@ -38,9 +38,28 @@ export function loadTemplate(templateId: string): { nodes: Node[]; edges: Edge[]
     throw new Error(`Template ${templateId} not found`);
   }
 
+  // Make node IDs unique per template to prevent state leakage between templates
+  const nodeIdMap = new Map<string, string>();
+  const uniqueNodes = template.nodes.map(node => {
+    const uniqueId = `${templateId}-${node.id}`;
+    nodeIdMap.set(node.id, uniqueId);
+    return {
+      ...node,
+      id: uniqueId,
+    };
+  });
+
+  // Update edge references to use new unique IDs
+  const uniqueEdges = template.edges.map(edge => ({
+    ...edge,
+    id: `${templateId}-${edge.id}`,
+    source: nodeIdMap.get(edge.source) || edge.source,
+    target: nodeIdMap.get(edge.target) || edge.target,
+  }));
+
   return {
-    nodes: template.nodes,
-    edges: template.edges,
+    nodes: uniqueNodes,
+    edges: uniqueEdges,
     viewport: (template as any).viewport,
   };
 }

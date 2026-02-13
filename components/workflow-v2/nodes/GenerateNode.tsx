@@ -8,9 +8,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { SmartHandle } from '../SmartHandle';
+import { useWorkflow } from '../WorkflowContext';
 
 export function GenerateNode({ data, selected, id }: NodeProps) {
-  const { setNodes, getNodes, setEdges, getEdges } = useReactFlow();
+  const { getNodes, getEdges } = useReactFlow();
+  const { updateNodeData, setNodes, setEdges } = useWorkflow();
   const { deductCredits, refreshCredits, addCredits } = useCredits();
   const [showMenu, setShowMenu] = useState(false);
   const [showFullscreen, setShowFullscreen] = useState(false);
@@ -204,19 +206,6 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       }
     });
 
-    // Fallback: Also check the node's own data (set by ImportNode on upload)
-    if (!actualReferenceUrl && data.referenceImageUrl) {
-      actualReferenceUrl = data.referenceImageUrl;
-      console.log('✅ DEBUG: Using referenceImageUrl from node data:', actualReferenceUrl);
-    }
-    if (!actualSourceUrl && data.sourceImageUrl) {
-      actualSourceUrl = data.sourceImageUrl;
-      console.log('✅ DEBUG: Using sourceImageUrl from node data:', actualSourceUrl);
-    }
-    if (!actualPromptText && data.promptText) {
-      actualPromptText = data.promptText;
-      console.log('✅ DEBUG: Using promptText from node data:', actualPromptText);
-    }
 
     console.log('📊 DEBUG: Final validation state:', {
       actualReferenceUrl,
@@ -232,9 +221,19 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       return;
     }
 
-    // Rule 2: If no prompt provided, use a default one (don't block generation)
+    // Rule 2: If only one image type is provided, prompt is mandatory
+    const hasReference = !!actualReferenceUrl;
+    const hasSource = !!actualSourceUrl;
+    const hasOnlyOneImageType = (hasReference && !hasSource) || (!hasReference && hasSource);
+    
+    if (hasOnlyOneImageType && !actualPromptText) {
+      toast.error('Please provide a prompt to describe what you want to generate');
+      return;
+    }
+
+    // Rule 3: If both images provided but no prompt, use empty string
     if (!actualPromptText) {
-      actualPromptText = 'Create a professional, eye-catching image with vibrant colors and sharp details';
+      actualPromptText = '';
     }
 
     // Calculate credit cost (default values if not set)
@@ -304,10 +303,15 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
         body: JSON.stringify(requestBody),
       });
 
-      const result = await response.json();
+      let result;
+      try {
+        result = await response.json();
+      } catch (parseError) {
+        throw new Error(`Server returned status ${response.status} with invalid JSON`);
+      }
 
       if (!response.ok) {
-        throw new Error(result.error || 'Generation failed');
+        throw new Error(result?.error || 'Generation failed');
       }
 
       const generatedImageUrl = result.images?.[0];

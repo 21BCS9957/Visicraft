@@ -6,12 +6,20 @@ import { MoreVertical, MessageSquare, Copy, Trash2, RefreshCw } from 'lucide-rea
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { SmartHandle } from '../SmartHandle';
+import { useWorkflow } from '../WorkflowContext';
 
 export function PromptNode({ data, selected, id }: NodeProps) {
-  const { setNodes, getNodes, setEdges, getEdges } = useReactFlow();
+  const { getNodes, getEdges } = useReactFlow();
+  const { updateNodeData, setNodes, setEdges } = useWorkflow();
   const [prompt, setPrompt] = useState(data.text || '');
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Sync when data.text changes from outside (e.g. restore from localStorage)
+  useEffect(() => {
+    const external = data.text || '';
+    if (external !== prompt) setPrompt(external);
+  }, [data.text]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -31,43 +39,21 @@ export function PromptNode({ data, selected, id }: NodeProps) {
     const value = e.target.value;
     setPrompt(value);
 
-    // Update node data properly using setNodes
-    setNodes((nds) =>
-      nds.map((node) => {
-        if (node.id === id) {
-          // Also update connected Generate nodes
-          const edges = getEdges();
-          const connectedEdges = edges.filter(edge => edge.source === id);
+    // Update this node's data via Canvas's React state (NOT useReactFlow)
+    updateNodeData(id, { text: value });
 
-          // Log for debugging
-          if (connectedEdges.length > 0) {
-            console.log('🔗 Prompt updated, connected to:', connectedEdges.length, 'node(s)');
-          }
-
-          return { ...node, data: { ...node.data, text: value } };
-        }
-        return node;
-      })
-    );
-
-    // Update connected Generate nodes immediately
+    // Update connected Generate nodes
     const edges = getEdges();
     const connectedEdges = edges.filter(edge => edge.source === id);
 
     if (connectedEdges.length > 0) {
-      setNodes((nds) =>
-        nds.map((node) => {
-          const isConnected = connectedEdges.some(edge => edge.target === node.id);
-          if (isConnected && node.type === 'generate') {
-            console.log('✅ Updated Generate node prompt:', value.substring(0, 50) + '...');
-            return {
-              ...node,
-              data: { ...node.data, promptText: value },
-            };
-          }
-          return node;
-        })
-      );
+      console.log('🔗 Prompt updated, connected to:', connectedEdges.length, 'node(s)');
+      connectedEdges.forEach(edge => {
+        if (edge.target) {
+          console.log('✅ Updated Generate node prompt:', value.substring(0, 50) + '...');
+          updateNodeData(edge.target, { promptText: value });
+        }
+      });
     }
   };
 

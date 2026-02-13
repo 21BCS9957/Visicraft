@@ -67,17 +67,18 @@ export async function generateThumbnail(
   };
 
   // Map UI resolutions to Gemini API imageSize format
+  // Gemini API accepts: 256x256, 512x512, 1024x1024, 2048x2048, 4096x4096
   const resolutionMap: Record<string, string> = {
-    '4K': '4K',
-    '2K': '2K',
-    '1080p': 'HD',
-    '720p': 'SD',
+    '4K': '4096x4096',
+    '2K': '2048x2048',
+    '1080p': '1024x1024',
+    '720p': '512x512',
   };
 
   const selectedModel = model || 'gemini-3-pro';
   const geminiModel = modelMap[selectedModel] || 'gemini-3-pro-image-preview';
   const selectedAspectRatio = aspectRatioMap[aspectRatio || '16:9'] || '16:9';
-  const selectedResolution = resolutionMap[resolution || '1080p'] || 'HD';
+  const selectedResolution = resolutionMap[resolution || '1080p'] || '1024x1024';
 
   try {
     console.log('🎨 ========================================');
@@ -106,11 +107,8 @@ export async function generateThumbnail(
       sourceImages.map(url => urlToBase64(url))
     );
 
-    // Build the prompt
-    const fullPrompt = prompt || 
-      'Create a professional, eye-catching YouTube thumbnail by combining these images. ' +
-      'Use the reference image as style inspiration and incorporate the source images creatively. ' +
-      'Make it vibrant, engaging, and optimized for YouTube with bold text placement areas.';
+    // Build the prompt - use empty string if not provided (for reference image only)
+    const fullPrompt = prompt || '';
 
     // Build request parts: prompt + all images
     const parts: GeminiPart[] = [
