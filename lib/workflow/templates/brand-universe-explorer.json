@@ -12,7 +12,10 @@
     {
       "id": "note-instructions",
       "type": "note",
-      "position": { "x": 1100, "y": 80 },
+      "position": {
+        "x": 1100,
+        "y": 80
+      },
       "data": {
         "text": "🎨 Brand Universe Explorer\n\n🖼️ Source (Required): Upload your brand asset or product\n\n✍️ Prompt: Describe your brand style and aesthetic\n\n⚡ Generate: Click 'Create' to generate brand-consistent imagery\n\nTip: Maintain consistent brand identity across all visuals!",
         "color": "yellow",
@@ -23,7 +26,10 @@
     {
       "id": "source-1",
       "type": "import",
-      "position": { "x": 100, "y": 200 },
+      "position": {
+        "x": 100,
+        "y": 200
+      },
       "data": {
         "nodeType": "source",
         "label": "Brand Asset",
@@ -34,9 +40,12 @@
     {
       "id": "prompt-1",
       "type": "prompt",
-      "position": { "x": 100, "y": 550 },
+      "position": {
+        "x": 100,
+        "y": 550
+      },
       "data": {
-        "text": "Style: Cohesive brand imagery, consistent color palette, professional aesthetic, brand identity focused, high quality, commercial grade.\n\nAspect ratio: 1:1\n\nMaintain brand consistency while creating visually stunning imagery that represents your brand universe.",
+        "text": "",
         "label": "Brand Style Prompt",
         "status": "idle"
       }
@@ -44,7 +53,10 @@
     {
       "id": "generate-1",
       "type": "generate",
-      "position": { "x": 700, "y": 350 },
+      "position": {
+        "x": 700,
+        "y": 350
+      },
       "data": {
         "aspectRatio": "1:1",
         "resolution": "2K",

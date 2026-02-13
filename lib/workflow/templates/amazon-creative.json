@@ -12,7 +12,10 @@
     {
       "id": "note-instructions",
       "type": "note",
-      "position": { "x": 1100, "y": 80 },
+      "position": {
+        "x": 1100,
+        "y": 80
+      },
       "data": {
         "text": "🛒 Amazon Creative Workflow\n\n🖼️ Source (Required): Upload your product photo\n\n✍️ Prompt: Describe the Amazon listing style you want\n\n⚡ Generate: Click 'Create' to generate your product image\n\nTip: Use high-quality product photos for best results!",
         "color": "yellow",
@@ -23,7 +26,10 @@
     {
       "id": "source-1",
       "type": "import",
-      "position": { "x": 100, "y": 200 },
+      "position": {
+        "x": 100,
+        "y": 200
+      },
       "data": {
         "nodeType": "source",
         "label": "Product Photo",
@@ -34,9 +40,12 @@
     {
       "id": "prompt-1",
       "type": "prompt",
-      "position": { "x": 100, "y": 550 },
+      "position": {
+        "x": 100,
+        "y": 550
+      },
       "data": {
-        "text": "Style: Professional Amazon product listing image, clean white background, high detail, studio lighting, commercial photography.\n\nAspect ratio: 1:1\n\nMake the product centered and prominent with professional e-commerce styling.",
+        "text": "",
         "label": "Amazon Style Prompt",
         "status": "idle"
       }
@@ -44,7 +53,10 @@
     {
       "id": "generate-1",
       "type": "generate",
-      "position": { "x": 700, "y": 350 },
+      "position": {
+        "x": 700,
+        "y": 350
+      },
       "data": {
         "aspectRatio": "1:1",
         "resolution": "2K",

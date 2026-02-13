@@ -12,7 +12,10 @@
     {
       "id": "note-instructions",
       "type": "note",
-      "position": { "x": 1100, "y": 80 },
+      "position": {
+        "x": 1100,
+        "y": 80
+      },
       "data": {
         "text": "🎬 YouTube Thumbnail Workflow\n\n📸 Reference (Optional): Upload a thumbnail style you like\n\n🖼️ Source (Required): Upload your main photo/screenshot\n\n✍️ Prompt: Describe your desired style (editable)\n\n⚡ Generate: Click 'Create' to generate your thumbnail. The example shows what you can expect!\n\nTip: Replace the example images with your own to create custom thumbnails!",
         "color": "yellow",
@@ -23,33 +26,40 @@
     {
       "id": "reference-1",
       "type": "import",
-      "position": { "x": 100, "y": 80 },
+      "position": {
+        "x": 100,
+        "y": 80
+      },
       "data": {
         "nodeType": "reference",
         "label": "Reference Thumbnail (Optional)",
         "placeholder": "Upload a style reference",
-        "imageUrl": "/Youtube Template/youtube_Reference.png",
         "status": "idle"
       }
     },
     {
       "id": "source-1",
       "type": "import",
-      "position": { "x": 100, "y": 450 },
+      "position": {
+        "x": 100,
+        "y": 450
+      },
       "data": {
         "nodeType": "source",
         "label": "Your Photo/Screenshot",
         "placeholder": "Upload your base image",
-        "imageUrl": "/Youtube Template/Youtube _Source.png",
         "status": "idle"
       }
     },
     {
       "id": "prompt-1",
       "type": "prompt",
-      "position": { "x": 100, "y": 800 },
+      "position": {
+        "x": 100,
+        "y": 800
+      },
       "data": {
-        "text": "Style: MrBeast-style YouTube thumbnail, ultra high detail, 8K resolution, high saturation, high contrast, thumbnail optimized, dramatic composition.\n\nAspect ratio: 16:9\n\nMake the subject positioned slightly left in frame to leave space for bold text on the right side.",
+        "text": "",
         "label": "Thumbnail Style Prompt",
         "status": "idle"
       }
@@ -57,13 +67,15 @@
     {
       "id": "generate-1",
       "type": "generate",
-      "position": { "x": 700, "y": 450 },
+      "position": {
+        "x": 700,
+        "y": 450
+      },
       "data": {
         "aspectRatio": "16:9",
         "resolution": "2K",
         "model": "gemini-3-pro",
-        "generatedImage": "/Youtube Template/Youtube_Generated.png",
-        "status": "complete"
+        "status": "idle"
       }
     }
   ],
