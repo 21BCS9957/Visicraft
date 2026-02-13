@@ -157,10 +157,14 @@ export function Topbar({
           Upgrade
         </Link>
         
-        <button className="px-3 py-1.5 text-sm text-white hover:bg-[#1a1a1a] rounded transition-colors flex items-center gap-2">
+        <a 
+          href="mailto:support@visicraft.in"
+          className="px-3 py-1.5 text-sm text-white hover:bg-[#1a1a1a] rounded transition-colors flex items-center gap-2"
+          title="Contact support at support@visicraft.in"
+        >
           <MessageCircle className="w-4 h-4" />
-          Feedback
-        </button>
+          Support
+        </a>
         
         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 cursor-pointer" />
       </div>

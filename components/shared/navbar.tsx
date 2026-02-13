@@ -59,6 +59,7 @@ export function Navbar() {
     { href: '/', label: 'Home', icon: 'ph:house-fill' },
     { href: '/generate', label: 'Generate', icon: 'ph:magic-wand-fill' },
     { href: '/pricing', label: 'Pricing', icon: 'ph:currency-inr' },
+    { href: 'mailto:support@visicraft.in', label: 'Support', icon: 'ph:envelope-fill' },
   ];
 
   const workflowOptions = [
