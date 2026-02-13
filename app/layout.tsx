@@ -55,10 +55,18 @@ export default function RootLayout({
             <Toaster
               position="bottom-right"
               toastOptions={{
+                duration: 1000,
                 style: {
                   background: '#1a1a1a',
                   color: '#fff',
                   border: '1px solid #2a2a2a',
+                  pointerEvents: 'none',
+                },
+                success: {
+                  duration: 1000,
+                },
+                error: {
+                  duration: 1000,
                 },
               }}
             />
