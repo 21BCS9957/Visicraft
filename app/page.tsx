@@ -1,9 +1,11 @@
 import { HeroSection } from '@/components/ui/hero-section';
+import CreativeProcess from '@/components/sections/CreativeProcess';
 
 export default function Home() {
   return (
     <>
       <HeroSection />
+      <CreativeProcess />
     </>
   );
 }
