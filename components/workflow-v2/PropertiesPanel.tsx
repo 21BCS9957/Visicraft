@@ -7,6 +7,7 @@ import { useReactFlow } from 'reactflow';
 import { AnimatePresence, motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useCredits } from '@/lib/contexts/CreditsContext';
+import { useWorkflow } from './WorkflowContext';
 
 interface PropertiesPanelProps {
   selectedNode: any;
@@ -108,6 +109,7 @@ const RESOLUTIONS = [
 
 export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps) {
   const { setNodes } = useReactFlow();
+  const { updateNodeData: contextUpdateNodeData } = useWorkflow();
   const { credits, deductCredits, refreshCredits } = useCredits();
   
   // Initialize with node data or defaults
@@ -160,14 +162,11 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
     return null;
   }
 
+  // Use context updateNodeData so Canvas state + ref stay in sync; Run Selected then sees latest model/resolution/aspectRatio
   const updateNodeData = (key: string, value: any) => {
-    setNodes((nodes) =>
-      nodes.map((node) =>
-        node.id === selectedNode.id
-          ? { ...node, data: { ...node.data, [key]: value } }
-          : node
-      )
-    );
+    if (selectedNode?.id) {
+      contextUpdateNodeData(selectedNode.id, { [key]: value });
+    }
   };
 
   const handleModelSelect = (modelId: string) => {

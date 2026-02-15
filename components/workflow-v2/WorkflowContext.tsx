@@ -9,16 +9,20 @@ type SetEdgesFunc = (updater: Edge[] | ((edges: Edge[]) => Edge[])) => void;
 interface WorkflowContextValue {
   /** Update a specific node's data — goes through Canvas's React state (useNodesState) */
   updateNodeData: (nodeId: string, newData: Record<string, any>) => void;
-  /** Canvas's setNodes from useNodesState (NOT useReactFlow) */
   setNodes: SetNodesFunc;
-  /** Canvas's setEdges from useEdgesState (NOT useReactFlow) */
   setEdges: SetEdgesFunc;
+  /** Latest nodes — always use this when reading for Create/Run (image + prompt from source nodes) */
+  getLatestNodes: () => Node[];
+  /** Latest edges — use with getLatestNodes to find connected sources */
+  getLatestEdges: () => Edge[];
 }
 
 const WorkflowContext = createContext<WorkflowContextValue>({
   updateNodeData: () => {},
   setNodes: () => {},
   setEdges: () => {},
+  getLatestNodes: () => [],
+  getLatestEdges: () => [],
 });
 
 export function useWorkflow() {

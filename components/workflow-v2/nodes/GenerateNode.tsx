@@ -12,7 +12,7 @@ import { useWorkflow } from '../WorkflowContext';
 
 export function GenerateNode({ data, selected, id }: NodeProps) {
   const { getNodes, getEdges } = useReactFlow();
-  const { updateNodeData, setNodes, setEdges } = useWorkflow();
+  const { updateNodeData, setNodes, setEdges, getLatestNodes, getLatestEdges } = useWorkflow();
   const { deductCredits, refreshCredits, addCredits } = useCredits();
   const [showMenu, setShowMenu] = useState(false);
   const [showFullscreen, setShowFullscreen] = useState(false);
@@ -172,46 +172,25 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       return;
     }
 
-    // Get current edges to verify connections
-    const currentEdges = getEdges();
-    const connectedToThis = currentEdges.filter(e => e.target === id);
-    
-    console.log('🔍 DEBUG: Connected edges:', connectedToThis);
-    console.log('🔍 DEBUG: All nodes:', getNodes().map(n => ({ id: n.id, type: n.type, data: n.data })));
-    
-    // Verify actual connections and get data only from connected nodes
+    // Always read latest nodes/edges so same flow runs on first Create and after image or prompt change
+    const currentNodes = getLatestNodes();
+    const currentEdges = getLatestEdges();
+    const connectedToThis = currentEdges.filter((e) => e.target === id);
+
     let actualReferenceUrl: string | null = null;
     let actualSourceUrl: string | null = null;
     let actualPromptText: string | null = null;
-    
-    connectedToThis.forEach(edge => {
-      const sourceNode = getNodes().find(n => n.id === edge.source);
+
+    connectedToThis.forEach((edge) => {
+      const sourceNode = currentNodes.find((n) => n.id === edge.source);
       if (!sourceNode) return;
-      
-      console.log('🔍 DEBUG: Processing edge:', {
-        targetHandle: edge.targetHandle,
-        sourceNodeId: sourceNode.id,
-        sourceNodeType: sourceNode.type,
-        supabaseUrl: sourceNode.data.supabaseUrl,
-        text: sourceNode.data.text
-      });
-      
       if (edge.targetHandle === 'referenceImage') {
-        // Only use uploaded images (supabaseUrl), not template examples
-        actualReferenceUrl = sourceNode.data.supabaseUrl || null;
+        actualReferenceUrl = sourceNode.data?.supabaseUrl ?? null;
       } else if (edge.targetHandle === 'sourceImage') {
-        actualSourceUrl = sourceNode.data.supabaseUrl || null;
+        actualSourceUrl = sourceNode.data?.supabaseUrl ?? null;
       } else if (edge.targetHandle === 'prompt') {
-        actualPromptText = sourceNode.data.text || null;
+        actualPromptText = sourceNode.data?.text ?? null;
       }
-    });
-
-
-    console.log('📊 DEBUG: Final validation state:', {
-      actualReferenceUrl,
-      actualSourceUrl,
-      actualPromptText,
-      hasAtLeastOneImage: !!(actualReferenceUrl || actualSourceUrl)
     });
 
     // PRODUCTION VALIDATION LOGIC
@@ -257,8 +236,9 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       )
     );
 
-    // Deduct credits AFTER validation passes
-    const deducted = await deductCredits(creditCost);
+    // Deduct credits AFTER validation passes — capture amount so we refund exactly this on error
+    const amountToDeduct = creditCost;
+    const deducted = await deductCredits(amountToDeduct);
     if (!deducted) {
       // Revert status if credit deduction fails
       setNodes((nds) =>
@@ -342,10 +322,9 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       }
     } catch (error) {
       console.error('❌ Generation error:', error);
-      
-      // Refund credits on error
-      console.log('💰 Refunding credits due to generation failure:', creditCost);
-      await addCredits(creditCost);
+
+      // Refund exactly what we deducted (same amount, no more)
+      await addCredits(amountToDeduct);
       await refreshCredits();
       
       // Update status to error
