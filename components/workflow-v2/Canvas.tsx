@@ -34,6 +34,7 @@ import { executeWorkflow } from '@/lib/workflow/executor';
 import { loadTemplate } from '@/lib/workflow/templateLoader';
 import TemplateSelectionModal from './TemplateSelectionModal';
 import toast from 'react-hot-toast';
+import { useCredits } from '@/lib/contexts/CreditsContext';
 
 const nodeTypes = {
   import: ImportNode,
@@ -75,11 +76,18 @@ function useIsMobile() {
   return isMobile;
 }
 
+const RUN_CREDIT_COSTS: Record<string, Record<string, number>> = {
+  'gemini-2-flash': { '720p': 20, '1080p': 30, '2K': 40, '4K': 50 },
+  'gemini-3-pro': { '720p': 30, '1080p': 40, '2K': 50, '4K': 60 },
+  'banana-pro': { '720p': 35, '1080p': 45, '2K': 50, '4K': 70 },
+};
+
 function FlowCanvas() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const reactFlowInstance = useReactFlow();
+  const { deductCredits, addCredits, refreshCredits } = useCredits();
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
@@ -107,22 +115,25 @@ function FlowCanvas() {
   nodesRef.current = nodes;
   edgesRef.current = edges;
 
-  // updateNodeData: directly updates React state (bypasses React Flow's internal store)
+  // updateNodeData: updates React state and ref so latest is available before next render (same flow on first Create and after image/prompt change)
   const updateNodeData = useCallback((nodeId: string, newData: Record<string, any>) => {
-    setNodes((nds) =>
-      nds.map((node) =>
+    setNodes((nds) => {
+      const next = nds.map((node) =>
         node.id === nodeId
           ? { ...node, data: { ...node.data, ...newData } }
           : node
-      )
-    );
+      );
+      nodesRef.current = next;
+      return next;
+    });
   }, [setNodes]);
 
-  // Context value for child nodes to update data through Canvas's React state
   const workflowContextValue = React.useMemo(() => ({
     updateNodeData,
     setNodes,
     setEdges,
+    getLatestNodes: () => nodesRef.current,
+    getLatestEdges: () => edgesRef.current,
   }), [updateNodeData, setNodes, setEdges]);
 
   // Auto-save workflow to localStorage with template-specific key
@@ -564,17 +575,43 @@ function FlowCanvas() {
   );
 
   const handleRun = async () => {
-    if (nodes.length === 0) {
+    const latestNodes = nodesRef.current;
+    const latestEdges = edgesRef.current;
+    if (latestNodes.length === 0) {
       toast.error('Add some nodes first');
       return;
+    }
+
+    const generateNodes = latestNodes.filter((n) => n.type === 'generate');
+    let totalCreditCost = 0;
+    for (const n of generateNodes) {
+      const model = (n.data as any)?.model || 'gemini-3-pro';
+      const resolution = (n.data as any)?.resolution || '2K';
+      totalCreditCost += RUN_CREDIT_COSTS[model]?.[resolution] ?? 50;
+    }
+    const amountToDeduct = totalCreditCost;
+
+    if (amountToDeduct > 0) {
+      const deducted = await deductCredits(amountToDeduct);
+      if (!deducted) {
+        toast.error('Not enough credits. Upgrade to keep creating!');
+        return;
+      }
     }
 
     setIsRunning(true);
     try {
       toast.loading('Executing workflow...', { id: 'workflow' });
-      await executeWorkflow(nodes as any, edges);
+      await executeWorkflow(latestNodes as any, latestEdges, {
+        updateNodeData: (nodeId, newData) => updateNodeData(nodeId, newData as Record<string, any>),
+      });
+      if (amountToDeduct > 0) await refreshCredits();
       toast.success('Workflow completed!', { id: 'workflow' });
     } catch (error) {
+      if (amountToDeduct > 0) {
+        await addCredits(amountToDeduct);
+        await refreshCredits();
+      }
       toast.error(error instanceof Error ? error.message : 'Workflow failed', { id: 'workflow' });
     } finally {
       setIsRunning(false);

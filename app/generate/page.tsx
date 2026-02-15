@@ -112,24 +112,22 @@ export default function GeneratePage() {
       }
     }
 
-    // Get credit cost for selected feature
     const creditCost = CREDIT_COSTS[selectedFeature.id];
 
-    // Check credits
     if (credits < creditCost) {
       toast.error(`Insufficient credits! Need ${creditCost}, have ${credits}`);
       setError(`You need ${creditCost} credits. Current balance: ${credits} credits.`);
       return;
     }
 
-    // Deduct credits
-    const deducted = await deductCredits(creditCost);
+    const amountToDeduct = creditCost;
+    const deducted = await deductCredits(amountToDeduct);
     if (!deducted) {
       toast.error('Failed to deduct credits. Please try again.');
       return;
     }
 
-    toast.success(`${creditCost} credits deducted. Processing...`);
+    toast.success(`${amountToDeduct} credits deducted. Processing...`);
 
     try {
       let result;
@@ -227,10 +225,7 @@ export default function GeneratePage() {
       await refreshCredits();
       toast.success(`✨ ${selectedFeature.name} complete!`);
     } catch (err) {
-      // Refund credits on error
-      const creditCost = CREDIT_COSTS[selectedFeature.id];
-      console.log('💰 Refunding credits due to failure:', creditCost);
-      await addCredits(creditCost);
+      await addCredits(amountToDeduct);
       await refreshCredits();
       
       const errorMessage = err instanceof Error ? err.message : 'An error occurred';

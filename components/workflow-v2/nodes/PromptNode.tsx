@@ -89,13 +89,7 @@ export function PromptNode({ data, selected, id }: NodeProps) {
 
   const handleReset = () => {
     setPrompt('');
-    setNodes((nds) =>
-      nds.map((node) =>
-        node.id === id
-          ? { ...node, data: { ...node.data, text: '' } }
-          : node
-      )
-    );
+    updateNodeData(id, { text: '' });
     toast.success('Prompt cleared!');
     setShowMenu(false);
   };

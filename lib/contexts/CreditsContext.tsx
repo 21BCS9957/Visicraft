@@ -86,29 +86,39 @@ export function CreditsProvider({ children }: { children: React.ReactNode }) {
       console.error('❌ Cannot deduct credits: No user logged in');
       return false;
     }
-    
-    if (credits < amount) {
-      console.error('❌ Cannot deduct credits: Insufficient balance', { need: amount, have: credits });
-      return false;
-    }
 
     try {
-      const newCredits = credits - amount;
-      console.log('💳 Deducting credits:', { amount, oldBalance: credits, newBalance: newCredits });
-      
+      const { data, error: fetchError } = await supabase
+        .from('user_credits')
+        .select('credits')
+        .eq('user_id', user.id)
+        .single();
+
+      if (fetchError || data == null) {
+        console.error('❌ Failed to fetch credits for deduction', fetchError);
+        return false;
+      }
+
+      const currentCredits = Number(data.credits) || 0;
+      if (currentCredits < amount) {
+        console.error('❌ Cannot deduct credits: Insufficient balance', { need: amount, have: currentCredits });
+        return false;
+      }
+
+      const newCredits = currentCredits - amount;
+      console.log('💳 Deducting credits:', { amount, oldBalance: currentCredits, newBalance: newCredits });
+
       const { error } = await supabase
         .from('user_credits')
         .update({ credits: newCredits })
         .eq('user_id', user.id);
 
       if (!error) {
-        console.log('✅ Credits deducted successfully');
         setCredits(newCredits);
         return true;
-      } else {
-        console.error('❌ Failed to deduct credits:', error);
-        return false;
       }
+      console.error('❌ Failed to deduct credits:', error);
+      return false;
     } catch (error) {
       console.error('❌ Error deducting credits:', error);
       return false;
@@ -122,22 +132,32 @@ export function CreditsProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const newCredits = credits + amount;
-      console.log('💰 Adding credits (refund):', { amount, oldBalance: credits, newBalance: newCredits });
-      
+      const { data, error: fetchError } = await supabase
+        .from('user_credits')
+        .select('credits')
+        .eq('user_id', user.id)
+        .single();
+
+      if (fetchError || data == null) {
+        console.error('❌ Failed to fetch credits for refund', fetchError);
+        return false;
+      }
+
+      const currentCredits = Number(data.credits) || 0;
+      const newCredits = currentCredits + amount;
+      console.log('💰 Refunding credits:', { amount, oldBalance: currentCredits, newBalance: newCredits });
+
       const { error } = await supabase
         .from('user_credits')
         .update({ credits: newCredits })
         .eq('user_id', user.id);
 
       if (!error) {
-        console.log('✅ Credits added successfully');
         setCredits(newCredits);
         return true;
-      } else {
-        console.error('❌ Failed to add credits:', error);
-        return false;
       }
+      console.error('❌ Failed to add credits:', error);
+      return false;
     } catch (error) {
       console.error('❌ Error adding credits:', error);
       return false;
