@@ -7,14 +7,13 @@ type SetNodesFunc = (updater: Node[] | ((nodes: Node[]) => Node[])) => void;
 type SetEdgesFunc = (updater: Edge[] | ((edges: Edge[]) => Edge[])) => void;
 
 interface WorkflowContextValue {
-  /** Update a specific node's data — goes through Canvas's React state (useNodesState) */
   updateNodeData: (nodeId: string, newData: Record<string, any>) => void;
   setNodes: SetNodesFunc;
   setEdges: SetEdgesFunc;
-  /** Latest nodes — always use this when reading for Create/Run (image + prompt from source nodes) */
   getLatestNodes: () => Node[];
-  /** Latest edges — use with getLatestNodes to find connected sources */
   getLatestEdges: () => Edge[];
+  /** True when any Generate node has status === 'processing'. Use to disable Create and Run Selected. */
+  isGenerationRunning: boolean;
 }
 
 const WorkflowContext = createContext<WorkflowContextValue>({
@@ -23,6 +22,7 @@ const WorkflowContext = createContext<WorkflowContextValue>({
   setEdges: () => {},
   getLatestNodes: () => [],
   getLatestEdges: () => [],
+  isGenerationRunning: false,
 });
 
 export function useWorkflow() {

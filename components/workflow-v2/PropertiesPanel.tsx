@@ -109,7 +109,7 @@ const RESOLUTIONS = [
 
 export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps) {
   const { setNodes } = useReactFlow();
-  const { updateNodeData: contextUpdateNodeData } = useWorkflow();
+  const { updateNodeData: contextUpdateNodeData, isGenerationRunning } = useWorkflow();
   const { credits, deductCredits, refreshCredits } = useCredits();
   
   // Initialize with node data or defaults
@@ -120,7 +120,6 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
   const [showModelMenu, setShowModelMenu] = useState(false);
   const [showAspectMenu, setShowAspectMenu] = useState(false);
   const [showResolutionMenu, setShowResolutionMenu] = useState(false);
-  const [isRunning, setIsRunning] = useState(false);
   
   const modelRef = useRef<HTMLDivElement>(null);
   const aspectRef = useRef<HTMLDivElement>(null);
@@ -138,6 +137,9 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
   // Calculate credit cost
   const creditCost = CREDIT_COSTS[selectedModel]?.[selectedResolution] || 30;
   const hasEnoughCredits = credits >= creditCost;
+  // Single source of truth: node status from flow (Canvas passes live node). No local running state.
+  const isGenerating = selectedNode?.data?.status === 'processing';
+  const runDisabled = !hasEnoughCredits || isGenerationRunning;
 
   // Close menus when clicking outside
   useEffect(() => {
@@ -192,6 +194,10 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
   };
 
   const handleRunNode = async () => {
+    if (isGenerationRunning) {
+      toast.error('A generation is already in progress');
+      return;
+    }
     // Check credits
     if (!hasEnoughCredits) {
       toast.error(`Insufficient credits! Need ${creditCost}, have ${credits}`);
@@ -217,9 +223,7 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
       }
     }
 
-    setIsRunning(true);
-    
-    // Update node status to processing (matches GenerateNode status)
+    // Update node status to processing (single source of truth; panel reads live node from Canvas)
     updateNodeData('status', 'processing');
 
     try {
@@ -227,7 +231,6 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
       const success = await deductCredits(creditCost);
       if (!success) {
         toast.error('Failed to deduct credits');
-        setIsRunning(false);
         updateNodeData('status', 'idle');
         return;
       }
@@ -283,8 +286,6 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
       console.error('Generation error:', error);
       toast.error(error instanceof Error ? error.message : 'Generation failed');
       updateNodeData('status', 'error');
-    } finally {
-      setIsRunning(false);
     }
   };
 
@@ -544,14 +545,14 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
         {/* Run Button - At Bottom */}
         <button
           onClick={handleRunNode}
-          disabled={isRunning || !hasEnoughCredits}
+          disabled={runDisabled}
           className={`w-full font-semibold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all ${
-            hasEnoughCredits
+            !runDisabled
               ? 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white'
               : 'bg-gray-600 cursor-not-allowed text-gray-400'
           } disabled:opacity-50`}
         >
-          {isRunning ? (
+          {isGenerating ? (
             <>
               <Loader2 className="w-5 h-5 animate-spin" />
               Generating...
