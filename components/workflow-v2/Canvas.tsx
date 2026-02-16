@@ -91,8 +91,12 @@ function FlowCanvas() {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
-  const [isRunning, setIsRunning] = useState(false);
   const [templateLoaded, setTemplateLoaded] = useState(false);
+
+  const isGenerationRunning = React.useMemo(
+    () => nodes.some((n) => n.type === 'generate' && (n.data as any)?.status === 'processing'),
+    [nodes]
+  );
   const [showGrid, setShowGrid] = useState(true);
   const [gridSize] = useState(20);
   const [gridVariant, setGridVariant] = useState<BackgroundVariant>(BackgroundVariant.Dots);
@@ -128,13 +132,17 @@ function FlowCanvas() {
     });
   }, [setNodes]);
 
-  const workflowContextValue = React.useMemo(() => ({
-    updateNodeData,
-    setNodes,
-    setEdges,
-    getLatestNodes: () => nodesRef.current,
-    getLatestEdges: () => edgesRef.current,
-  }), [updateNodeData, setNodes, setEdges]);
+  const workflowContextValue = React.useMemo(
+    () => ({
+      updateNodeData,
+      setNodes,
+      setEdges,
+      getLatestNodes: () => nodesRef.current,
+      getLatestEdges: () => edgesRef.current,
+      isGenerationRunning,
+    }),
+    [updateNodeData, setNodes, setEdges, isGenerationRunning]
+  );
 
   // Auto-save workflow to localStorage with template-specific key
   // This runs whenever nodes or edges change after template is loaded
@@ -575,6 +583,10 @@ function FlowCanvas() {
   );
 
   const handleRun = async () => {
+    if (isGenerationRunning) {
+      toast.error('A generation is already in progress');
+      return;
+    }
     const latestNodes = nodesRef.current;
     const latestEdges = edgesRef.current;
     if (latestNodes.length === 0) {
@@ -599,7 +611,6 @@ function FlowCanvas() {
       }
     }
 
-    setIsRunning(true);
     try {
       toast.loading('Executing workflow...', { id: 'workflow' });
       await executeWorkflow(latestNodes as any, latestEdges, {
@@ -613,8 +624,6 @@ function FlowCanvas() {
         await refreshCredits();
       }
       toast.error(error instanceof Error ? error.message : 'Workflow failed', { id: 'workflow' });
-    } finally {
-      setIsRunning(false);
     }
   };
 
@@ -801,11 +810,14 @@ function FlowCanvas() {
         </div>
 
         {!isMobile && (
-          <PropertiesPanel selectedNode={selectedNode} onClose={() => setSelectedNode(null)} />
+          <PropertiesPanel
+            selectedNode={selectedNode?.id ? reactFlowInstance.getNode(selectedNode.id) ?? selectedNode : null}
+            onClose={() => setSelectedNode(null)}
+          />
         )}
       </div>
 
-      <RunControls onRun={handleRun} isRunning={isRunning} />
+      <RunControls onRun={handleRun} isRunning={isGenerationRunning} />
     </div>
     </WorkflowContext.Provider>
   );

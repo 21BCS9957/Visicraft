@@ -12,16 +12,15 @@ import { useWorkflow } from '../WorkflowContext';
 
 export function GenerateNode({ data, selected, id }: NodeProps) {
   const { getNodes, getEdges } = useReactFlow();
-  const { updateNodeData, setNodes, setEdges, getLatestNodes, getLatestEdges } = useWorkflow();
+  const { updateNodeData, setNodes, setEdges, getLatestNodes, getLatestEdges, isGenerationRunning } = useWorkflow();
   const { deductCredits, refreshCredits, addCredits } = useCredits();
   const [showMenu, setShowMenu] = useState(false);
   const [showFullscreen, setShowFullscreen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  
-  // These need to be reactive to data changes
+
   const status = data.status || 'idle';
   const result = data.generatedImage || null;
-  const isRunning = status === 'processing';
+  const isThisNodeProcessing = status === 'processing';
   const aspectRatio = data.aspectRatio || '16:9';
   
   // Calculate preview height based on aspect ratio
@@ -166,9 +165,8 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
   };
 
   const handleRun = async () => {
-    // Prevent running if already processing
-    if (isRunning) {
-      toast.error('Generation already in progress');
+    if (isGenerationRunning) {
+      toast.error('A generation is already in progress');
       return;
     }
 
@@ -461,7 +459,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
               }}
             />
             {/* Fullscreen button overlay */}
-            {!isRunning && (
+            {!isThisNodeProcessing && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -481,8 +479,8 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
           </div>
         )}
         
-        {/* Loading overlay - shows on top of image or placeholder */}
-        {isRunning && (
+        {/* Loading overlay when this node is generating */}
+        {isThisNodeProcessing && (
           <div className="absolute inset-0 bg-black/70 flex items-center justify-center rounded">
             <motion.div
               animate={{ rotate: 360 }}
@@ -540,14 +538,14 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
         document.body
       )}
 
-      {/* Run Button */}
+      {/* Run Button — disabled when any generation is running (Create or Run Selected) */}
       <div className="px-3 pb-3">
         <button
           onClick={handleRun}
-          disabled={isRunning}
+          disabled={isGenerationRunning}
           className="w-full flex items-center justify-center gap-2 py-2 bg-[#ef4444]/10 hover:bg-[#ef4444]/20 border border-[#ef4444]/30 rounded text-[#ef4444] text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {isRunning ? (
+          {isThisNodeProcessing ? (
             <>
               <Loader2 className="w-3 h-3 animate-spin" />
               Creating...
