@@ -25,6 +25,14 @@ export const metadata: Metadata = {
   description: "Generate stunning visuals for YouTube, Amazon, and social media with AI",
   keywords: ["AI", "thumbnail generator", "YouTube", "Amazon", "social media", "creative studio"],
   authors: [{ name: "Visicraft" }],
+  icons: {
+    icon: [
+      { url: "/new-section/logo.png" },
+      { url: "/favicon.ico", sizes: "any" },
+    ],
+    shortcut: "/new-section/logo.png",
+    apple: "/new-section/logo.png",
+  },
 };
 
 export const viewport: Viewport = {
