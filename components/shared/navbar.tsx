@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { useState, useRef, useEffect, memo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import gsap from 'gsap';
 
 const WorkflowMenuItem = memo(({ href, label, icon, desc }: { href: string, label: string, icon: string, desc: string }) => (
   <Link
@@ -37,6 +38,30 @@ export function Navbar() {
   const [showWorkflowMenu, setShowWorkflowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const workflowRef = useRef<HTMLDivElement>(null);
+  const logoRef = useRef<HTMLImageElement>(null);
+
+  // GSAP spinning animation for logo on hover
+  useEffect(() => {
+    if (logoRef.current) {
+      const logo = logoRef.current;
+      
+      const handleMouseEnter = () => {
+        // Reset rotation to 0 first, then animate to 360
+        gsap.set(logo, { rotation: 0 });
+        gsap.to(logo, {
+          rotation: 360,
+          duration: 0.6,
+          ease: "power2.out"
+        });
+      };
+
+      logo.addEventListener('mouseenter', handleMouseEnter);
+      
+      return () => {
+        logo.removeEventListener('mouseenter', handleMouseEnter);
+      };
+    }
+  }, []);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -79,17 +104,15 @@ export function Navbar() {
       <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6">
         <div className="flex items-center justify-between h-14 sm:h-16">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 sm:gap-3 group">
-            {/* Custom Logo Icon */}
+          <Link href="/" className="flex items-center gap-1 sm:gap-1.5 group">
+            {/* Logo Image */}
             <div className="relative">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-[#8b7355] flex items-center justify-center transition-transform group-hover:scale-110">
-                {/* Sparkle Icon - Custom Design */}
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="sm:w-6 sm:h-6">
-                  <path d="M12 2L13.5 8.5L20 10L13.5 11.5L12 18L10.5 11.5L4 10L10.5 8.5L12 2Z" fill="white" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  <circle cx="18" cy="6" r="1.5" fill="white"/>
-                  <circle cx="6" cy="18" r="1" fill="white"/>
-                </svg>
-              </div>
+              <img 
+                ref={logoRef}
+                src="/new-section/logo.png" 
+                alt="Visicraft Logo" 
+                className="w-9 h-9 sm:w-11 sm:h-11 object-contain cursor-pointer"
+              />
             </div>
             <span className="text-white font-light text-base sm:text-xl tracking-wider">
               Visicraft
