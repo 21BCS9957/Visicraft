@@ -83,6 +83,7 @@ export function Navbar() {
   const links = [
     { href: '/', label: 'Home', icon: 'ph:house-fill' },
     { href: '/generate', label: 'Generate', icon: 'ph:magic-wand-fill' },
+    { href: '/text-to-speech', label: 'TTS', icon: 'ph:waveform-fill' },
     { href: '/pricing', label: 'Pricing', icon: 'ph:currency-inr' },
   ];
 
