@@ -1,0 +1,78 @@
+npm warn exec The following package was not found and will be installed: next@15.5.12
+ ⚠ Invalid next.config.ts options detected: 
+ ⚠     Unrecognized key(s) in object: 'reactCompiler'
+ ⚠ See more info here: https://nextjs.org/docs/messages/invalid-next-config
+   ▲ Next.js 15.5.12
+   - Local:        http://localhost:3000
+   - Network:      http://192.0.0.2:3000
+   - Environments: .env.local
+   - Experiments (use with caution):
+     · optimizePackageImports
+
+ ✓ Starting...
+ ✓ Ready in 1771ms
+ ○ Compiling / ...
+ ✓ Compiled / in 7.7s (1799 modules)
+ ⨯ [Error [InvariantError]: Invariant: The manifests singleton was not initialized. This is a bug in Next.js.] {
+  page: '/'
+}
+ ○ Compiling /_error ...
+ ✓ Compiled /_error in 2.3s (2153 modules)
+Invalid hook call. Hooks can only be called inside of the body of a function component. This could happen for one of the following reasons:
+1. You might have mismatching versions of React and the renderer (such as React DOM)
+2. You might be breaking the Rules of Hooks
+3. You might have more than one copy of React in the same app
+See https://react.dev/link/invalid-hook-call for tips about how to debug and fix this problem.
+[TypeError: Cannot read properties of null (reading 'useInsertionEffect')]
+Invalid hook call. Hooks can only be called inside of the body of a function component. This could happen for one of the following reasons:
+1. You might have mismatching versions of React and the renderer (such as React DOM)
+2. You might be breaking the Rules of Hooks
+3. You might have more than one copy of React in the same app
+See https://react.dev/link/invalid-hook-call for tips about how to debug and fix this problem.
+[TypeError: Cannot read properties of null (reading 'useInsertionEffect')]
+ ⨯ [TypeError: Cannot read properties of null (reading 'useInsertionEffect')]
+[TypeError: Cannot read properties of null (reading 'useInsertionEffect')]
+ ⨯ unhandledRejection: [TypeError: Cannot read properties of null (reading 'useInsertionEffect')]
+ ⨯ unhandledRejection:  [TypeError: Cannot read properties of null (reading 'useInsertionEffect')]
+ GET / 500 in 12201ms
+ ⨯ [Error [InvariantError]: Invariant: The manifests singleton was not initialized. This is a bug in Next.js.] {
+  page: '/'
+}
+Invalid hook call. Hooks can only be called inside of the body of a function component. This could happen for one of the following reasons:
+1. You might have mismatching versions of React and the renderer (such as React DOM)
+2. You might be breaking the Rules of Hooks
+3. You might have more than one copy of React in the same app
+See https://react.dev/link/invalid-hook-call for tips about how to debug and fix this problem.
+[TypeError: Cannot read properties of null (reading 'useInsertionEffect')]
+Invalid hook call. Hooks can only be called inside of the body of a function component. This could happen for one of the following reasons:
+1. You might have mismatching versions of React and the renderer (such as React DOM)
+2. You might be breaking the Rules of Hooks
+3. You might have more than one copy of React in the same app
+See https://react.dev/link/invalid-hook-call for tips about how to debug and fix this problem.
+[TypeError: Cannot read properties of null (reading 'useInsertionEffect')]
+ ⨯ [TypeError: Cannot read properties of null (reading 'useInsertionEffect')]
+[TypeError: Cannot read properties of null (reading 'useInsertionEffect')]
+ ⨯ unhandledRejection: [TypeError: Cannot read properties of null (reading 'useInsertionEffect')]
+ ⨯ unhandledRejection:  [TypeError: Cannot read properties of null (reading 'useInsertionEffect')]
+ GET / 500 in 432ms
+ ⨯ [Error [InvariantError]: Invariant: The manifests singleton was not initialized. This is a bug in Next.js.] {
+  page: '/'
+}
+Invalid hook call. Hooks can only be called inside of the body of a function component. This could happen for one of the following reasons:
+1. You might have mismatching versions of React and the renderer (such as React DOM)
+2. You might be breaking the Rules of Hooks
+3. You might have more than one copy of React in the same app
+See https://react.dev/link/invalid-hook-call for tips about how to debug and fix this problem.
+[TypeError: Cannot read properties of null (reading 'useInsertionEffect')]
+Invalid hook call. Hooks can only be called inside of the body of a function component. This could happen for one of the following reasons:
+1. You might have mismatching versions of React and the renderer (such as React DOM)
+2. You might be breaking the Rules of Hooks
+3. You might have more than one copy of React in the same app
+See https://react.dev/link/invalid-hook-call for tips about how to debug and fix this problem.
+[TypeError: Cannot read properties of null (reading 'useInsertionEffect')]
+ ⨯ [TypeError: Cannot read properties of null (reading 'useInsertionEffect')]
+[TypeError: Cannot read properties of null (reading 'useInsertionEffect')]
+ ⨯ unhandledRejection: [TypeError: Cannot read properties of null (reading 'useInsertionEffect')]
+ ⨯ unhandledRejection:  [TypeError: Cannot read properties of null (reading 'useInsertionEffect')]
+ GET / 500 in 601ms
+[?25h
