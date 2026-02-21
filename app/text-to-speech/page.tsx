@@ -32,9 +32,11 @@ export default function TextToSpeechPage() {
 
   const handleGenerate = async (text: string, voiceId: string, expression: string) => {
     setError('');
+    setIsGenerating(true);
     
     if (!user) {
       setError('Insufficient balance! Sign up to get free credits and start creating.');
+      setIsGenerating(false);
       setTimeout(() => {
         router.push('/login?redirectTo=/text-to-speech');
       }, 2000);
@@ -44,12 +46,14 @@ export default function TextToSpeechPage() {
     if (credits < CREDIT_COST) {
       toast.error(`Insufficient credits! Need ${CREDIT_COST}, have ${credits}`);
       setError(`You need ${CREDIT_COST} credits. Current balance: ${credits} credits.`);
+      setIsGenerating(false);
       return;
     }
 
     const deducted = await deductCredits(CREDIT_COST);
     if (!deducted) {
       toast.error('Failed to deduct credits. Please try again.');
+      setIsGenerating(false);
       return;
     }
 
@@ -88,7 +92,7 @@ export default function TextToSpeechPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#1a1d18] via-black to-[#2a2e26]">
+    <div className="min-h-screen bg-gradient-to-b from-[#1a1d18] via-black to-[#2a2e26] pt-16">
       <div className="container mx-auto px-4 sm:px-6 py-8 sm:py-12">
         {/* Header */}
         <div className="text-center mb-8 sm:mb-12">

@@ -239,7 +239,7 @@ export default function GeneratePage() {
     : (singleImage !== null);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#1a1d18] via-black to-[#2a2e26]">
+    <div className="min-h-screen bg-gradient-to-b from-[#1a1d18] via-black to-[#2a2e26] pt-16">
       <div className="container mx-auto px-4 sm:px-6 py-8 sm:py-12">
         {/* Header with Feature Selector */}
         <div className="text-center mb-8 sm:mb-12">
