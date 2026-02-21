@@ -14,7 +14,6 @@
     "@gsap/react": "^2.1.2",
     "@hookform/resolvers": "^5.2.2",
     "@iconify/react": "^6.0.2",
-    "@next/swc-darwin-arm64": "^16.1.6",
     "@phosphor-icons/react": "^2.1.10",
     "@react-three/fiber": "^9.5.0",
     "@supabase/ssr": "^0.5.2",
