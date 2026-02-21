@@ -216,6 +216,8 @@ const VOICE_MODELS: VoiceModel[] = [
     style: 'British Standard',
     icon: 'ph:user-fill',
     color: '#6b7280',
+    credits: 10,
+    tier: 'standard',
   },
   {
     id: 'en-GB-Neural2-D',
@@ -225,6 +227,8 @@ const VOICE_MODELS: VoiceModel[] = [
     style: 'British Standard',
     icon: 'ph:user-fill',
     color: '#52525b',
+    credits: 10,
+    tier: 'standard',
   },
   {
     id: 'hi-IN-Neural2-A',
@@ -234,6 +238,8 @@ const VOICE_MODELS: VoiceModel[] = [
     style: 'Expressive',
     icon: 'ph:user-fill',
     color: '#f97316',
+    credits: 10,
+    tier: 'standard',
   },
   {
     id: 'hi-IN-Neural2-B',
@@ -243,6 +249,8 @@ const VOICE_MODELS: VoiceModel[] = [
     style: 'Deep & Authoritative',
     icon: 'ph:user-fill',
     color: '#ea580c',
+    credits: 10,
+    tier: 'standard',
   },
 ];
 
