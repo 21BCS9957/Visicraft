@@ -6,14 +6,18 @@ import { Position, NodeProps, useReactFlow, NodeResizer } from 'reactflow';
 import { MoreVertical, Zap, Play, Loader2, Download, Copy, Trash2, RefreshCw, Maximize2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { SmartHandle } from '../SmartHandle';
 import { useWorkflow } from '../WorkflowContext';
 
 export function GenerateNode({ data, selected, id }: NodeProps) {
+  const router = useRouter();
+  const { user } = useAuth();
   const { getNodes, getEdges } = useReactFlow();
   const { updateNodeData, setNodes, setEdges, getLatestNodes, getLatestEdges, isGenerationRunning } = useWorkflow();
-  const { deductCredits, refreshCredits, addCredits } = useCredits();
+  const { credits, deductCredits, refreshCredits, addCredits } = useCredits();
   const [showMenu, setShowMenu] = useState(false);
   const [showFullscreen, setShowFullscreen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -165,6 +169,10 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
   };
 
   const handleRun = async () => {
+    if (!user) {
+      router.push('/login?redirectTo=/workflow');
+      return;
+    }
     if (isGenerationRunning) {
       toast.error('A generation is already in progress');
       return;
@@ -191,14 +199,29 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       }
     });
 
-    // PRODUCTION VALIDATION LOGIC
-    // Rule 1: Must have at least one image
-    if (!actualReferenceUrl && !actualSourceUrl) {
-      toast.error('Connect at least one image (reference or source)');
+    // Credit cost (used for validation and deduction)
+    const model = data.model || 'gemini-3-pro';
+    const resolution = data.resolution || '2K';
+    const CREDIT_COSTS: Record<string, Record<string, number>> = {
+      'gemini-2-flash': { '720p': 20, '1080p': 30, '2K': 40, '4K': 50 },
+      'gemini-3-pro': { '720p': 30, '1080p': 40, '2K': 50, '4K': 60 },
+      'banana-pro': { '720p': 35, '1080p': 45, '2K': 50, '4K': 70 },
+    };
+    const creditCost = CREDIT_COSTS[model]?.[resolution] || 50;
+
+    // Rule 1: Check credits first
+    if (credits < creditCost) {
+      toast.error(`Insufficient credits! Need ${creditCost}, have ${credits}`);
       return;
     }
 
-    // Rule 2: If only one image type is provided, prompt is mandatory
+    // Rule 2: Must have at least one image uploaded
+    if (!actualReferenceUrl && !actualSourceUrl) {
+      toast.error('Upload at least one image to generate');
+      return;
+    }
+
+    // Rule 3: If only one image type is provided, prompt is mandatory
     const hasReference = !!actualReferenceUrl;
     const hasSource = !!actualSourceUrl;
     const hasOnlyOneImageType = (hasReference && !hasSource) || (!hasReference && hasSource);
@@ -208,22 +231,10 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       return;
     }
 
-    // Rule 3: If both images provided but no prompt, use empty string
+    // Rule 4: If both images provided but no prompt, use empty string
     if (!actualPromptText) {
       actualPromptText = '';
     }
-
-    // Calculate credit cost (default values if not set)
-    const model = data.model || 'gemini-3-pro';
-    const resolution = data.resolution || '2K';
-    
-    const CREDIT_COSTS: Record<string, Record<string, number>> = {
-      'gemini-2-flash': { '720p': 20, '1080p': 30, '2K': 40, '4K': 50 },
-      'gemini-3-pro': { '720p': 30, '1080p': 40, '2K': 50, '4K': 60 },
-      'banana-pro': { '720p': 35, '1080p': 45, '2K': 50, '4K': 70 },
-    };
-    
-    const creditCost = CREDIT_COSTS[model]?.[resolution] || 50;
 
     // Update status to processing FIRST (prevents double-clicks)
     setNodes((nds) =>
@@ -246,7 +257,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
             : node
         )
       );
-      toast.error('Not enough credits. Upgrade to keep creating!');
+      toast.error(`Insufficient credits! Need ${creditCost}, have ${credits}`);
       return;
     }
 

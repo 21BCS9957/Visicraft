@@ -6,6 +6,8 @@ import { Icon } from '@iconify/react';
 import { useReactFlow } from 'reactflow';
 import { AnimatePresence, motion } from 'framer-motion';
 import toast from 'react-hot-toast';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { useWorkflow } from './WorkflowContext';
 
@@ -108,6 +110,8 @@ const RESOLUTIONS = [
 ];
 
 export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps) {
+  const router = useRouter();
+  const { user } = useAuth();
   const { setNodes } = useReactFlow();
   const { updateNodeData: contextUpdateNodeData, isGenerationRunning } = useWorkflow();
   const { credits, deductCredits, refreshCredits } = useCredits();
@@ -194,6 +198,10 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
   };
 
   const handleRunNode = async () => {
+    if (!user) {
+      router.push('/login?redirectTo=/workflow');
+      return;
+    }
     if (isGenerationRunning) {
       toast.error('A generation is already in progress');
       return;
@@ -211,7 +219,7 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
 
     // Need at least one image
     if (!hasReferenceImage && !hasSourceImage) {
-      toast.error('Connect at least one image (reference or source)');
+      toast.error('Upload at least one image to generate');
       return;
     }
 

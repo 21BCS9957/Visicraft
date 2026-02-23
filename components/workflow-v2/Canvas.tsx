@@ -34,6 +34,7 @@ import { executeWorkflow } from '@/lib/workflow/executor';
 import { loadTemplate } from '@/lib/workflow/templateLoader';
 import TemplateSelectionModal from './TemplateSelectionModal';
 import toast from 'react-hot-toast';
+import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 
 const nodeTypes = {
@@ -85,9 +86,10 @@ const RUN_CREDIT_COSTS: Record<string, Record<string, number>> = {
 function FlowCanvas() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { user } = useAuth();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const reactFlowInstance = useReactFlow();
-  const { deductCredits, addCredits, refreshCredits } = useCredits();
+  const { credits, deductCredits, addCredits, refreshCredits } = useCredits();
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
@@ -583,6 +585,10 @@ function FlowCanvas() {
   );
 
   const handleRun = async () => {
+    if (!user) {
+      router.push('/login?redirectTo=/workflow');
+      return;
+    }
     if (isGenerationRunning) {
       toast.error('A generation is already in progress');
       return;
@@ -603,10 +609,34 @@ function FlowCanvas() {
     }
     const amountToDeduct = totalCreditCost;
 
+    // Check credits before deducting
+    if (amountToDeduct > 0 && credits < amountToDeduct) {
+      toast.error(`Insufficient credits! Need ${amountToDeduct}, have ${credits}`);
+      return;
+    }
+
+    // Check that every generate node has at least one image uploaded
+    for (const genNode of generateNodes) {
+      const incoming = latestEdges.filter((e: Edge) => e.target === genNode.id);
+      let hasUploadedImage = false;
+      for (const edge of incoming) {
+        const sourceNode = latestNodes.find((n: Node) => n.id === edge.source);
+        const isImageHandle = edge.targetHandle === 'referenceImage' || edge.targetHandle === 'sourceImage';
+        if (sourceNode && isImageHandle && (sourceNode.data as any)?.supabaseUrl) {
+          hasUploadedImage = true;
+          break;
+        }
+      }
+      if (!hasUploadedImage) {
+        toast.error('Upload at least one image to generate');
+        return;
+      }
+    }
+
     if (amountToDeduct > 0) {
       const deducted = await deductCredits(amountToDeduct);
       if (!deducted) {
-        toast.error('Not enough credits. Upgrade to keep creating!');
+        toast.error(`Insufficient credits! Need ${amountToDeduct}, have ${credits}`);
         return;
       }
     }
@@ -623,7 +653,11 @@ function FlowCanvas() {
         await addCredits(amountToDeduct);
         await refreshCredits();
       }
-      toast.error(error instanceof Error ? error.message : 'Workflow failed', { id: 'workflow' });
+      const message = error instanceof Error ? error.message : 'Workflow failed';
+      const friendlyMessage = message.includes('uploaded before execution') || message.includes('Reference Image') || message.includes('Source Image')
+        ? 'Upload at least one image to generate'
+        : message;
+      toast.error(friendlyMessage, { id: 'workflow' });
     }
   };
 
