@@ -114,7 +114,7 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
   const { user } = useAuth();
   const { setNodes } = useReactFlow();
   const { updateNodeData: contextUpdateNodeData, isGenerationRunning } = useWorkflow();
-  const { credits, deductCredits, refreshCredits } = useCredits();
+  const { credits, deductCredits, refreshCredits, addCredits } = useCredits();
   
   // Initialize with node data or defaults
   const [selectedModel, setSelectedModel] = useState(selectedNode?.data?.model || 'nano-banana-pro');
@@ -292,6 +292,8 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
       toast.success('Generation completed!');
     } catch (error) {
       console.error('Generation error:', error);
+      await addCredits(creditCost);
+      await refreshCredits();
       toast.error(error instanceof Error ? error.message : 'Generation failed');
       updateNodeData('status', 'error');
     }

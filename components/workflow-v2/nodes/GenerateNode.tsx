@@ -236,27 +236,15 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       actualPromptText = '';
     }
 
-    // Update status to processing FIRST (prevents double-clicks)
-    setNodes((nds) =>
-      nds.map((node) =>
-        node.id === id
-          ? { ...node, data: { ...node.data, status: 'processing' } }
-          : node
-      )
-    );
+    // Update status to processing FIRST (prevents double-clicks) — use updateNodeData for sync with PropertiesPanel
+    updateNodeData(id, { status: 'processing' });
 
     // Deduct credits AFTER validation passes — capture amount so we refund exactly this on error
     const amountToDeduct = creditCost;
     const deducted = await deductCredits(amountToDeduct);
     if (!deducted) {
       // Revert status if credit deduction fails
-      setNodes((nds) =>
-        nds.map((node) =>
-          node.id === id
-            ? { ...node, data: { ...node.data, status: 'idle' } }
-            : node
-        )
-      );
+      updateNodeData(id, { status: 'idle' });
       toast.error(`Insufficient credits! Need ${creditCost}, have ${credits}`);
       return;
     }
@@ -306,21 +294,8 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       const generatedImageUrl = result.images?.[0];
 
       if (generatedImageUrl) {
-        // Update node with generated image
-        setNodes((nds) =>
-          nds.map((node) =>
-            node.id === id
-              ? {
-                  ...node,
-                  data: {
-                    ...node.data,
-                    generatedImage: generatedImageUrl,
-                    status: 'complete',
-                  },
-                }
-              : node
-          )
-        );
+        // Update node with generated image — use updateNodeData for sync with PropertiesPanel
+        updateNodeData(id, { generatedImage: generatedImageUrl, status: 'complete' });
         
         // Refresh credits to show updated balance
         await refreshCredits();
@@ -336,14 +311,8 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       await addCredits(amountToDeduct);
       await refreshCredits();
       
-      // Update status to error
-      setNodes((nds) =>
-        nds.map((node) =>
-          node.id === id
-            ? { ...node, data: { ...node.data, status: 'error' } }
-            : node
-        )
-      );
+      // Update status to error — use updateNodeData for sync with PropertiesPanel
+      updateNodeData(id, { status: 'error' });
       
       toast.error(
         'Oops! Something went wrong. No worries, try again!',
