@@ -143,7 +143,7 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
   const hasEnoughCredits = credits >= creditCost;
   // Single source of truth: node status from flow (Canvas passes live node). No local running state.
   const isGenerating = selectedNode?.data?.status === 'processing';
-  const runDisabled = !hasEnoughCredits || isGenerationRunning;
+  const runDisabled = !user ? false : (!hasEnoughCredits || isGenerationRunning);
 
   // Close menus when clicking outside
   useEffect(() => {
@@ -511,43 +511,58 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
         {/* Spacer to push credit cost and button to bottom */}
         <div className="flex-1 min-h-[100px]" />
 
-        {/* Credit Cost Display - Above Run Button */}
-        <div className={`rounded-lg p-4 border ${
-          hasEnoughCredits 
-            ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 border-purple-500/30' 
-            : 'bg-red-500/20 border-red-500/30'
-        }`}>
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <Sparkles className={`w-5 h-5 ${hasEnoughCredits ? 'text-purple-400' : 'text-red-400'}`} />
-              <span className="text-sm text-gray-300">Cost to execute</span>
-            </div>
-          </div>
-          <div className="flex items-baseline gap-2 mb-2">
-            <span className="text-3xl font-bold text-white">{creditCost}</span>
-            <span className="text-gray-400">credits</span>
-          </div>
-          <div className="pt-2 border-t border-white/10">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-gray-400">Your balance:</span>
-              <span className={`font-semibold ${hasEnoughCredits ? 'text-green-400' : 'text-red-400'}`}>
-                {credits} credits
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Insufficient Credits Warning */}
-        {!hasEnoughCredits && (
-          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 flex items-start gap-2">
-            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+        {/* When not signed in: show sign-in prompt */}
+        {!user ? (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 flex items-start gap-2">
+            <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm text-red-400 font-medium">Insufficient Credits</p>
-              <p className="text-xs text-red-300 mt-1">
-                You need {creditCost - credits} more credits. Upgrade your plan to continue.
+              <p className="text-sm text-amber-400 font-medium">Sign in required</p>
+              <p className="text-xs text-amber-300/90 mt-1">
+                Sign in to run this node and start generating images.
               </p>
             </div>
           </div>
+        ) : (
+          <>
+            {/* Credit Cost Display - Above Run Button (only when signed in) */}
+            <div className={`rounded-lg p-4 border ${
+              hasEnoughCredits 
+                ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 border-purple-500/30' 
+                : 'bg-red-500/20 border-red-500/30'
+            }`}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Sparkles className={`w-5 h-5 ${hasEnoughCredits ? 'text-purple-400' : 'text-red-400'}`} />
+                  <span className="text-sm text-gray-300">Cost to execute</span>
+                </div>
+              </div>
+              <div className="flex items-baseline gap-2 mb-2">
+                <span className="text-3xl font-bold text-white">{creditCost}</span>
+                <span className="text-gray-400">credits</span>
+              </div>
+              <div className="pt-2 border-t border-white/10">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-400">Your balance:</span>
+                  <span className={`font-semibold ${hasEnoughCredits ? 'text-green-400' : 'text-red-400'}`}>
+                    {credits} credits
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Insufficient Credits Warning (only when signed in and insufficient) */}
+            {!hasEnoughCredits && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 flex items-start gap-2">
+                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm text-red-400 font-medium">Insufficient Credits</p>
+                  <p className="text-xs text-red-300 mt-1">
+                    You need {creditCost - credits} more credits. Upgrade your plan to continue.
+                  </p>
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         {/* Run Button - At Bottom */}
@@ -564,6 +579,11 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
             <>
               <Loader2 className="w-5 h-5 animate-spin" />
               Generating...
+            </>
+          ) : !user ? (
+            <>
+              <Play className="w-5 h-5" />
+              Sign in to Run
             </>
           ) : (
             <>
