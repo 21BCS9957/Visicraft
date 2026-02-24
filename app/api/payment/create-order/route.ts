@@ -57,10 +57,11 @@ export async function POST(request: NextRequest) {
       amount: order.amount,
       currency: order.currency,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Error creating Razorpay order:', error);
+    const message = error instanceof Error ? error.message : 'Failed to create order';
     return NextResponse.json(
-      { error: 'Failed to create order', details: error.message },
+      { error: 'Failed to create order', details: message },
       { status: 500 }
     );
   }

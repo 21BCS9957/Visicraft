@@ -125,10 +125,11 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Error verifying payment:', error);
+    const details = error instanceof Error ? error.message : 'Payment verification failed';
     return NextResponse.json(
-      { success: false, error: 'Payment verification failed', details: error.message },
+      { success: false, error: 'Payment verification failed', details },
       { status: 500 }
     );
   }

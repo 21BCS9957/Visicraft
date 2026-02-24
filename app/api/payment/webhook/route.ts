@@ -127,10 +127,11 @@ export async function POST(request: NextRequest) {
     console.log('ℹ️ Unhandled webhook event:', event.event);
     return NextResponse.json({ success: true });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Webhook error:', error);
+    const details = error instanceof Error ? error.message : 'Webhook processing failed';
     return NextResponse.json(
-      { error: 'Webhook processing failed', details: error.message },
+      { error: 'Webhook processing failed', details },
       { status: 500 }
     );
   }

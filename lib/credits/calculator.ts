@@ -1,9 +1,39 @@
-// Credit cost calculator for different models and resolutions
+// Credit cost calculator - single source of truth for model/resolution and feature-based costs
 
 export interface CreditCost {
   model: string;
   resolution: string;
   credits: number;
+}
+
+/** Feature IDs used by the generate page and API routes */
+export type FeatureId = 'generate' | 'thumbnail' | 'upscale' | 'unblur' | 'edit';
+
+/** Credit cost per feature (generate page + API server-side enforcement) */
+export const FEATURE_CREDIT_COSTS: Record<FeatureId, number> = {
+  generate: 65,
+  thumbnail: 70,
+  upscale: 80,
+  unblur: 75,
+  edit: 70,
+};
+
+/** Video generation: duration id -> credits (Veo supports 4s, 6s, 8s only) */
+export const VIDEO_CREDIT_COSTS: Record<string, number> = {
+  '4s': 40,
+  '6s': 60,
+  '8s': 80,
+};
+
+/** Text-to-speech: fixed cost per request */
+export const TTS_CREDIT_COST = 15;
+
+export function getCreditCostForFeature(feature: FeatureId): number {
+  return FEATURE_CREDIT_COSTS[feature] ?? 65;
+}
+
+export function getCreditCostForVideo(durationId: string): number {
+  return VIDEO_CREDIT_COSTS[durationId] ?? 60;
 }
 
 export const CREDIT_COSTS: Record<string, Record<string, number>> = {
@@ -36,6 +66,11 @@ export function getModelName(model: string): string {
     'gemini-2-flash': 'Gemini 2 Flash',
     'gemini-3-pro': 'Gemini 3 Pro',
     'banana-pro': 'Banana Pro',
+    'nano-banana-pro': 'Banana Pro',
+    'gpt-image': 'Gemini 3 Pro',
+    'google-imagen': 'Gemini 3 Pro',
+    'midjourney': 'Gemini 3 Pro',
+    'flux-2-max': 'Gemini 3 Pro',
   };
   return modelMap[model] || model;
 }

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleAuth } from 'google-auth-library';
+import { requireAuth } from '@/lib/api-auth';
+import { deductCreditsAtomic, TTS_CREDIT_COST } from '@/lib/credits/server';
 
 interface VoiceConfig {
   languageCode: string;
@@ -89,6 +91,18 @@ const EXPRESSION_CONFIG: Record<string, { speakingRate: number; pitch: number; v
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireAuth();
+    if (session instanceof Response) return session;
+    const { user } = session;
+
+    const newBalance = await deductCreditsAtomic(user.id, TTS_CREDIT_COST);
+    if (newBalance === null) {
+      return NextResponse.json(
+        { error: 'Insufficient credits' },
+        { status: 402 }
+      );
+    }
+
     const { text, voiceId, expression } = await request.json();
 
     if (!text || text.trim().length === 0) {
@@ -198,6 +212,7 @@ export async function POST(request: NextRequest) {
       success: true,
       audioUrl: base64Audio,
       audioSize: audioBuffer.length,
+      creditsRemaining: newBalance,
     });
   } catch (error) {
     console.error('Text-to-Speech error:', error);

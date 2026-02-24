@@ -6,11 +6,10 @@ import { TextToSpeechForm } from '@/components/text-to-speech/text-to-speech-for
 import { Card } from '@/components/ui/card';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { useAuth } from '@/lib/contexts/AuthContext';
+import { TTS_CREDIT_COST } from '@/lib/credits/calculator';
 import { Icon } from '@iconify/react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-
-const CREDIT_COST = 15;
 
 const FEATURES = [
   {
@@ -27,7 +26,7 @@ export default function TextToSpeechPage() {
   const [generatedAudio, setGeneratedAudio] = useState<string | null>(null);
   const [error, setError] = useState<string>('');
   const { user } = useAuth();
-  const { credits, deductCredits, refreshCredits, addCredits } = useCredits();
+  const { credits, refreshCredits } = useCredits();
   const router = useRouter();
 
   const handleGenerate = async (text: string, voiceId: string, expression: string) => {
@@ -41,19 +40,13 @@ export default function TextToSpeechPage() {
       return;
     }
 
-    if (credits < CREDIT_COST) {
-      toast.error(`Insufficient credits! Need ${CREDIT_COST}, have ${credits}`);
-      setError(`You need ${CREDIT_COST} credits. Current balance: ${credits} credits.`);
+    if (credits < TTS_CREDIT_COST) {
+      toast.error(`Insufficient credits! Need ${TTS_CREDIT_COST}, have ${credits}`);
+      setError(`You need ${TTS_CREDIT_COST} credits. Current balance: ${credits} credits.`);
       return;
     }
 
-    const deducted = await deductCredits(CREDIT_COST);
-    if (!deducted) {
-      toast.error('Failed to deduct credits. Please try again.');
-      return;
-    }
-
-    toast.success(`${CREDIT_COST} credits deducted. Processing...`);
+    toast.success('Processing...');
 
     try {
       const response = await fetch('/api/text-to-speech', {
@@ -66,6 +59,13 @@ export default function TextToSpeechPage() {
         }),
       });
 
+      if (response.status === 402) {
+        await refreshCredits();
+        const errorData = await response.json();
+        setError(errorData.error || 'Insufficient credits');
+        toast.error(errorData.error || 'Insufficient credits');
+        return;
+      }
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Speech generation failed');
@@ -76,9 +76,7 @@ export default function TextToSpeechPage() {
       await refreshCredits();
       toast.success('Speech generated successfully!');
     } catch (err) {
-      await addCredits(CREDIT_COST);
       await refreshCredits();
-      
       const errorMessage = err instanceof Error ? err.message : 'An error occurred';
       setError(errorMessage);
       toast.error(errorMessage);
@@ -101,14 +99,6 @@ export default function TextToSpeechPage() {
           <p className="text-[#c8b4a0] text-base sm:text-lg font-light mb-4 sm:mb-6 px-4 max-w-2xl mx-auto">
             Transform your text into natural, expressive speech. Choose from a variety of voices and expressions.
           </p>
-
-          {/* Credit Cost Display */}
-          <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 bg-[#8b7355]/10 border border-[#8b7355]/30 rounded-lg">
-            <Icon icon="ph:coins-fill" className="w-4 h-4 sm:w-5 sm:h-5 text-[#c8b4a0]" />
-            <span className="text-[#c8b4a0] text-xs sm:text-sm font-light">
-              {CREDIT_COST} credits per generation
-            </span>
-          </div>
         </div>
 
         {/* Main Form */}

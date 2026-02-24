@@ -2,11 +2,16 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
-  
+
+  // Ensure module resolution uses this app directory when run from thumbnail-generator
+  turbopack: {
+    root: process.cwd(),
+  },
+
   // Performance optimizations
   compress: true,
   poweredByHeader: false,
-  
+
   // Image optimization
   images: {
     formats: ['image/avif', 'image/webp'],

@@ -7,13 +7,14 @@ import { MoreVertical, Zap, Play, Loader2, Download, Copy, Trash2, RefreshCw, Ma
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useCredits } from '@/lib/contexts/CreditsContext';
+import { calculateCredits, getModelName } from '@/lib/credits/calculator';
 import { SmartHandle } from '../SmartHandle';
 import { useWorkflow } from '../WorkflowContext';
 
 export function GenerateNode({ data, selected, id }: NodeProps) {
   const { getNodes, getEdges } = useReactFlow();
   const { updateNodeData, setNodes, setEdges, getLatestNodes, getLatestEdges, isGenerationRunning } = useWorkflow();
-  const { deductCredits, refreshCredits, addCredits } = useCredits();
+  const { credits, refreshCredits } = useCredits();
   const [showMenu, setShowMenu] = useState(false);
   const [showFullscreen, setShowFullscreen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -217,13 +218,11 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     const model = data.model || 'gemini-3-pro';
     const resolution = data.resolution || '2K';
     
-    const CREDIT_COSTS: Record<string, Record<string, number>> = {
-      'gemini-2-flash': { '720p': 20, '1080p': 30, '2K': 40, '4K': 50 },
-      'gemini-3-pro': { '720p': 30, '1080p': 40, '2K': 50, '4K': 60 },
-      'banana-pro': { '720p': 35, '1080p': 45, '2K': 50, '4K': 70 },
-    };
-    
-    const creditCost = CREDIT_COSTS[model]?.[resolution] || 50;
+    const creditCost = calculateCredits(getModelName(model), resolution);
+    if (credits < creditCost) {
+      toast.error('Not enough credits. Upgrade to keep creating!');
+      return;
+    }
 
     // Update status to processing FIRST (prevents double-clicks)
     setNodes((nds) =>
@@ -233,22 +232,6 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
           : node
       )
     );
-
-    // Deduct credits AFTER validation passes — capture amount so we refund exactly this on error
-    const amountToDeduct = creditCost;
-    const deducted = await deductCredits(amountToDeduct);
-    if (!deducted) {
-      // Revert status if credit deduction fails
-      setNodes((nds) =>
-        nds.map((node) =>
-          node.id === id
-            ? { ...node, data: { ...node.data, status: 'idle' } }
-            : node
-        )
-      );
-      toast.error('Not enough credits. Upgrade to keep creating!');
-      return;
-    }
 
     try {
       // Build request based on available inputs
@@ -288,6 +271,16 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
         throw new Error(`Server returned status ${response.status} with invalid JSON`);
       }
 
+      if (response.status === 402) {
+        await refreshCredits();
+        toast.error(result?.error || 'Insufficient credits');
+        setNodes((nds) =>
+          nds.map((node) =>
+            node.id === id ? { ...node, data: { ...node.data, status: 'idle' } } : node
+          )
+        );
+        return;
+      }
       if (!response.ok) {
         throw new Error(result?.error || 'Generation failed');
       }
@@ -320,9 +313,6 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       }
     } catch (error) {
       console.error('❌ Generation error:', error);
-
-      // Refund exactly what we deducted (same amount, no more)
-      await addCredits(amountToDeduct);
       await refreshCredits();
       
       // Update status to error

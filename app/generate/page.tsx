@@ -9,6 +9,7 @@ import { UploadedImage } from '@/types';
 import { Card } from '@/components/ui/card';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { useAuth } from '@/lib/contexts/AuthContext';
+import { getCreditCostForFeature } from '@/lib/credits/calculator';
 import { Icon } from '@iconify/react';
 import { ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -62,17 +63,6 @@ const FEATURES: Feature[] = [
   },
 ];
 
-// Strategic pricing based on API costs and profitability
-// Gemini Pro 3 costs: ~$0.002-0.005 per image generation
-// Target margin: 80-90% profit
-const CREDIT_COSTS: Record<FeatureMode, number> = {
-  'generate': 65,      // Standard generation - moderate complexity
-  'thumbnail': 70,     // Thumbnail optimization - higher value for creators
-  'upscale': 80,       // Most resource-intensive - 4x resolution processing
-  'unblur': 75,        // Complex enhancement algorithms
-  'edit': 70,          // AI-powered editing with prompt processing
-};
-
 export default function GeneratePage() {
   const [selectedFeature, setSelectedFeature] = useState<Feature>(FEATURES[0]);
   const [showFeatureMenu, setShowFeatureMenu] = useState(false);
@@ -82,24 +72,18 @@ export default function GeneratePage() {
   const [generatedThumbnails, setGeneratedThumbnails] = useState<string[]>([]);
   const [error, setError] = useState<string>('');
   const { user } = useAuth();
-  const { credits, deductCredits, refreshCredits, addCredits } = useCredits();
+  const { credits, refreshCredits, addCredits } = useCredits();
   const router = useRouter();
 
   const handleGenerate = async (prompt?: string, selectedModel?: string) => {
     setError('');
-    
-    // Check if user is logged in
+
     if (!user) {
       setError('Insufficient balance! Sign up to get free credits and start creating amazing visuals.');
-      
-      // Redirect to login after 2 seconds
-      setTimeout(() => {
-        router.push('/login?redirectTo=/generate');
-      }, 2000);
+      setTimeout(() => router.push('/login?redirectTo=/generate'), 2000);
       return;
     }
-    
-    // Validation based on feature mode
+
     if (selectedFeature.id === 'generate' || selectedFeature.id === 'thumbnail') {
       if (!referenceImage || sourceImages.length === 0) {
         setError('Please upload both reference and source images');
@@ -112,22 +96,14 @@ export default function GeneratePage() {
       }
     }
 
-    const creditCost = CREDIT_COSTS[selectedFeature.id];
-
+    const creditCost = getCreditCostForFeature(selectedFeature.id);
     if (credits < creditCost) {
       toast.error(`Insufficient credits! Need ${creditCost}, have ${credits}`);
       setError(`You need ${creditCost} credits. Current balance: ${credits} credits.`);
       return;
     }
 
-    const amountToDeduct = creditCost;
-    const deducted = await deductCredits(amountToDeduct);
-    if (!deducted) {
-      toast.error('Failed to deduct credits. Please try again.');
-      return;
-    }
-
-    toast.success(`${amountToDeduct} credits deducted. Processing...`);
+    toast.success('Processing...');
 
     try {
       let result;
@@ -181,6 +157,13 @@ export default function GeneratePage() {
           }),
         });
 
+        if (generateResponse.status === 402) {
+          await refreshCredits();
+          const errorData = await generateResponse.json();
+          toast.error(errorData.error || 'Insufficient credits');
+          setError(errorData.error || 'Insufficient credits');
+          return;
+        }
         if (!generateResponse.ok) {
           const errorData = await generateResponse.json();
           throw new Error(errorData.error || 'Generation failed');
@@ -213,6 +196,13 @@ export default function GeneratePage() {
           }),
         });
 
+        if (apiResponse.status === 402) {
+          await refreshCredits();
+          const errorData = await apiResponse.json();
+          toast.error(errorData.error || 'Insufficient credits');
+          setError(errorData.error || 'Insufficient credits');
+          return;
+        }
         if (!apiResponse.ok) {
           const errorData = await apiResponse.json();
           throw new Error(errorData.error || `${selectedFeature.name} failed`);
@@ -225,9 +215,7 @@ export default function GeneratePage() {
       await refreshCredits();
       toast.success(`✨ ${selectedFeature.name} complete!`);
     } catch (err) {
-      await addCredits(amountToDeduct);
       await refreshCredits();
-      
       const errorMessage = err instanceof Error ? err.message : 'An error occurred';
       setError(errorMessage);
       toast.error(errorMessage);
@@ -321,7 +309,7 @@ export default function GeneratePage() {
           <div className="mt-4 inline-flex items-center gap-2 px-3 sm:px-4 py-2 bg-[#8b7355]/10 border border-[#8b7355]/30 rounded-lg">
             <Icon icon="ph:coins-fill" className="w-4 h-4 sm:w-5 sm:h-5 text-[#c8b4a0]" />
             <span className="text-[#c8b4a0] text-xs sm:text-sm font-light">
-              {CREDIT_COSTS[selectedFeature.id]} credits per operation
+              {getCreditCostForFeature(selectedFeature.id)} credits per operation
             </span>
           </div>
         </div>

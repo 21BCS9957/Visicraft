@@ -7,6 +7,7 @@ import { useReactFlow } from 'reactflow';
 import { AnimatePresence, motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useCredits } from '@/lib/contexts/CreditsContext';
+import { calculateCredits, getModelName } from '@/lib/credits/calculator';
 import { useWorkflow } from './WorkflowContext';
 
 interface PropertiesPanelProps {
@@ -58,40 +59,6 @@ const AI_MODELS = [
   },
 ];
 
-// Comprehensive credit costs for all model + resolution combinations
-const CREDIT_COSTS: Record<string, Record<string, number>> = {
-  'gpt-image': {
-    '720p': 25,
-    '1080p': 35,
-    '2K': 45,
-    '4K': 55,
-  },
-  'nano-banana-pro': {
-    '720p': 30,
-    '1080p': 40,
-    '2K': 50,
-    '4K': 60,
-  },
-  'midjourney': {
-    '720p': 40,
-    '1080p': 50,
-    '2K': 60,
-    '4K': 80,
-  },
-  'google-imagen': {
-    '720p': 30,
-    '1080p': 40,
-    '2K': 50,
-    '4K': 65,
-  },
-  'flux-2-max': {
-    '720p': 35,
-    '1080p': 45,
-    '2K': 55,
-    '4K': 70,
-  },
-};
-
 const ASPECT_RATIOS = [
   { id: '16:9', name: '16:9 (YouTube)', emoji: '⬜' },
   { id: '1:1', name: '1:1 (Square)', emoji: '🟦' },
@@ -110,7 +77,7 @@ const RESOLUTIONS = [
 export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps) {
   const { setNodes } = useReactFlow();
   const { updateNodeData: contextUpdateNodeData, isGenerationRunning } = useWorkflow();
-  const { credits, deductCredits, refreshCredits } = useCredits();
+  const { credits, refreshCredits } = useCredits();
   
   // Initialize with node data or defaults
   const [selectedModel, setSelectedModel] = useState(selectedNode?.data?.model || 'nano-banana-pro');
@@ -134,8 +101,8 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
     }
   }, [selectedNode?.id, selectedNode?.data?.model, selectedNode?.data?.aspectRatio, selectedNode?.data?.resolution]);
 
-  // Calculate credit cost
-  const creditCost = CREDIT_COSTS[selectedModel]?.[selectedResolution] || 30;
+  // Calculate credit cost (single source of truth from lib/credits/calculator)
+  const creditCost = calculateCredits(getModelName(selectedModel), selectedResolution);
   const hasEnoughCredits = credits >= creditCost;
   // Single source of truth: node status from flow (Canvas passes live node). No local running state.
   const isGenerating = selectedNode?.data?.status === 'processing';
@@ -227,15 +194,7 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
     updateNodeData('status', 'processing');
 
     try {
-      // Deduct credits BEFORE generation
-      const success = await deductCredits(creditCost);
-      if (!success) {
-        toast.error('Failed to deduct credits');
-        updateNodeData('status', 'idle');
-        return;
-      }
-
-      toast.success(`${creditCost} credits deducted. Generating with ${AI_MODELS.find(m => m.id === selectedModel)?.name}...`);
+      toast.success(`Generating with ${AI_MODELS.find(m => m.id === selectedModel)?.name}...`);
 
       // Build request based on available inputs
       const requestBody: any = {
@@ -264,14 +223,19 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
         body: JSON.stringify(requestBody),
       });
 
-      if (!response.ok) {
-        throw new Error('Generation failed');
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 402) {
+        await refreshCredits();
+        toast.error(data.error || 'Insufficient credits');
+        updateNodeData('status', 'idle');
+        return;
       }
-
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Generation failed');
+      }
       
-      if (data.error) {
-        throw new Error(data.error);
+      if (data.error || !data.images?.[0]) {
+        throw new Error(data.error || 'Generation failed');
       }
 
       // Update node with result
@@ -284,8 +248,9 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
       toast.success('Generation completed!');
     } catch (error) {
       console.error('Generation error:', error);
+      await refreshCredits();
       toast.error(error instanceof Error ? error.message : 'Generation failed');
-      updateNodeData('status', 'error');
+      updateNodeData('status', 'idle');
     }
   };
 

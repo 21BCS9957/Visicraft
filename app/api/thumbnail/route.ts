@@ -1,12 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateThumbnail } from '@/lib/banana/api';
+import { requireAuth } from '@/lib/api-auth';
+import { deductCreditsAtomic, getCreditCostForFeature } from '@/lib/credits/server';
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAuth();
+    if (auth instanceof Response) return auth;
+    const { user } = auth;
+
+    const creditCost = getCreditCostForFeature('thumbnail');
+    const newBalance = await deductCreditsAtomic(user.id, creditCost);
+    if (newBalance === null) {
+      return NextResponse.json(
+        { error: 'Insufficient credits' },
+        { status: 402 }
+      );
+    }
+
     const body = await request.json();
-    const { 
-      referenceImage, 
-      sourceImages, 
+    const {
+      referenceImage,
+      sourceImages,
       prompt,
       model,
     } = body;
@@ -44,6 +59,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       images: generatedThumbnails,
+      creditsRemaining: newBalance,
     });
   } catch (error) {
     console.error('Thumbnail generation error:', error);

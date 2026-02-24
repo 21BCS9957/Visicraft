@@ -1,18 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateThumbnail } from '@/lib/banana/api';
 import { supabase } from '@/lib/supabase/client';
+import { requireAuth } from '@/lib/api-auth';
+import { deductCreditsAtomic, getCreditCostForFeature } from '@/lib/credits/server';
+import { calculateCredits, getModelName, getResolutionName } from '@/lib/credits/calculator';
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAuth();
+    if (auth instanceof Response) return auth;
+    const { user } = auth;
+
     const body = await request.json();
-    const { 
-      referenceImage, 
-      sourceImages, 
+    const {
+      referenceImage,
+      sourceImages,
       prompt,
       model,
       aspectRatio,
-      resolution 
+      resolution,
     } = body;
+    const creditCost =
+      model && resolution
+        ? calculateCredits(getModelName(model), getResolutionName(resolution))
+        : getCreditCostForFeature('generate');
+    const newBalance = await deductCreditsAtomic(user.id, creditCost);
+    if (newBalance === null) {
+      return NextResponse.json(
+        { error: 'Insufficient credits' },
+        { status: 402 }
+      );
+    }
 
     // Flexible validation: Need at least one image
     if (!referenceImage && (!sourceImages || sourceImages.length === 0)) {
@@ -82,6 +100,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       images: generatedThumbnails,
+      creditsRemaining: newBalance,
     });
   } catch (error) {
     console.error('Generation error:', error);
