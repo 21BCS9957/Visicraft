@@ -164,9 +164,12 @@ export function CreditsProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Only refetch when user ID changes, not on every auth state change (e.g. TOKEN_REFRESHED)
+  // which would cause repeated "Fetching credits" logs during long operations like image gen
+  const userId = user?.id ?? null;
   useEffect(() => {
     refreshCredits();
-  }, [user]);
+  }, [userId]);
 
   return (
     <CreditsContext.Provider value={{ credits, loading, refreshCredits, deductCredits, addCredits }}>
