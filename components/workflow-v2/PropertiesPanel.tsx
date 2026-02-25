@@ -10,6 +10,8 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { useWorkflow } from './WorkflowContext';
+import { getCreditCost } from '@/lib/credits/calculator';
+import { executeGeneration } from '@/lib/workflow/generateNode';
 
 interface PropertiesPanelProps {
   selectedNode: any;
@@ -60,40 +62,6 @@ const AI_MODELS = [
   },
 ];
 
-// Comprehensive credit costs for all model + resolution combinations
-const CREDIT_COSTS: Record<string, Record<string, number>> = {
-  'gpt-image': {
-    '720p': 25,
-    '1080p': 35,
-    '2K': 45,
-    '4K': 55,
-  },
-  'nano-banana-pro': {
-    '720p': 30,
-    '1080p': 40,
-    '2K': 50,
-    '4K': 60,
-  },
-  'midjourney': {
-    '720p': 40,
-    '1080p': 50,
-    '2K': 60,
-    '4K': 80,
-  },
-  'google-imagen': {
-    '720p': 30,
-    '1080p': 40,
-    '2K': 50,
-    '4K': 65,
-  },
-  'flux-2-max': {
-    '720p': 35,
-    '1080p': 45,
-    '2K': 55,
-    '4K': 70,
-  },
-};
-
 const ASPECT_RATIOS = [
   { id: '16:9', name: '16:9 (YouTube)', emoji: '⬜' },
   { id: '1:1', name: '1:1 (Square)', emoji: '🟦' },
@@ -112,8 +80,8 @@ const RESOLUTIONS = [
 export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps) {
   const router = useRouter();
   const { user } = useAuth();
-  const { setNodes } = useReactFlow();
-  const { updateNodeData: contextUpdateNodeData, isGenerationRunning } = useWorkflow();
+  const { setNodes, getNodes, getEdges } = useReactFlow();
+  const { updateNodeData: contextUpdateNodeData, createTemplateAwareUpdater, currentTemplate, isGenerationRunning } = useWorkflow();
   const { credits, deductCredits, refreshCredits, addCredits } = useCredits();
   
   // Initialize with node data or defaults
@@ -138,8 +106,7 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
     }
   }, [selectedNode?.id, selectedNode?.data?.model, selectedNode?.data?.aspectRatio, selectedNode?.data?.resolution]);
 
-  // Calculate credit cost
-  const creditCost = CREDIT_COSTS[selectedModel]?.[selectedResolution] || 30;
+  const creditCost = getCreditCost(selectedModel, selectedResolution);
   const hasEnoughCredits = credits >= creditCost;
   // Single source of truth: node status from flow (Canvas passes live node). No local running state.
   const isGenerating = selectedNode?.data?.status === 'processing';
@@ -206,96 +173,52 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
       toast.error('A generation is already in progress');
       return;
     }
-    // Check credits
-    if (!hasEnoughCredits) {
-      toast.error(`Insufficient credits! Need ${creditCost}, have ${credits}`);
-      return;
-    }
 
-    // Check connections - flexible validation
-    const hasReferenceImage = selectedNode.data.referenceImageUrl;
-    const hasSourceImage = selectedNode.data.sourceImageUrl;
-    const hasPrompt = selectedNode.data.promptText;
+    // Read latest nodes/edges to get connected images/prompt (same as GenerateNode's Create button)
+    const currentNodes = getNodes();
+    const currentEdges = getEdges();
+    const connectedToThis = currentEdges.filter((e) => e.target === selectedNode.id);
 
-    // Need at least one image
-    if (!hasReferenceImage && !hasSourceImage) {
-      toast.error('Upload at least one image to generate');
-      return;
-    }
+    let actualReferenceUrl: string | null = null;
+    let actualSourceUrl: string | null = null;
+    let actualPromptText: string | null = null;
 
-    // If only one image, must have prompt
-    if ((hasReferenceImage && !hasSourceImage) || (!hasReferenceImage && hasSourceImage)) {
-      if (!hasPrompt) {
-        toast.error('When using only one image, a prompt is required');
-        return;
+    connectedToThis.forEach((edge) => {
+      const sourceNode = currentNodes.find((n) => n.id === edge.source);
+      if (!sourceNode) return;
+      if (edge.targetHandle === 'referenceImage') {
+        // Check for supabaseUrl (Import node) or generatedImage (Generate node)
+        actualReferenceUrl = sourceNode.data?.supabaseUrl || sourceNode.data?.generatedImage || null;
+      } else if (edge.targetHandle === 'sourceImage') {
+        // Check for supabaseUrl (Import node) or generatedImage (Generate node)
+        actualSourceUrl = sourceNode.data?.supabaseUrl || sourceNode.data?.generatedImage || null;
+      } else if (edge.targetHandle === 'prompt') {
+        actualPromptText = sourceNode.data?.text ?? null;
       }
-    }
+    });
 
-    // Update node status to processing (single source of truth; panel reads live node from Canvas)
-    updateNodeData('status', 'processing');
+    // Capture the template at the time of click so results persist even if user switches templates
+    const templateUpdater = createTemplateAwareUpdater(currentTemplate);
 
     try {
-      // Deduct credits BEFORE generation
-      const success = await deductCredits(creditCost);
-      if (!success) {
-        toast.error('Failed to deduct credits');
-        updateNodeData('status', 'idle');
-        return;
-      }
-
-      toast.success(`${creditCost} credits deducted. Generating with ${AI_MODELS.find(m => m.id === selectedModel)?.name}...`);
-
-      // Build request based on available inputs
-      const requestBody: any = {
-        prompt: selectedNode.data.promptText || 'Create a professional, eye-catching image',
+      await executeGeneration({
+        nodeId: selectedNode.id,
+        referenceImageUrl: actualReferenceUrl,
+        sourceImageUrl: actualSourceUrl,
+        promptText: actualPromptText,
         model: selectedModel,
         aspectRatio: selectedAspect,
         resolution: selectedResolution,
-      };
-
-      // Add images if available
-      if (hasReferenceImage && hasSourceImage) {
-        requestBody.referenceImage = hasReferenceImage;
-        requestBody.sourceImages = [hasSourceImage];
-      } else if (hasSourceImage) {
-        requestBody.referenceImage = hasSourceImage;
-        requestBody.sourceImages = [hasSourceImage];
-      } else if (hasReferenceImage) {
-        requestBody.referenceImage = hasReferenceImage;
-        requestBody.sourceImages = [hasReferenceImage];
-      }
-
-      // Call the actual generation API
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
+        updateNodeData: templateUpdater,
+        credits,
+        deductCredits,
+        addCredits,
+        refreshCredits,
       });
-
-      if (!response.ok) {
-        throw new Error('Generation failed');
-      }
-
-      const data = await response.json();
-      
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
-      // Update node with result
-      updateNodeData('generatedImage', data.images[0]);
-      updateNodeData('status', 'complete');
-
-      // Refresh credits display
-      await refreshCredits();
-
-      toast.success('Generation completed!');
+      toast.success('✨ Amazing! Your image is ready', { id: `generate-${selectedNode.id}` });
     } catch (error) {
-      console.error('Generation error:', error);
-      await addCredits(creditCost);
-      await refreshCredits();
-      toast.error(error instanceof Error ? error.message : 'Generation failed');
-      updateNodeData('status', 'error');
+      const msg = error instanceof Error ? error.message : 'Generation failed';
+      toast.error(msg, { id: `generate-${selectedNode.id}` });
     }
   };
 

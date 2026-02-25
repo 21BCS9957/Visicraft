@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     console.log('🎨 ========================================');
     console.log('🎨 GENERATION REQUEST RECEIVED');
     console.log('🎨 ========================================');
-    console.log('🤖 Model:', model || 'gemini-3-pro (default)');
+    console.log('🤖 Model:', model || 'nano-banana-pro (default)');
     console.log('📐 Aspect Ratio:', aspectRatio || '16:9 (default)');
     console.log('🎬 Resolution:', resolution || '1080p (default)');
     console.log('💬 Prompt:', prompt?.substring(0, 50) || 'Using default prompt');
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
           source_images_urls: sourceImages,
           generated_thumbnails: generatedThumbnails,
           prompt: prompt || null,
-          model: model || 'gemini-3-pro',
+          model: model || 'nano-banana-pro',
           aspect_ratio: aspectRatio || '16:9',
           resolution: resolution || '2K',
         })

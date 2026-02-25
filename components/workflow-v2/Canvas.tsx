@@ -77,12 +77,6 @@ function useIsMobile() {
   return isMobile;
 }
 
-const RUN_CREDIT_COSTS: Record<string, Record<string, number>> = {
-  'gemini-2-flash': { '720p': 20, '1080p': 30, '2K': 40, '4K': 50 },
-  'gemini-3-pro': { '720p': 30, '1080p': 40, '2K': 50, '4K': 60 },
-  'banana-pro': { '720p': 35, '1080p': 45, '2K': 50, '4K': 70 },
-};
-
 function FlowCanvas() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -121,7 +115,7 @@ function FlowCanvas() {
   nodesRef.current = nodes;
   edgesRef.current = edges;
 
-  // updateNodeData: updates React state and ref so latest is available before next render (same flow on first Create and after image/prompt change)
+  // updateNodeData: updates React state and ref so latest is available before next render
   const updateNodeData = useCallback((nodeId: string, newData: Record<string, any>) => {
     setNodes((nds) => {
       const next = nds.map((node) =>
@@ -134,16 +128,45 @@ function FlowCanvas() {
     });
   }, [setNodes]);
 
+  // Creates an updateNodeData wrapper that also persists to localStorage for a specific template.
+  // This ensures generation results are saved even if user switches templates mid-generation.
+  const createTemplateAwareUpdater = useCallback((forTemplate: string) => {
+    return (nodeId: string, newData: Record<string, any>) => {
+      // Always try to update live React state
+      updateNodeData(nodeId, newData);
+
+      // Also persist to localStorage for the original template
+      try {
+        const saveKey = `workflow-autosave-${forTemplate}`;
+        const saved = localStorage.getItem(saveKey);
+        if (saved) {
+          const savedData = JSON.parse(saved);
+          savedData.nodes = savedData.nodes.map((node: any) =>
+            node.id === nodeId
+              ? { ...node, data: { ...node.data, ...newData } }
+              : node
+          );
+          savedData.timestamp = Date.now();
+          localStorage.setItem(saveKey, JSON.stringify(savedData));
+        }
+      } catch (e) {
+        console.error('Failed to persist node update to localStorage:', e);
+      }
+    };
+  }, [updateNodeData]);
+
   const workflowContextValue = React.useMemo(
     () => ({
       updateNodeData,
+      createTemplateAwareUpdater,
+      currentTemplate,
       setNodes,
       setEdges,
       getLatestNodes: () => nodesRef.current,
       getLatestEdges: () => edgesRef.current,
       isGenerationRunning,
     }),
-    [updateNodeData, setNodes, setEdges, isGenerationRunning]
+    [updateNodeData, createTemplateAwareUpdater, currentTemplate, setNodes, setEdges, isGenerationRunning]
   );
 
   // Auto-save workflow to localStorage with template-specific key
@@ -228,24 +251,6 @@ function FlowCanvas() {
         if (latestNodes.length > 0 && !isInitialLoadRef.current) {
           const saveKey = `workflow-autosave-${fromTemplate}`;
           
-          // Log ACTUAL data we're about to save
-          const importNodesFlush = latestNodes.filter(n => n.type === 'import');
-          const promptNodesFlush = latestNodes.filter(n => n.type === 'prompt');
-          console.log('[SWITCH] About to save - inspecting nodes (from refs):', {
-            template: fromTemplate,
-            nodeCount: latestNodes.length,
-            importNodes: importNodesFlush.map(n => ({
-              id: n.id,
-              supabaseUrl: n.data?.supabaseUrl?.substring(0, 50) || 'NONE',
-              supabaseUrlLen: n.data?.supabaseUrl?.length ?? 0,
-            })),
-            promptNodes: promptNodesFlush.map(n => ({
-              id: n.id,
-              text: n.data?.text?.substring(0, 50) || 'NONE',
-              textLen: n.data?.text?.length ?? 0,
-            })),
-          });
-          
           localStorage.setItem(saveKey, JSON.stringify({
             nodes: latestNodes,
             edges: latestEdges,
@@ -253,11 +258,9 @@ function FlowCanvas() {
             template: fromTemplate,
           }));
           
-          console.log('[SWITCH] Flush-saved before clear (from refs)', {
+          console.log('[SWITCH] Flush-saved before clear', {
             template: fromTemplate,
             nodeCount: latestNodes.length,
-            importSupabaseLens: importNodesFlush.map(n => n.data?.supabaseUrl?.length ?? 0),
-            promptTextLens: promptNodesFlush.map(n => n.data?.text?.length ?? 0),
           });
         } else {
           console.log('[SWITCH] Skipping save:', {
@@ -276,6 +279,7 @@ function FlowCanvas() {
 
       setNodes([]);
       setEdges([]);
+      setSelectedNode(null);
 
       prevTemplateRef.current = currentTemplate;
       setTemplateLoaded(false);
@@ -420,6 +424,7 @@ function FlowCanvas() {
         textLen: (n.data?.text as string)?.length ?? 0,
       })),
     });
+    
     setNodes(templateData.nodes);
     setEdges(templateData.edges);
 
@@ -500,8 +505,8 @@ function FlowCanvas() {
           if (updatedNode.type === 'generate') {
             const handleId = params.targetHandle;
 
-            // Check for both supabaseUrl (uploaded) and imageUrl (template example)
-            const sourceImageUrl = sourceNode.data.supabaseUrl || sourceNode.data.imageUrl;
+            // Check for supabaseUrl (uploaded), imageUrl (template), or generatedImage (from another Generate node)
+            const sourceImageUrl = sourceNode.data.supabaseUrl || sourceNode.data.imageUrl || sourceNode.data.generatedImage;
 
             if (handleId === 'referenceImage' && sourceImageUrl) {
               updatedNode.data.referenceImageUrl = sourceImageUrl;
@@ -600,64 +605,22 @@ function FlowCanvas() {
       return;
     }
 
-    const generateNodes = latestNodes.filter((n) => n.type === 'generate');
-    let totalCreditCost = 0;
-    for (const n of generateNodes) {
-      const model = (n.data as any)?.model || 'gemini-3-pro';
-      const resolution = (n.data as any)?.resolution || '2K';
-      totalCreditCost += RUN_CREDIT_COSTS[model]?.[resolution] ?? 50;
-    }
-    const amountToDeduct = totalCreditCost;
-
-    // Check credits before deducting
-    if (amountToDeduct > 0 && credits < amountToDeduct) {
-      toast.error(`Insufficient credits! Need ${amountToDeduct}, have ${credits}`);
-      return;
-    }
-
-    // Check that every generate node has at least one image uploaded
-    for (const genNode of generateNodes) {
-      const incoming = latestEdges.filter((e: Edge) => e.target === genNode.id);
-      let hasUploadedImage = false;
-      for (const edge of incoming) {
-        const sourceNode = latestNodes.find((n: Node) => n.id === edge.source);
-        const isImageHandle = edge.targetHandle === 'referenceImage' || edge.targetHandle === 'sourceImage';
-        if (sourceNode && isImageHandle && (sourceNode.data as any)?.supabaseUrl) {
-          hasUploadedImage = true;
-          break;
-        }
-      }
-      if (!hasUploadedImage) {
-        toast.error('Upload at least one image to generate');
-        return;
-      }
-    }
-
-    if (amountToDeduct > 0) {
-      const deducted = await deductCredits(amountToDeduct);
-      if (!deducted) {
-        toast.error(`Insufficient credits! Need ${amountToDeduct}, have ${credits}`);
-        return;
-      }
-    }
+    // Capture the template at the time of click so results persist even if user switches templates
+    const templateUpdater = createTemplateAwareUpdater(currentTemplate);
 
     try {
       toast.loading('Executing workflow...', { id: 'workflow' });
       await executeWorkflow(latestNodes as any, latestEdges, {
-        updateNodeData: (nodeId, newData) => updateNodeData(nodeId, newData as Record<string, any>),
+        updateNodeData: (nodeId, newData) => templateUpdater(nodeId, newData as Record<string, any>),
+        credits,
+        deductCredits,
+        addCredits,
+        refreshCredits,
       });
-      if (amountToDeduct > 0) await refreshCredits();
       toast.success('Workflow completed!', { id: 'workflow' });
     } catch (error) {
-      if (amountToDeduct > 0) {
-        await addCredits(amountToDeduct);
-        await refreshCredits();
-      }
-      const message = error instanceof Error ? error.message : 'Workflow failed';
-      const friendlyMessage = message.includes('uploaded before execution') || message.includes('Reference Image') || message.includes('Source Image')
-        ? 'Upload at least one image to generate'
-        : message;
-      toast.error(friendlyMessage, { id: 'workflow' });
+      const msg = error instanceof Error ? error.message : 'Workflow failed';
+      toast.error(msg, { id: 'workflow' });
     }
   };
 

@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
+import { executeGeneration } from '@/lib/workflow/generateNode';
 import { SmartHandle } from '../SmartHandle';
 import { useWorkflow } from '../WorkflowContext';
 
@@ -16,7 +17,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
   const router = useRouter();
   const { user } = useAuth();
   const { getNodes, getEdges } = useReactFlow();
-  const { updateNodeData, setNodes, setEdges, getLatestNodes, getLatestEdges, isGenerationRunning } = useWorkflow();
+  const { updateNodeData, createTemplateAwareUpdater, currentTemplate, setNodes, setEdges, getLatestNodes, getLatestEdges, isGenerationRunning } = useWorkflow();
   const { credits, deductCredits, refreshCredits, addCredits } = useCredits();
   const [showMenu, setShowMenu] = useState(false);
   const [showFullscreen, setShowFullscreen] = useState(false);
@@ -178,7 +179,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       return;
     }
 
-    // Always read latest nodes/edges so same flow runs on first Create and after image or prompt change
+    // Read latest nodes/edges to get connected images/prompt
     const currentNodes = getLatestNodes();
     const currentEdges = getLatestEdges();
     const connectedToThis = currentEdges.filter((e) => e.target === id);
@@ -191,133 +192,38 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       const sourceNode = currentNodes.find((n) => n.id === edge.source);
       if (!sourceNode) return;
       if (edge.targetHandle === 'referenceImage') {
-        actualReferenceUrl = sourceNode.data?.supabaseUrl ?? null;
+        // Check for supabaseUrl (Import node) or generatedImage (Generate node)
+        actualReferenceUrl = sourceNode.data?.supabaseUrl || sourceNode.data?.generatedImage || null;
       } else if (edge.targetHandle === 'sourceImage') {
-        actualSourceUrl = sourceNode.data?.supabaseUrl ?? null;
+        // Check for supabaseUrl (Import node) or generatedImage (Generate node)
+        actualSourceUrl = sourceNode.data?.supabaseUrl || sourceNode.data?.generatedImage || null;
       } else if (edge.targetHandle === 'prompt') {
         actualPromptText = sourceNode.data?.text ?? null;
       }
     });
 
-    // Credit cost (used for validation and deduction)
-    const model = data.model || 'gemini-3-pro';
-    const resolution = data.resolution || '2K';
-    const CREDIT_COSTS: Record<string, Record<string, number>> = {
-      'gemini-2-flash': { '720p': 20, '1080p': 30, '2K': 40, '4K': 50 },
-      'gemini-3-pro': { '720p': 30, '1080p': 40, '2K': 50, '4K': 60 },
-      'banana-pro': { '720p': 35, '1080p': 45, '2K': 50, '4K': 70 },
-    };
-    const creditCost = CREDIT_COSTS[model]?.[resolution] || 50;
-
-    // Rule 1: Check credits first
-    if (credits < creditCost) {
-      toast.error(`Insufficient credits! Need ${creditCost}, have ${credits}`);
-      return;
-    }
-
-    // Rule 2: Must have at least one image uploaded
-    if (!actualReferenceUrl && !actualSourceUrl) {
-      toast.error('Upload at least one image to generate');
-      return;
-    }
-
-    // Rule 3: If only one image type is provided, prompt is mandatory
-    const hasReference = !!actualReferenceUrl;
-    const hasSource = !!actualSourceUrl;
-    const hasOnlyOneImageType = (hasReference && !hasSource) || (!hasReference && hasSource);
-    
-    if (hasOnlyOneImageType && !actualPromptText) {
-      toast.error('Please provide a prompt to describe what you want to generate');
-      return;
-    }
-
-    // Rule 4: If both images provided but no prompt, use empty string
-    if (!actualPromptText) {
-      actualPromptText = '';
-    }
-
-    // Update status to processing FIRST (prevents double-clicks) — use updateNodeData for sync with PropertiesPanel
-    updateNodeData(id, { status: 'processing' });
-
-    // Deduct credits AFTER validation passes — capture amount so we refund exactly this on error
-    const amountToDeduct = creditCost;
-    const deducted = await deductCredits(amountToDeduct);
-    if (!deducted) {
-      // Revert status if credit deduction fails
-      updateNodeData(id, { status: 'idle' });
-      toast.error(`Insufficient credits! Need ${creditCost}, have ${credits}`);
-      return;
-    }
+    // Capture the template at the time of click so results persist even if user switches templates
+    const templateUpdater = createTemplateAwareUpdater(currentTemplate);
 
     try {
-      // Build request based on available inputs
-      const requestBody: any = {
-        prompt: actualPromptText,
-        model: model,
+      await executeGeneration({
+        nodeId: id,
+        referenceImageUrl: actualReferenceUrl,
+        sourceImageUrl: actualSourceUrl,
+        promptText: actualPromptText,
+        model: data.model || 'nano-banana-pro',
         aspectRatio: data.aspectRatio || '16:9',
-        resolution: resolution,
-      };
-
-      // Add images if available
-      if (actualReferenceUrl && actualSourceUrl) {
-        // Both images available - full transformation
-        requestBody.referenceImage = actualReferenceUrl;
-        requestBody.sourceImages = [actualSourceUrl];
-      } else if (actualSourceUrl) {
-        // Only source image - use it as both reference and source
-        requestBody.referenceImage = actualSourceUrl;
-        requestBody.sourceImages = [actualSourceUrl];
-      } else if (actualReferenceUrl) {
-        // Only reference image - use it as both
-        requestBody.referenceImage = actualReferenceUrl;
-        requestBody.sourceImages = [actualReferenceUrl];
-      }
-
-      // Call the API
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
+        resolution: data.resolution || '2K',
+        updateNodeData: templateUpdater,
+        credits,
+        deductCredits,
+        addCredits,
+        refreshCredits,
       });
-
-      let result;
-      try {
-        result = await response.json();
-      } catch (parseError) {
-        throw new Error(`Server returned status ${response.status} with invalid JSON`);
-      }
-
-      if (!response.ok) {
-        throw new Error(result?.error || 'Generation failed');
-      }
-
-      const generatedImageUrl = result.images?.[0];
-
-      if (generatedImageUrl) {
-        // Update node with generated image — use updateNodeData for sync with PropertiesPanel
-        updateNodeData(id, { generatedImage: generatedImageUrl, status: 'complete' });
-        
-        // Refresh credits to show updated balance
-        await refreshCredits();
-        
-        toast.success('✨ Amazing! Your image is ready', { id: `generate-${id}` });
-      } else {
-        throw new Error('No image returned from API');
-      }
+      toast.success('✨ Amazing! Your image is ready', { id: `generate-${id}` });
     } catch (error) {
-      console.error('❌ Generation error:', error);
-
-      // Refund exactly what we deducted (same amount, no more)
-      await addCredits(amountToDeduct);
-      await refreshCredits();
-      
-      // Update status to error — use updateNodeData for sync with PropertiesPanel
-      updateNodeData(id, { status: 'error' });
-      
-      toast.error(
-        'Oops! Something went wrong. No worries, try again!',
-        { id: `generate-${id}` }
-      );
+      const msg = error instanceof Error ? error.message : 'Generation failed';
+      toast.error(msg, { id: `generate-${id}` });
     }
   };
 

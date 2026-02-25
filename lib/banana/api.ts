@@ -51,9 +51,11 @@ export async function generateThumbnail(
 
   // Map model IDs to Gemini API model names
   const modelMap: Record<string, string> = {
-    'gemini-2-flash': 'gemini-2-flash-image-preview',
-    'gemini-3-pro': 'gemini-3-pro-image-preview',
-    'banana-pro': 'gemini-3-pro-image-preview', // Using Gemini 3 Pro for Banana Pro
+    'nano-banana-pro': 'gemini-3-pro-image-preview',
+    'gpt-image': 'gemini-3-pro-image-preview',
+    'midjourney': 'gemini-3-pro-image-preview',
+    'google-imagen': 'gemini-3-pro-image-preview',
+    'flux-2-max': 'gemini-3-pro-image-preview',
   };
 
   // Map UI aspect ratios to Gemini API format
@@ -75,7 +77,7 @@ export async function generateThumbnail(
     '720p': '512x512',
   };
 
-  const selectedModel = model || 'gemini-3-pro';
+  const selectedModel = model || 'nano-banana-pro';
   const geminiModel = modelMap[selectedModel] || 'gemini-3-pro-image-preview';
   const selectedAspectRatio = aspectRatioMap[aspectRatio || '16:9'] || '16:9';
   const selectedResolution = resolutionMap[resolution || '1080p'] || '1024x1024';
