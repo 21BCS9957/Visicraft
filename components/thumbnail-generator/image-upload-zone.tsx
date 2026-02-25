@@ -76,11 +76,12 @@ export function ImageUploadZone({ onImagesChange, maxImages = MAX_SOURCE_IMAGES 
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 flex-1 flex flex-col min-h-0">
       <div
         {...getRootProps()}
         className={`
-          relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer
+          relative w-full flex-1 min-h-[280px] border-2 border-dashed rounded-lg cursor-pointer
+          flex flex-col items-center justify-center
           transition-all duration-300
           ${isDragActive 
             ? 'border-[#c8b4a0] bg-[#c8b4a0]/5' 
@@ -90,16 +91,18 @@ export function ImageUploadZone({ onImagesChange, maxImages = MAX_SOURCE_IMAGES 
         `}
       >
         <input {...getInputProps()} />
-        <Upload className="mx-auto h-12 w-12 text-[#c8b4a0] mb-4" />
-        <p className="text-[#f8f7f5] font-light mb-2">
-          {isDragActive ? 'Drop images here' : 'Drag & drop images here'}
-        </p>
-        <p className="text-[#c8b4a0] text-sm">
-          or click to select ({images.length}/{maxImages})
-        </p>
-        <p className="text-[#c8b4a0]/60 text-xs mt-2">
-          JPG, PNG, WebP • Max 5MB per image
-        </p>
+        <div className="flex flex-col items-center justify-center text-center">
+          <Upload className="h-12 w-12 text-[#c8b4a0] mb-4" />
+          <p className="text-[#f8f7f5] font-light mb-2">
+            {isDragActive ? 'Drop images here' : 'Drag & drop images here'}
+          </p>
+          <p className="text-[#c8b4a0] text-sm">
+            or click to select ({images.length}/{maxImages})
+          </p>
+          <p className="text-[#c8b4a0]/60 text-xs mt-2">
+            JPG, PNG, WebP • Max 5MB per image
+          </p>
+        </div>
       </div>
 
       {error && (

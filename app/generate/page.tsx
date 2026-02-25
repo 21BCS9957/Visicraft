@@ -348,11 +348,13 @@ export default function GeneratePage() {
               />
             </Card>
 
-            <Card className="p-4 sm:p-6 border-[#c8b4a0]/20 bg-gradient-to-br from-[#1a1d18] to-[#2a2e26]">
+            <Card className="p-4 sm:p-6 border-[#c8b4a0]/20 bg-gradient-to-br from-[#1a1d18] to-[#2a2e26] flex flex-col min-h-[360px]">
               <h2 className="text-lg sm:text-xl font-light text-[#f8f7f5] mb-3 sm:mb-4 tracking-wide">
                 Source Images (1-10)
               </h2>
-              <ImageUploadZone onImagesChange={setSourceImages} />
+              <div className="flex-1 flex flex-col min-h-0">
+                <ImageUploadZone onImagesChange={setSourceImages} />
+              </div>
             </Card>
           </div>
         ) : (
