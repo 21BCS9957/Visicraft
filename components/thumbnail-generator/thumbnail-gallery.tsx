@@ -38,7 +38,7 @@ export function ThumbnailGallery({ thumbnails }: ThumbnailGalleryProps) {
   if (thumbnails.length === 0) return null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-extralight text-[#f8f7f5] tracking-wide">
           Generated Thumbnails
@@ -53,17 +53,17 @@ export function ThumbnailGallery({ thumbnails }: ThumbnailGalleryProps) {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className={`grid gap-6 ${thumbnails.length === 1 ? 'grid-cols-1 max-w-md mx-auto' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
         {thumbnails.map((thumbnail, index) => (
           <Card
             key={index}
             className="group relative overflow-hidden border-[#c8b4a0]/20 bg-gradient-to-br from-[#1a1d18] to-[#2a2e26]"
           >
-            <div className="aspect-video relative">
+            <div className="aspect-video relative flex items-center justify-center bg-[#1a1d18]">
               <img
                 src={thumbnail}
                 alt={`Generated thumbnail ${index + 1}`}
-                className="w-full h-full object-cover"
+                className="max-w-full max-h-full object-contain"
               />
               <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                 <Button
@@ -75,11 +75,6 @@ export function ThumbnailGallery({ thumbnails }: ThumbnailGalleryProps) {
                   Download
                 </Button>
               </div>
-            </div>
-            <div className="p-4">
-              <p className="text-[#c8b4a0] text-sm font-light">
-                Thumbnail {index + 1}
-              </p>
             </div>
           </Card>
         ))}

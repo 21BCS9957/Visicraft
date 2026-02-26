@@ -4,6 +4,7 @@ import "./globals.css";
 import { Navbar } from "@/components/shared/navbar";
 import { AuthProvider } from "@/lib/contexts/AuthContext";
 import { CreditsProvider } from "@/lib/contexts/CreditsContext";
+import { GenerateProvider } from "@/lib/contexts/GenerateContext";
 import { Toaster } from "react-hot-toast";
 
 const geistSans = Geist({
@@ -55,6 +56,7 @@ export default function RootLayout({
       >
         <AuthProvider>
           <CreditsProvider>
+            <GenerateProvider>
             <Navbar />
             {children}
             <Toaster
@@ -75,6 +77,7 @@ export default function RootLayout({
                 },
               }}
             />
+            </GenerateProvider>
           </CreditsProvider>
         </AuthProvider>
       </body>

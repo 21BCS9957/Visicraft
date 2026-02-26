@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { ImageUploadZone } from '@/components/thumbnail-generator/image-upload-zone';
 import { ReferenceUpload } from '@/components/thumbnail-generator/reference-upload';
 import { GenerationForm } from '@/components/thumbnail-generator/generation-form';
@@ -9,6 +9,7 @@ import { UploadedImage } from '@/types';
 import { Card } from '@/components/ui/card';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { useAuth } from '@/lib/contexts/AuthContext';
+import { useGenerateState } from '@/lib/contexts/GenerateContext';
 import { Icon } from '@iconify/react';
 import { ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -74,16 +75,28 @@ const CREDIT_COSTS: Record<FeatureMode, number> = {
 };
 
 export default function GeneratePage() {
-  const [selectedFeature, setSelectedFeature] = useState<Feature>(FEATURES[0]);
+  const {
+    selectedFeatureId,
+    referenceImage,
+    sourceImages,
+    singleImage,
+    prompt,
+    setSelectedFeatureId,
+    setReferenceImage,
+    setSourceImages,
+    setSingleImage,
+    setPrompt,
+  } = useGenerateState();
+
+  const selectedFeature = FEATURES.find(f => f.id === selectedFeatureId) ?? FEATURES[0];
   const [showFeatureMenu, setShowFeatureMenu] = useState(false);
-  const [referenceImage, setReferenceImage] = useState<UploadedImage | null>(null);
-  const [sourceImages, setSourceImages] = useState<UploadedImage[]>([]);
-  const [singleImage, setSingleImage] = useState<UploadedImage | null>(null);
   const [generatedThumbnails, setGeneratedThumbnails] = useState<string[]>([]);
   const [error, setError] = useState<string>('');
   const { user } = useAuth();
   const { credits, deductCredits, refreshCredits, addCredits } = useCredits();
   const router = useRouter();
+
+  const handlePromptChange = useCallback((val: string) => setPrompt(val), [setPrompt]);
 
   const handleGenerate = async (prompt?: string, selectedModel?: string) => {
     setError('');
@@ -284,7 +297,7 @@ export default function GeneratePage() {
                   <button
                     key={feature.id}
                     onClick={() => {
-                      setSelectedFeature(feature);
+                      setSelectedFeatureId(feature.id);
                       setShowFeatureMenu(false);
                       setError('');
                       setGeneratedThumbnails([]);
@@ -335,6 +348,7 @@ export default function GeneratePage() {
               </h2>
               <ReferenceUpload 
                 onImageChange={setReferenceImage}
+                initialImage={referenceImage}
                 description={
                   selectedFeature.id === 'thumbnail'
                     ? 'Upload a reference thumbnail that defines the style and layout you want'
@@ -348,13 +362,11 @@ export default function GeneratePage() {
               />
             </Card>
 
-            <Card className="p-4 sm:p-6 border-[#c8b4a0]/20 bg-gradient-to-br from-[#1a1d18] to-[#2a2e26] flex flex-col min-h-[360px]">
+            <Card className="p-4 sm:p-6 border-[#c8b4a0]/20 bg-gradient-to-br from-[#1a1d18] to-[#2a2e26]">
               <h2 className="text-lg sm:text-xl font-light text-[#f8f7f5] mb-3 sm:mb-4 tracking-wide">
                 Source Images (1-10)
               </h2>
-              <div className="flex-1 flex flex-col min-h-0">
-                <ImageUploadZone onImagesChange={setSourceImages} />
-              </div>
+              <ImageUploadZone onImagesChange={setSourceImages} initialImages={sourceImages} />
             </Card>
           </div>
         ) : (
@@ -365,6 +377,7 @@ export default function GeneratePage() {
               </h2>
               <ReferenceUpload 
                 onImageChange={setSingleImage}
+                initialImage={singleImage}
                 description={
                   selectedFeature.id === 'upscale'
                     ? 'Upload an image to enhance its resolution and quality'
@@ -394,6 +407,8 @@ export default function GeneratePage() {
             onGenerate={handleGenerate} 
             disabled={!canGenerate}
             featureMode={selectedFeature.id}
+            defaultPrompt={prompt}
+            onPromptChange={handlePromptChange}
           />
         </Card>
 

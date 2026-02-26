@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2, Sparkles, ChevronDown } from 'lucide-react';
@@ -14,6 +14,8 @@ interface GenerationFormProps {
   onGenerate: (prompt?: string, selectedModel?: string) => Promise<void>;
   disabled: boolean;
   featureMode?: 'generate' | 'thumbnail' | 'upscale' | 'unblur' | 'edit';
+  defaultPrompt?: string;
+  onPromptChange?: (value: string) => void;
 }
 
 const AI_MODELS = [
@@ -59,14 +61,20 @@ const AI_MODELS = [
   },
 ];
 
-export function GenerationForm({ onGenerate, disabled, featureMode = 'generate' }: GenerationFormProps) {
+export function GenerationForm({ onGenerate, disabled, featureMode = 'generate', defaultPrompt, onPromptChange }: GenerationFormProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [selectedModel, setSelectedModel] = useState(AI_MODELS[0]);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   
-  const { register, handleSubmit, formState: { errors } } = useForm<GenerationFormData>({
+  const { register, handleSubmit, formState: { errors }, watch } = useForm<GenerationFormData>({
     resolver: zodResolver(generationFormSchema),
+    defaultValues: { prompt: defaultPrompt ?? '' },
   });
+
+  const promptValue = watch('prompt');
+  useEffect(() => {
+    onPromptChange?.(promptValue ?? '');
+  }, [promptValue, onPromptChange]);
 
   const onSubmit = async (data: GenerationFormData) => {
     setIsGenerating(true);

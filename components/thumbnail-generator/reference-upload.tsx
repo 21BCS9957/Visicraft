@@ -9,12 +9,13 @@ import { Button } from '@/components/ui/button';
 
 interface ReferenceUploadProps {
   onImageChange: (image: UploadedImage | null) => void;
+  initialImage?: UploadedImage | null;
   description?: string;
   title?: string;
 }
 
-export function ReferenceUpload({ onImageChange, description, title }: ReferenceUploadProps) {
-  const [image, setImage] = useState<UploadedImage | null>(null);
+export function ReferenceUpload({ onImageChange, initialImage, description, title }: ReferenceUploadProps) {
+  const [image, setImage] = useState<UploadedImage | null>(initialImage ?? null);
   const [error, setError] = useState<string>('');
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -72,8 +73,8 @@ export function ReferenceUpload({ onImageChange, description, title }: Reference
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 text-[#c8b4a0] text-sm">
-        <Info className="h-4 w-4" />
+      <div className="flex items-start gap-2 text-[#c8b4a0] text-sm h-[4rem] shrink-0">
+        <Info className="h-4 w-4 flex-shrink-0 mt-0.5" />
         <span>{description || 'Upload a reference thumbnail that defines the style you want'}</span>
       </div>
 
@@ -81,7 +82,7 @@ export function ReferenceUpload({ onImageChange, description, title }: Reference
         <div
           {...getRootProps()}
           className={`
-            relative border-2 border-dashed rounded-lg p-12 text-center cursor-pointer
+            relative w-full h-[280px] border-2 border-dashed rounded-lg flex flex-col items-center justify-center text-center cursor-pointer
             transition-all duration-300
             ${isDragActive 
               ? 'border-[#c8b4a0] bg-[#c8b4a0]/5' 
@@ -103,11 +104,11 @@ export function ReferenceUpload({ onImageChange, description, title }: Reference
           </p>
         </div>
       ) : (
-        <div className="relative group rounded-lg overflow-hidden border border-[#c8b4a0]/20">
+        <div className="relative group rounded-lg overflow-hidden border border-[#c8b4a0]/20 h-[280px]">
           <img
             src={image.preview}
             alt="Reference thumbnail"
-            className="w-full h-auto"
+            className="w-full h-full object-contain"
           />
           <Button
             variant="destructive"
