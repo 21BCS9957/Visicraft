@@ -60,9 +60,9 @@ export default function RootLayout({
             <Navbar />
             {children}
             <Toaster
-              position="bottom-right"
+              position="bottom-center"
               toastOptions={{
-                duration: 1000,
+                duration: 3000,
                 style: {
                   background: '#1a1a1a',
                   color: '#fff',
@@ -70,10 +70,10 @@ export default function RootLayout({
                   pointerEvents: 'none',
                 },
                 success: {
-                  duration: 1000,
+                  duration: 3000,
                 },
                 error: {
-                  duration: 1000,
+                  duration: 3000,
                 },
               }}
             />
