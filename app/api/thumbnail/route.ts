@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateThumbnail } from '@/lib/banana/api';
+import { uploadFromDataUrl } from '@/lib/supabase/storage';
 
 export async function POST(request: NextRequest) {
   try {
@@ -34,16 +35,23 @@ export async function POST(request: NextRequest) {
       : 'Create an eye-catching, professional YouTube thumbnail. Make it vibrant and attention-grabbing with bold text, clear focal points, and high contrast. Optimize for small screen viewing and maximum click-through rate.';
 
     // Generate thumbnails using Gemini API
-    const generatedThumbnails = await generateThumbnail(
+    const generatedThumbnailsDataUrls = await generateThumbnail(
       referenceImage,
       sourceImages,
       thumbnailPrompt,
       model,
     );
 
+    // Upload to Supabase and return URLs (same as /api/generate)
+    const generatedThumbnailsUrls = await Promise.all(
+      generatedThumbnailsDataUrls.map((dataUrl) =>
+        uploadFromDataUrl(dataUrl, 'generated-thumbnails')
+      )
+    );
+
     return NextResponse.json({
       success: true,
-      images: generatedThumbnails,
+      images: generatedThumbnailsUrls,
     });
   } catch (error) {
     console.error('Thumbnail generation error:', error);

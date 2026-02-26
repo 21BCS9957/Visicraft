@@ -58,8 +58,15 @@ CREATE TABLE IF NOT EXISTS generations (
   source_images_urls TEXT[] NOT NULL,
   generated_thumbnails TEXT[] NOT NULL,
   prompt TEXT,
+  model TEXT,
+  aspect_ratio TEXT,
+  resolution TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+ALTER TABLE generations ADD COLUMN IF NOT EXISTS model TEXT;
+ALTER TABLE generations ADD COLUMN IF NOT EXISTS aspect_ratio TEXT;
+ALTER TABLE generations ADD COLUMN IF NOT EXISTS resolution TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_generations_created_at ON generations(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_generations_user_id ON generations(user_id);

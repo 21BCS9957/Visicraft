@@ -149,7 +149,7 @@ export default function GeneratePage() {
         // Upload reference image
         const refFormData = new FormData();
         refFormData.append('file', referenceImage!.file);
-        refFormData.append('bucket', 'source-images');
+        refFormData.append('bucket', 'reference-images');
         
         const refResponse = await fetch('/api/upload', {
           method: 'POST',

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateThumbnail } from '@/lib/banana/api';
 import { supabase } from '@/lib/supabase/client';
+import { uploadFromDataUrl } from '@/lib/supabase/storage';
 
 export async function POST(request: NextRequest) {
   try {
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
     console.log('🎨 ========================================');
 
     // Generate thumbnails using Gemini API with selected parameters
-    const generatedThumbnails = await generateThumbnail(
+    const generatedThumbnailsDataUrls = await generateThumbnail(
       referenceImage,
       sourceImages,
       prompt,
@@ -56,14 +57,21 @@ export async function POST(request: NextRequest) {
       resolution
     );
 
-    // Save generation to database (optional - comment out if table doesn't exist)
+    // Upload generated images to Supabase Storage and get public URLs (avoids storing base64 in DB/client/localStorage)
+    const generatedThumbnailsUrls = await Promise.all(
+      generatedThumbnailsDataUrls.map((dataUrl) =>
+        uploadFromDataUrl(dataUrl, 'generated-thumbnails')
+      )
+    );
+
+    // Save generation to database with URLs (not base64)
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('generations')
         .insert({
           reference_image_url: referenceImage,
           source_images_urls: sourceImages,
-          generated_thumbnails: generatedThumbnails,
+          generated_thumbnails: generatedThumbnailsUrls,
           prompt: prompt || null,
           model: model || 'nano-banana-pro',
           aspect_ratio: aspectRatio || '16:9',
@@ -81,7 +89,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      images: generatedThumbnails,
+      images: generatedThumbnailsUrls,
     });
   } catch (error) {
     console.error('Generation error:', error);

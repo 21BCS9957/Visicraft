@@ -59,8 +59,9 @@ export function ImportNode({ data, selected, id }: NodeProps) {
       };
       reader.readAsDataURL(file);
 
-      // Upload to Supabase
-      const url = await uploadImage(file, 'source-images');
+      // Upload to Supabase: reference-images for Reference nodes, source-images for Source nodes
+      const bucket = data.nodeType === 'reference' ? 'reference-images' : 'source-images';
+      const url = await uploadImage(file, bucket);
       
       console.log('🔵 [ImportNode] Upload complete, updating via context:', {
         nodeId: id,
@@ -96,7 +97,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
     } finally {
       setUploading(false);
     }
-  }, [id, updateNodeData, getEdges]);
+  }, [id, updateNodeData, getEdges, data.nodeType]);
 
   const handleDuplicate = () => {
     const nodes = getNodes();
@@ -138,6 +139,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
           ? {
               ...node,
               data: {
+                ...node.data,
                 imageUrl: null,
                 uploaded: false,
                 supabaseUrl: null,
@@ -200,7 +202,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
             </div>
             <div>
               <h3 className="text-white font-semibold text-sm">{nodeLabel}</h3>
-              <p className="text-gray-500 text-xs">Source Image</p>
+              <p className="text-gray-500 text-xs">{data.nodeType === 'reference' ? 'Reference Image' : 'Source Image'}</p>
             </div>
           </div>
           <div className="relative" ref={menuRef}>
