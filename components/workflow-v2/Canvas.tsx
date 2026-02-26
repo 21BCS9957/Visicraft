@@ -33,7 +33,7 @@ import { RunControls } from './RunControls';
 import { executeWorkflow } from '@/lib/workflow/executor';
 import { loadTemplate } from '@/lib/workflow/templateLoader';
 import TemplateSelectionModal from './TemplateSelectionModal';
-import toast from 'react-hot-toast';
+import toast from '@/lib/toast';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 

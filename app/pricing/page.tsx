@@ -6,7 +6,7 @@ import { Check, X } from 'lucide-react';
 import { Icon } from '@iconify/react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
-import toast from 'react-hot-toast';
+import toast from '@/lib/toast';
 import { useRouter } from 'next/navigation';
 
 declare global {

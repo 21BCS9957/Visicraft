@@ -5,7 +5,7 @@ import { ChevronDown, X, Play, Loader2, Sparkles, AlertCircle } from 'lucide-rea
 import { Icon } from '@iconify/react';
 import { useReactFlow } from 'reactflow';
 import { AnimatePresence, motion } from 'framer-motion';
-import toast from 'react-hot-toast';
+import toast from '@/lib/toast';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
@@ -215,7 +215,7 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
         addCredits,
         refreshCredits,
       });
-      toast.success('✨ Amazing! Your image is ready', { id: `generate-${selectedNode.id}` });
+      toast.success('Amazing! Your image is ready', { id: `generate-${selectedNode.id}` });
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Generation failed';
       toast.error(msg, { id: `generate-${selectedNode.id}` });

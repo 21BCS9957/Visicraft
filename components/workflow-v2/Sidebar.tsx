@@ -13,7 +13,7 @@ import {
   Upload,
   FileImage,
 } from 'lucide-react';
-import toast from 'react-hot-toast';
+import toast from '@/lib/toast';
 
 interface SidebarProps {
   onAddNode: (type: string, position: { x: number; y: number }, nodeType?: string) => void;

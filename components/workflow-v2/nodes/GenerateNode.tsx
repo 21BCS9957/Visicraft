@@ -5,7 +5,7 @@ import ReactDOM from 'react-dom';
 import { Position, NodeProps, useReactFlow, NodeResizer } from 'reactflow';
 import { MoreVertical, Zap, Play, Loader2, Download, Copy, Trash2, RefreshCw, Maximize2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import toast from 'react-hot-toast';
+import toast from '@/lib/toast';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
@@ -220,7 +220,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
         addCredits,
         refreshCredits,
       });
-      toast.success('✨ Amazing! Your image is ready', { id: `generate-${id}` });
+      toast.success('Amazing! Your image is ready', { id: `generate-${id}` });
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Generation failed';
       toast.error(msg, { id: `generate-${id}` });

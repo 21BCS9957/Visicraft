@@ -12,7 +12,7 @@ import { useAuth } from '@/lib/contexts/AuthContext';
 import { useGenerateState } from '@/lib/contexts/GenerateContext';
 import { Icon } from '@iconify/react';
 import { ChevronDown } from 'lucide-react';
-import toast from 'react-hot-toast';
+import toast from '@/lib/toast';
 import { useRouter } from 'next/navigation';
 
 type FeatureMode = 'generate' | 'thumbnail' | 'upscale' | 'unblur' | 'edit';

@@ -2,7 +2,7 @@
 
 import React, { memo, useCallback } from 'react';
 import { EdgeProps, getSmoothStepPath, getBezierPath, getStraightPath, useReactFlow } from 'reactflow';
-import toast from 'react-hot-toast';
+import toast from '@/lib/toast';
 
 // Extended EdgeProps to include handle properties
 interface CustomEdgeProps extends EdgeProps {

@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { Loader2, Sparkles } from 'lucide-react';
 import { signInWithGoogle } from '@/lib/supabase/auth';
 import { useRouter, useSearchParams } from 'next/navigation';
-import toast from 'react-hot-toast';
+import toast from '@/lib/toast';
 
 function LoginContent() {
   const [loading, setLoading] = useState(false);

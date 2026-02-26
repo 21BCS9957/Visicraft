@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { NodeProps, useReactFlow, NodeResizer } from 'reactflow';
 import { MoreVertical, StickyNote, Copy, Trash2, RefreshCw, Palette } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import toast from 'react-hot-toast';
+import toast from '@/lib/toast';
 
 const NOTE_COLORS = [
   { name: 'Yellow', bg: '#fef3c7', border: '#fbbf24', text: '#78350f' },
