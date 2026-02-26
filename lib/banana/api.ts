@@ -69,18 +69,18 @@ export async function generateThumbnail(
   };
 
   // Map UI resolutions to Gemini API imageSize format
-  // Gemini API accepts: 256x256, 512x512, 1024x1024, 2048x2048, 4096x4096
+  // Gemini API accepts: "1K", "2K", "4K" (not pixel dimensions)
   const resolutionMap: Record<string, string> = {
-    '4K': '4096x4096',
-    '2K': '2048x2048',
-    '1080p': '1024x1024',
-    '720p': '512x512',
+    '4K': '4K',
+    '2K': '2K',
+    '1080p': '2K',
+    '720p': '1K',
   };
 
   const selectedModel = model || 'nano-banana-pro';
   const geminiModel = modelMap[selectedModel] || 'gemini-3-pro-image-preview';
   const selectedAspectRatio = aspectRatioMap[aspectRatio || '16:9'] || '16:9';
-  const selectedResolution = resolutionMap[resolution || '1080p'] || '1024x1024';
+  const selectedResolution = resolutionMap[resolution || '1080p'] || '2K';
 
   try {
     console.log('🎨 ========================================');
