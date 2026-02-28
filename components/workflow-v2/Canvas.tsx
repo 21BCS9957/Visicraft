@@ -37,6 +37,7 @@ import { MiniMapWithEdges } from './MiniMapEdgeOverlay';
 import toast from '@/lib/toast';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
+import { useUndoRedo } from './useUndoRedo';
 
 const nodeTypes = {
   import: ImportNode,
@@ -89,6 +90,23 @@ function FlowCanvas() {
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [templateLoaded, setTemplateLoaded] = useState(false);
+
+  const {
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    takeSnapshot,
+    trackChanges,
+    clearHistory
+  } = useUndoRedo([], [], setNodes, setEdges);
+
+  // Hook to track real-time changes
+  useEffect(() => {
+    if (templateLoaded) {
+      trackChanges(nodes, edges);
+    }
+  }, [nodes, edges, trackChanges, templateLoaded]);
 
   const isGenerationRunning = React.useMemo(
     () => nodes.some((n) => n.type === 'generate' && (n.data as any)?.status === 'processing'),
@@ -278,6 +296,7 @@ function FlowCanvas() {
         saveTimeoutRef.current = null;
       }
 
+      clearHistory([], []);
       setNodes([]);
       setEdges([]);
       setSelectedNode(null);
@@ -468,6 +487,8 @@ function FlowCanvas() {
     // Allow auto-save after a short delay (after initial setup is complete)
     setTimeout(() => {
       isInitialLoadRef.current = false;
+      // Clear history so the initial template is the base state
+      clearHistory(nodesRef.current, edgesRef.current);
     }, 1000);
 
     if (!hasShownToast.current) {
@@ -731,6 +752,10 @@ function FlowCanvas() {
             onToggleGrid={() => setShowGrid(!showGrid)}
             showFilePanel={showFilePanel}
             onToggleFilePanel={() => setShowFilePanel(!showFilePanel)}
+            undo={undo}
+            redo={redo}
+            canUndo={canUndo}
+            canRedo={canRedo}
           />
 
           <div
