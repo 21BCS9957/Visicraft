@@ -5,7 +5,6 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import ReactFlow, {
   Background,
   BackgroundVariant,
-  MiniMap,
   Controls,
   addEdge,
   useNodesState,
@@ -33,6 +32,8 @@ import { RunControls } from './RunControls';
 import { executeWorkflow } from '@/lib/workflow/executor';
 import { loadTemplate } from '@/lib/workflow/templateLoader';
 import TemplateSelectionModal from './TemplateSelectionModal';
+import { CustomMiniMapNode } from './CustomMiniMapNode';
+import { MiniMapWithEdges } from './MiniMapEdgeOverlay';
 import toast from '@/lib/toast';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
@@ -188,7 +189,7 @@ function FlowCanvas() {
         // child nodes update via context → Canvas's setNodes → React state
         const latestNodes = nodesRef.current;
         const latestEdges = edgesRef.current;
-        
+
         const workflowData = {
           nodes: latestNodes,
           edges: latestEdges,
@@ -247,17 +248,17 @@ function FlowCanvas() {
       try {
         const latestNodes = nodesRef.current;
         const latestEdges = edgesRef.current;
-        
+
         if (latestNodes.length > 0 && !isInitialLoadRef.current) {
           const saveKey = `workflow-autosave-${fromTemplate}`;
-          
+
           localStorage.setItem(saveKey, JSON.stringify({
             nodes: latestNodes,
             edges: latestEdges,
             timestamp: Date.now(),
             template: fromTemplate,
           }));
-          
+
           console.log('[SWITCH] Flush-saved before clear', {
             template: fromTemplate,
             nodeCount: latestNodes.length,
@@ -424,7 +425,7 @@ function FlowCanvas() {
         textLen: (n.data?.text as string)?.length ?? 0,
       })),
     });
-    
+
     setNodes(templateData.nodes);
     setEdges(templateData.edges);
 
@@ -707,115 +708,118 @@ function FlowCanvas() {
 
   return (
     <WorkflowContext.Provider value={workflowContextValue}>
-    <div className="w-full h-screen flex flex-col bg-black">
-      <Topbar
-        onNewWorkflow={() => setShowTemplateModal(true)}
-        showGrid={showGrid}
-        onToggleGrid={() => setShowGrid(!showGrid)}
-        gridVariant={gridVariant}
-        onChangeGridVariant={setGridVariant}
-        onOrganizeNodes={handleOrganizeNodes}
-      />
-
-      <TemplateSelectionModal
-        isOpen={showTemplateModal}
-        onClose={() => setShowTemplateModal(false)}
-        onSelectTemplate={handleSelectTemplate}
-      />
-
-      <div className="flex-1 flex relative overflow-hidden">
-        <Sidebar
-          onAddNode={handleAddNode}
+      <div className="w-full h-screen flex flex-col bg-black">
+        <Topbar
+          onNewWorkflow={() => setShowTemplateModal(true)}
           showGrid={showGrid}
           onToggleGrid={() => setShowGrid(!showGrid)}
-          showFilePanel={showFilePanel}
-          onToggleFilePanel={() => setShowFilePanel(!showFilePanel)}
+          gridVariant={gridVariant}
+          onChangeGridVariant={setGridVariant}
+          onOrganizeNodes={handleOrganizeNodes}
         />
 
-        <div
-          ref={reactFlowWrapper}
-          className="flex-1 relative"
-          onDrop={onDrop}
-          onDragOver={onDragOver}
-        >
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onNodeClick={onNodeClick}
-            nodeTypes={nodeTypes}
-            edgeTypes={edgeTypes}
-            fitView
-            className="bg-black"
-            proOptions={proOptions}
-            defaultEdgeOptions={defaultEdgeOptions}
-            nodesDraggable
-            nodesConnectable
-            elementsSelectable
-            selectNodesOnDrag={false}
-            panOnDrag={isMobile ? [1, 2] : true}
-            panOnScroll={!isMobile}
-            zoomOnScroll={true}
-            zoomOnPinch={true}
-            zoomOnDoubleClick={true}
-            minZoom={0.1}
-            maxZoom={4}
-            onlyRenderVisibleElements={false}
-            nodeOrigin={[0.5, 0.5]}
-            elevateNodesOnSelect={false}
-            elevateEdgesOnSelect={true}
-            connectionLineStyle={{
-              stroke: '#06b6d4',
-              strokeWidth: 3,
-              strokeLinecap: 'round',
-              strokeLinejoin: 'round',
-            }}
-            connectionLineType={ConnectionLineType.Bezier}
-            defaultViewport={{ x: 0, y: 0, zoom: isMobile ? 0.6 : 1 }}
+        <TemplateSelectionModal
+          isOpen={showTemplateModal}
+          onClose={() => setShowTemplateModal(false)}
+          onSelectTemplate={handleSelectTemplate}
+        />
+
+        <div className="flex-1 flex relative overflow-hidden">
+          <Sidebar
+            onAddNode={handleAddNode}
+            showGrid={showGrid}
+            onToggleGrid={() => setShowGrid(!showGrid)}
+            showFilePanel={showFilePanel}
+            onToggleFilePanel={() => setShowFilePanel(!showFilePanel)}
+          />
+
+          <div
+            ref={reactFlowWrapper}
+            className="flex-1 relative"
+            onDrop={onDrop}
+            onDragOver={onDragOver}
           >
-            {showGrid && (
-              <Background
-                color="#ffffff"
-                gap={gridSize}
-                size={gridVariant === BackgroundVariant.Dots ? 1.5 : 1}
-                variant={gridVariant}
-                className="opacity-20"
-              />
-            )}
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onNodeClick={onNodeClick}
+              nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
+              fitView
+              className="bg-black"
+              proOptions={proOptions}
+              defaultEdgeOptions={defaultEdgeOptions}
+              nodesDraggable
+              nodesConnectable
+              elementsSelectable
+              selectNodesOnDrag={false}
+              panOnDrag={isMobile ? [1, 2] : true}
+              panOnScroll={!isMobile}
+              zoomOnScroll={true}
+              zoomOnPinch={true}
+              zoomOnDoubleClick={true}
+              minZoom={0.1}
+              maxZoom={4}
+              onlyRenderVisibleElements={false}
+              nodeOrigin={[0.5, 0.5]}
+              elevateNodesOnSelect={false}
+              elevateEdgesOnSelect={true}
+              connectionLineStyle={{
+                stroke: '#06b6d4',
+                strokeWidth: 3,
+                strokeLinecap: 'round',
+                strokeLinejoin: 'round',
+              }}
+              connectionLineType={ConnectionLineType.Bezier}
+              defaultViewport={{ x: 0, y: 0, zoom: isMobile ? 0.6 : 1 }}
+            >
+              {showGrid && (
+                <Background
+                  color="#ffffff"
+                  gap={gridSize}
+                  size={gridVariant === BackgroundVariant.Dots ? 1.5 : 1}
+                  variant={gridVariant}
+                  className="opacity-20"
+                />
+              )}
 
-            {/* Zoom Controls */}
-            <Controls
-              className="!bg-[#0a0a0a] !border !border-[#2a2a2a] !rounded-lg"
-              style={{ position: 'absolute', bottom: isMobile ? 20 : 100, left: 24 }}
-              showZoom={true}
-              showFitView={true}
-              showInteractive={false}
-              fitViewOptions={{ padding: 0.2, duration: 400 }}
-            />
-
-            {!isMobile && (
-              <MiniMap
-                nodeColor={nodeColor}
-                maskColor="rgba(0, 0, 0, 0.9)"
+              {/* Zoom Controls */}
+              <Controls
                 className="!bg-[#0a0a0a] !border !border-[#2a2a2a] !rounded-lg"
-                style={{ position: 'absolute', bottom: 100, right: 24 }}
+                style={{ position: 'absolute', bottom: isMobile ? 20 : 100, left: 24 }}
+                showZoom={true}
+                showFitView={true}
+                showInteractive={false}
+                fitViewOptions={{ padding: 0.2, duration: 400 }}
               />
-            )}
-          </ReactFlow>
+
+              {!isMobile && (
+                <MiniMapWithEdges
+                  nodeColor={nodeColor}
+                  nodeComponent={CustomMiniMapNode}
+                  maskColor="rgba(0, 0, 0, 0.9)"
+                  className="!bg-[#0a0a0a] !border !border-[#2a2a2a] !rounded-lg overflow-hidden"
+                  style={{ position: 'absolute', bottom: 100, right: 24 }}
+                  zoomable={true}
+                  pannable={true}
+                />
+              )}
+            </ReactFlow>
+          </div>
+
+          {!isMobile && (
+            <PropertiesPanel
+              selectedNode={selectedNode?.id ? reactFlowInstance.getNode(selectedNode.id) ?? selectedNode : null}
+              onClose={() => setSelectedNode(null)}
+            />
+          )}
         </div>
 
-        {!isMobile && (
-          <PropertiesPanel
-            selectedNode={selectedNode?.id ? reactFlowInstance.getNode(selectedNode.id) ?? selectedNode : null}
-            onClose={() => setSelectedNode(null)}
-          />
-        )}
+        <RunControls onRun={handleRun} isRunning={isGenerationRunning} />
       </div>
-
-      <RunControls onRun={handleRun} isRunning={isGenerationRunning} />
-    </div>
     </WorkflowContext.Provider>
   );
 }
