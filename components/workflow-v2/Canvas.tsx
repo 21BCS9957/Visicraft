@@ -448,11 +448,15 @@ function FlowCanvas() {
     setNodes(templateData.nodes);
     setEdges(templateData.edges);
 
+    // Clear history immediately with the initial template nodes to update currentStateRef
+    // and prevent trackChanges from seeing a diff from [] and triggering a blink
+    clearHistory(templateData.nodes, templateData.edges);
+
     // Initialize generate node connections
     if (templateData.edges.length > 0) {
       setTimeout(() => {
-        setNodes((nds) =>
-          nds.map(node => {
+        setNodes((nds) => {
+          const next = nds.map(node => {
             if (node.type !== 'generate') return node;
 
             const updatedNode = { ...node, data: { ...node.data } };
@@ -473,8 +477,10 @@ function FlowCanvas() {
             });
 
             return updatedNode;
-          })
-        );
+          });
+          nodesRef.current = next;
+          return next;
+        });
       }, 100);
     }
 
@@ -482,13 +488,13 @@ function FlowCanvas() {
       setTimeout(() => reactFlowInstance.setViewport(templateData.viewport!), 100);
     }
 
-    setTemplateLoaded(true);
-
     // Allow auto-save after a short delay (after initial setup is complete)
     setTimeout(() => {
       isInitialLoadRef.current = false;
       // Clear history so the initial template is the base state
       clearHistory(nodesRef.current, edgesRef.current);
+      // ONLY NOW consider the template fully loaded and ready for tracking
+      setTemplateLoaded(true);
     }, 1000);
 
     if (!hasShownToast.current) {
@@ -498,7 +504,7 @@ function FlowCanvas() {
       toast.success(templateName);
       hasShownToast.current = true;
     }
-  }, [currentTemplate, templateLoaded, setNodes, setEdges, reactFlowInstance]);
+  }, [currentTemplate, templateLoaded, setNodes, setEdges, reactFlowInstance, clearHistory]);
 
   const onConnect = useCallback(
     (params: Connection) => {
