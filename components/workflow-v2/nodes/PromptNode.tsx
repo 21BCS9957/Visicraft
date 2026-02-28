@@ -113,6 +113,8 @@ export function PromptNode({ data, selected, id }: NodeProps) {
         shadow-xl
         min-w-[320px]
         min-h-[400px]
+        h-full
+        flex flex-col
         transition-all
         ${selected ? 'ring-2 ring-purple-500/50 border-purple-500/30' : ''}
       `}
@@ -196,7 +198,7 @@ export function PromptNode({ data, selected, id }: NodeProps) {
       </div>
 
       {/* Textarea */}
-      <div className="p-4 h-full flex flex-col" style={{ minHeight: '300px' }}>
+      <div className="p-4 flex-1 flex flex-col min-h-[300px]">
         <textarea
           value={prompt}
           onChange={handleChange}

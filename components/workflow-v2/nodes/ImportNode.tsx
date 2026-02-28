@@ -18,7 +18,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
   const [uploading, setUploading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  
+
   // Update image when data changes (e.g., after restore from localStorage)
   useEffect(() => {
     const newImage = data.supabaseUrl || data.imageUrl || null;
@@ -27,7 +27,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
       setImageLoading(true);
     }
   }, [data.supabaseUrl, data.imageUrl]);
-  
+
   // Determine node label based on data.nodeType or default to "Import"
   const nodeLabel = data.nodeType === 'reference' ? 'Reference' : data.nodeType === 'source' ? 'Source' : 'Import';
 
@@ -50,7 +50,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
     if (!file) return;
 
     setUploading(true);
-    
+
     try {
       // Create preview
       const reader = new FileReader();
@@ -62,13 +62,13 @@ export function ImportNode({ data, selected, id }: NodeProps) {
       // Upload to Supabase: reference-images for Reference nodes, source-images for Source nodes
       const bucket = data.nodeType === 'reference' ? 'reference-images' : 'source-images';
       const url = await uploadImage(file, bucket);
-      
+
       console.log('🔵 [ImportNode] Upload complete, updating via context:', {
         nodeId: id,
         supabaseUrl: url.substring(0, 50),
         urlLength: url.length,
       });
-      
+
       // Update this node's data via Canvas's React state (NOT useReactFlow)
       updateNodeData(id, {
         imageUrl: null, // Clear template example image
@@ -79,7 +79,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
       // Update connected Generate nodes
       const edges = getEdges();
       const connectedEdges = edges.filter(edge => edge.source === id);
-      
+
       if (connectedEdges.length > 0) {
         connectedEdges.forEach(edge => {
           if (edge.targetHandle === 'referenceImage') {
@@ -89,7 +89,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
           }
         });
       }
-      
+
       toast.success('Image uploaded!');
     } catch (error) {
       toast.error('Upload failed');
@@ -103,7 +103,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
     const nodes = getNodes();
     const edges = getEdges();
     const currentNode = nodes.find(n => n.id === id);
-    
+
     if (!currentNode) return;
 
     // Create new node with offset position
@@ -137,14 +137,14 @@ export function ImportNode({ data, selected, id }: NodeProps) {
       nds.map((node) =>
         node.id === id
           ? {
-              ...node,
-              data: {
-                ...node.data,
-                imageUrl: null,
-                uploaded: false,
-                supabaseUrl: null,
-              },
-            }
+            ...node,
+            data: {
+              ...node.data,
+              imageUrl: null,
+              uploaded: false,
+              supabaseUrl: null,
+            },
+          }
           : node
       )
     );
@@ -155,10 +155,10 @@ export function ImportNode({ data, selected, id }: NodeProps) {
   const handleDelete = () => {
     // Remove node
     setNodes((nds) => nds.filter((node) => node.id !== id));
-    
+
     // Remove connected edges
     setEdges((eds) => eds.filter((edge) => edge.source !== id && edge.target !== id));
-    
+
     toast.success('Node deleted!');
     setShowMenu(false);
   };
@@ -174,6 +174,8 @@ export function ImportNode({ data, selected, id }: NodeProps) {
         rounded-2xl
         shadow-xl
         min-w-[320px]
+        h-full
+        flex flex-col
         transition-all
         ${selected ? 'ring-2 ring-blue-500/50 border-blue-500/30' : ''}
       `}
@@ -197,7 +199,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M4 16L8.586 11.414C9.367 10.633 10.633 10.633 11.414 11.414L16 16M14 14L15.586 12.414C16.367 11.633 17.633 11.633 18.414 12.414L20 14M14 8H14.01M6 20H18C19.105 20 20 19.105 20 18V6C20 4.895 19.105 4 18 4H6C4.895 4 4 4.895 4 6V18C4 19.105 4.895 20 6 20Z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M4 16L8.586 11.414C9.367 10.633 10.633 10.633 11.414 11.414L16 16M14 14L15.586 12.414C16.367 11.633 17.633 11.633 18.414 12.414L20 14M14 8H14.01M6 20H18C19.105 20 20 19.105 20 18V6C20 4.895 19.105 4 18 4H6C4.895 4 4 4.895 4 6V18C4 19.105 4.895 20 6 20Z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
             <div>
@@ -212,7 +214,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
             >
               <MoreVertical className="w-4 h-4" />
             </button>
-            
+
             {/* Dropdown Menu */}
             <AnimatePresence>
               {showMenu && (
@@ -230,7 +232,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
                     <Copy className="w-4 h-4" />
                     Duplicate Node
                   </button>
-                  
+
                   <button
                     onClick={handleReset}
                     disabled={!image}
@@ -239,9 +241,9 @@ export function ImportNode({ data, selected, id }: NodeProps) {
                     <RefreshCw className="w-4 h-4" />
                     Clear Image
                   </button>
-                  
+
                   <div className="border-t border-[#2a2a2a]" />
-                  
+
                   <button
                     onClick={handleDelete}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-red-400 hover:bg-[#2a2a2a] transition-colors"
@@ -257,19 +259,19 @@ export function ImportNode({ data, selected, id }: NodeProps) {
       </div>
 
       {/* Image Preview or Upload Zone */}
-      <div className="p-4">
+      <div className="p-4 flex-1 min-h-0 flex flex-col">
         {image ? (
-          <div className="relative group">
+          <div className="relative group flex-1 min-h-0 flex flex-col h-full">
             {/* Loading skeleton */}
             {imageLoading && (
-              <div className="absolute inset-0 bg-[#1a1a1a] rounded-lg animate-pulse flex items-center justify-center">
+              <div className="absolute inset-0 bg-[#1a1a1a] rounded-lg animate-pulse flex items-center justify-center z-10">
                 <div className="text-gray-600 text-xs">Loading...</div>
               </div>
             )}
             <img
               src={image}
               alt="Imported"
-              className={`w-full h-40 object-cover rounded-lg transition-opacity duration-300 ${imageLoading ? 'opacity-0' : 'opacity-100'}`}
+              className={`w-full h-full object-cover rounded-lg flex-1 min-h-0 transition-opacity duration-300 ${imageLoading ? 'opacity-0' : 'opacity-100'}`}
               loading="lazy"
               decoding="async"
               onLoad={() => setImageLoading(false)}
@@ -280,13 +282,13 @@ export function ImportNode({ data, selected, id }: NodeProps) {
                 const parent = e.currentTarget.parentElement;
                 if (parent) {
                   const fallback = document.createElement('div');
-                  fallback.className = 'w-full h-40 bg-[#1a1a1a] rounded-lg flex items-center justify-center';
+                  fallback.className = 'w-full h-full min-h-[160px] bg-[#1a1a1a] rounded-lg flex items-center justify-center flex-1';
                   fallback.innerHTML = '<span class="text-gray-500 text-xs">Failed to load image</span>';
                   parent.appendChild(fallback);
                 }
               }}
             />
-            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center z-20">
               <label className="cursor-pointer">
                 <input
                   type="file"
@@ -302,7 +304,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
             </div>
           </div>
         ) : (
-          <label className="cursor-pointer">
+          <label className="cursor-pointer flex-1 flex flex-col h-full">
             <input
               type="file"
               accept="image/*"
@@ -310,7 +312,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
               className="hidden"
               disabled={uploading}
             />
-            <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg h-40 flex flex-col items-center justify-center hover:border-[#3a3a3a] hover:bg-[#1a1a1a] transition-all">
+            <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg h-full flex-1 flex flex-col items-center justify-center hover:border-[#3a3a3a] hover:bg-[#1a1a1a] transition-all min-h-[160px]">
               <Upload className="w-8 h-8 text-gray-600 mb-2" />
               <span className="text-xs text-gray-600">{uploading ? 'Uploading...' : 'Click to upload'}</span>
             </div>

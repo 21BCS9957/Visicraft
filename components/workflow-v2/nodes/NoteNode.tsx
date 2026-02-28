@@ -46,7 +46,7 @@ export function NoteNode({ data, selected, id }: NodeProps) {
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
     setNote(value);
-    
+
     setNodes((nds) =>
       nds.map((node) => {
         if (node.id === id) {
@@ -74,7 +74,7 @@ export function NoteNode({ data, selected, id }: NodeProps) {
   const handleDuplicate = () => {
     const nodes = getNodes();
     const currentNode = nodes.find(n => n.id === id);
-    
+
     if (!currentNode) return;
 
     const newNode = {
@@ -122,10 +122,12 @@ export function NoteNode({ data, selected, id }: NodeProps) {
         shadow-xl
         min-w-[280px]
         min-h-[200px]
+        h-full
+        flex flex-col
         transition-all
         ${selected ? 'ring-2 ring-offset-2 ring-offset-black' : ''}
       `}
-      style={{ 
+      style={{
         cursor: 'default',
         backgroundColor: currentColor.bg,
         borderWidth: '2px',
@@ -147,23 +149,23 @@ export function NoteNode({ data, selected, id }: NodeProps) {
       />
 
       {/* Header */}
-      <div 
+      <div
         className="px-4 py-3 border-b flex items-center justify-between"
         style={{ borderColor: currentColor.border + '40' }}
       >
         <div className="flex items-center gap-2">
-          <StickyNote 
-            className="w-4 h-4" 
+          <StickyNote
+            className="w-4 h-4"
             style={{ color: currentColor.text }}
           />
-          <span 
+          <span
             className="text-sm font-medium"
             style={{ color: currentColor.text }}
           >
             Note
           </span>
         </div>
-        
+
         <div className="flex items-center gap-1">
           {/* Color Picker Button */}
           <div className="relative" ref={colorPickerRef}>
@@ -190,10 +192,9 @@ export function NoteNode({ data, selected, id }: NodeProps) {
                       <button
                         key={index}
                         onClick={() => handleColorChange(index)}
-                        className={`w-8 h-8 rounded-lg border-2 transition-transform hover:scale-110 ${
-                          colorIndex === index ? 'ring-2 ring-white ring-offset-2 ring-offset-[#1a1a1a]' : ''
-                        }`}
-                        style={{ 
+                        className={`w-8 h-8 rounded-lg border-2 transition-transform hover:scale-110 ${colorIndex === index ? 'ring-2 ring-white ring-offset-2 ring-offset-[#1a1a1a]' : ''
+                          }`}
+                        style={{
                           backgroundColor: color.bg,
                           borderColor: color.border,
                         }}
@@ -215,7 +216,7 @@ export function NoteNode({ data, selected, id }: NodeProps) {
             >
               <MoreVertical className="w-4 h-4" />
             </button>
-            
+
             {/* Dropdown Menu */}
             <AnimatePresence>
               {showMenu && (
@@ -233,7 +234,7 @@ export function NoteNode({ data, selected, id }: NodeProps) {
                     <Copy className="w-4 h-4" />
                     Duplicate Note
                   </button>
-                  
+
                   <button
                     onClick={handleClear}
                     disabled={!note}
@@ -242,9 +243,9 @@ export function NoteNode({ data, selected, id }: NodeProps) {
                     <RefreshCw className="w-4 h-4" />
                     Clear Note
                   </button>
-                  
+
                   <div className="border-t border-[#2a2a2a]" />
-                  
+
                   <button
                     onClick={handleDelete}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-red-400 hover:bg-[#2a2a2a] transition-colors"
@@ -260,7 +261,7 @@ export function NoteNode({ data, selected, id }: NodeProps) {
       </div>
 
       {/* Textarea */}
-      <div className="p-4 h-full flex flex-col" style={{ minHeight: '150px' }}>
+      <div className="p-4 flex-1 flex flex-col min-h-[150px]">
         <textarea
           value={note}
           onChange={handleChange}
@@ -281,7 +282,7 @@ export function NoteNode({ data, selected, id }: NodeProps) {
           onMouseDown={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
         />
-        <div 
+        <div
           className="text-right text-xs mt-2 opacity-60"
           style={{ color: currentColor.text }}
         >

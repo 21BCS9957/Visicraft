@@ -64,11 +64,11 @@ function ImportMiniNode({ data }: { data: any }) {
                     </div>
                 </div>
             </div>
-            <div className="p-4 flex-1">
+            <div className="p-4 flex-1 min-h-0 flex flex-col">
                 {image ? (
-                    <img src={image} alt="" className="w-full h-40 object-cover rounded-lg" />
+                    <img src={image} alt="" className="w-full h-full object-cover rounded-lg flex-1 min-h-0" />
                 ) : (
-                    <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg h-40 flex flex-col items-center justify-center">
+                    <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg h-full w-full flex-1 flex flex-col items-center justify-center min-h-0">
                         <Upload className="w-8 h-8 text-gray-600 mb-2" />
                         <span className="text-xs text-gray-600">Click to upload</span>
                     </div>
@@ -83,18 +83,6 @@ function GenerateMiniNode({ data }: { data: any }) {
     const result = data.generatedImage;
     const isThisNodeProcessing = status === 'processing';
     const aspectRatio = data.aspectRatio || '16:9';
-
-    const getPreviewHeight = (ratio: string) => {
-        switch (ratio) {
-            case '16:9': return 'h-[169px]';
-            case '1:1': return 'h-[300px]';
-            case '4:3': return 'h-[225px]';
-            case '9:16': return 'h-[533px]';
-            case '21:9': return 'h-[129px]';
-            default: return 'h-[180px]';
-        }
-    };
-    const previewHeight = getPreviewHeight(aspectRatio);
 
     return (
         <div className="w-full h-full bg-[#1a1a1a]/90 backdrop-blur-md border-2 border-[#2a2a2a]/80 rounded-2xl flex flex-col overflow-hidden box-border">
@@ -111,11 +99,11 @@ function GenerateMiniNode({ data }: { data: any }) {
                     </div>
                 </div>
             </div>
-            <div className="p-3 relative">
+            <div className="p-3 relative flex-1 min-h-0 flex flex-col">
                 {result ? (
-                    <img src={result} alt="" className={`w-full ${previewHeight} object-cover rounded`} />
+                    <img src={result} alt="" className="w-full h-full object-cover rounded flex-1 min-h-0" />
                 ) : (
-                    <div className={`border border-dashed border-[#ef4444]/30 rounded ${previewHeight} flex flex-col items-center justify-center`}>
+                    <div className="border border-dashed border-[#ef4444]/30 rounded flex-1 w-full h-full flex flex-col items-center justify-center min-h-0">
                         <Zap className="w-8 h-8 text-[#ef4444]/50 mb-2" />
                         <span className="text-[12px] text-[#666666]">Result will appear here</span>
                         <span className="text-[10px] text-[#444444] mt-1">{aspectRatio}</span>
@@ -128,14 +116,16 @@ function GenerateMiniNode({ data }: { data: any }) {
                     Create
                 </div>
             </div>
-            {status === 'complete' && (
-                <div className="px-3 pb-2">
-                    <div className="text-[12px] text-center py-1 rounded bg-green-500/10 text-green-500">
-                        ✓ Complete
+            {
+                status === 'complete' && (
+                    <div className="px-3 pb-2">
+                        <div className="text-[12px] text-center py-1 rounded bg-green-500/10 text-green-500">
+                            ✓ Complete
+                        </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     );
 }
 
@@ -217,11 +207,11 @@ function OutputMiniNode({ data }: { data: any }) {
                     </div>
                 </div>
             </div>
-            <div className="p-3 relative flex-1">
+            <div className="p-3 relative flex-1 min-h-0 flex flex-col">
                 {images.length > 0 ? (
-                    <img src={images[0]} alt="" className="w-full h-full object-cover rounded" />
+                    <img src={images[0]} alt="" className="w-full h-full object-cover rounded flex-1 min-h-0" />
                 ) : (
-                    <div className="border border-dashed border-[#10b981]/30 rounded w-full h-full flex flex-col items-center justify-center">
+                    <div className="border border-dashed border-[#10b981]/30 rounded w-full h-full flex flex-col items-center justify-center flex-1 min-h-0">
                         <span className="text-[12px] text-[#666666]">Final image will appear here</span>
                     </div>
                 )}

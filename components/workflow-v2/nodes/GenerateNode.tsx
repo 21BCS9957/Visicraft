@@ -27,7 +27,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
   const result = data.generatedImage || null;
   const isThisNodeProcessing = status === 'processing';
   const aspectRatio = data.aspectRatio || '16:9';
-  
+
   // Calculate preview height based on aspect ratio
   const getPreviewHeight = (ratio: string) => {
     const heightMap: Record<string, string> = {
@@ -39,9 +39,9 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     };
     return heightMap[ratio] || 'h-[180px]';
   };
-  
+
   const previewHeight = getPreviewHeight(aspectRatio);
-  
+
   // Debug log to see when data changes
   useEffect(() => {
     console.log('🔄 GenerateNode data updated:', {
@@ -107,7 +107,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     const nodes = getNodes();
     const edges = getEdges();
     const currentNode = nodes.find(n => n.id === id);
-    
+
     if (!currentNode) return;
 
     // Create new node with offset position
@@ -144,13 +144,13 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       nds.map((node) =>
         node.id === id
           ? {
-              ...node,
-              data: {
-                ...node.data,
-                status: 'idle',
-                generatedImage: null,
-              },
-            }
+            ...node,
+            data: {
+              ...node.data,
+              status: 'idle',
+              generatedImage: null,
+            },
+          }
           : node
       )
     );
@@ -161,10 +161,10 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
   const handleDelete = () => {
     // Remove node
     setNodes((nds) => nds.filter((node) => node.id !== id));
-    
+
     // Remove connected edges
     setEdges((eds) => eds.filter((edge) => edge.source !== id && edge.target !== id));
-    
+
     toast.success('Node deleted!');
     setShowMenu(false);
   };
@@ -238,6 +238,9 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
         rounded-2xl
         shadow-xl
         min-w-[320px]
+        min-h-[300px]
+        h-full
+        flex flex-col
         transition-all
         ${selected ? 'ring-2 ring-cyan-500/50 border-cyan-500/30' : ''}
       `}
@@ -261,7 +264,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shadow-lg">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M13 2L3 14H12L11 22L21 10H12L13 2Z" fill="white" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M13 2L3 14H12L11 22L21 10H12L13 2Z" fill="white" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
             <div>
@@ -276,7 +279,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
             >
               <MoreVertical className="w-4 h-4" />
             </button>
-            
+
             {/* Dropdown Menu */}
             <AnimatePresence>
               {showMenu && (
@@ -295,7 +298,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
                     <Download className="w-4 h-4" />
                     Download Image
                   </button>
-                  
+
                   <button
                     onClick={handleDuplicate}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors"
@@ -303,7 +306,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
                     <Copy className="w-4 h-4" />
                     Duplicate Node
                   </button>
-                  
+
                   <button
                     onClick={handleReset}
                     disabled={!result && status === 'idle'}
@@ -312,9 +315,9 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
                     <RefreshCw className="w-4 h-4" />
                     Reset Node
                   </button>
-                  
+
                   <div className="border-t border-[#2a2a2a]" />
-                  
+
                   <button
                     onClick={handleDelete}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-red-400 hover:bg-[#2a2a2a] transition-colors"
@@ -330,13 +333,13 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       </div>
 
       {/* Preview */}
-      <div className="p-3 relative">
+      <div className="p-3 relative flex-1 min-h-0 flex flex-col">
         {result ? (
-          <div className="relative">
+          <div className="relative flex-1 min-h-0 w-full rounded overflow-hidden">
             <img
               src={result}
               alt="Generated"
-              className={`w-full ${previewHeight} object-cover rounded cursor-pointer`}
+              className="w-full h-full object-cover cursor-pointer"
               loading="lazy"
               decoding="async"
               onClick={(e) => {
@@ -358,13 +361,13 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
             )}
           </div>
         ) : (
-          <div className={`border border-dashed border-[#ef4444]/30 rounded ${previewHeight} flex flex-col items-center justify-center`}>
+          <div className="border border-dashed border-[#ef4444]/30 rounded flex-1 w-full h-full flex flex-col items-center justify-center min-h-[150px]">
             <Zap className="w-8 h-8 text-[#ef4444]/50 mb-2" />
             <span className="text-xs text-[#666666]">Result will appear here</span>
             <span className="text-[10px] text-[#444444] mt-1">{aspectRatio}</span>
           </div>
         )}
-        
+
         {/* Loading overlay when this node is generating */}
         {isThisNodeProcessing && (
           <div className="absolute inset-0 bg-black/70 flex items-center justify-center rounded">
@@ -409,7 +412,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
               style={{ zIndex: 100000000 }}
               onClick={(e) => e.stopPropagation()}
             />
-            
+
             {/* Download button */}
             <button
               onClick={handleDownload}
@@ -448,10 +451,9 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       {/* Status Badge */}
       {status !== 'idle' && status !== 'processing' && (
         <div className="px-3 pb-2">
-          <div className={`text-xs text-center py-1 rounded ${
-            status === 'complete' ? 'bg-green-500/10 text-green-500' :
+          <div className={`text-xs text-center py-1 rounded ${status === 'complete' ? 'bg-green-500/10 text-green-500' :
             'bg-red-500/10 text-red-500'
-          }`}>
+            }`}>
             {status === 'complete' && '✓ Complete'}
             {status === 'error' && '✗ Error'}
           </div>
@@ -467,7 +469,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
         position={Position.Left}
         style={{ top: '35%' }}
       />
-      
+
       <SmartHandle
         nodeId={id}
         handleId="sourceImage"
@@ -476,7 +478,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
         position={Position.Left}
         style={{ top: '35%', opacity: 0, pointerEvents: 'none' }}
       />
-      
+
       <SmartHandle
         nodeId={id}
         handleId="prompt"

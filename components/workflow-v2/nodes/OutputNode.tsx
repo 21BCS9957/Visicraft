@@ -61,7 +61,7 @@ export function OutputNode({ data, selected, id }: NodeProps) {
     const nodes = getNodes();
     const edges = getEdges();
     const currentNode = nodes.find(n => n.id === id);
-    
+
     if (!currentNode) return;
 
     const newNode = {
@@ -117,6 +117,9 @@ export function OutputNode({ data, selected, id }: NodeProps) {
         rounded-2xl
         shadow-xl
         min-w-[320px]
+        min-h-[250px]
+        h-full
+        flex flex-col
         transition-all
         ${selected ? 'ring-2 ring-green-500/50 border-green-500/30' : ''}
       `}
@@ -140,7 +143,7 @@ export function OutputNode({ data, selected, id }: NodeProps) {
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shadow-lg">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M9 12L11 14L15 10M21 12C21 16.971 16.971 21 12 21C7.029 21 3 16.971 3 12C3 7.029 7.029 3 12 3C16.971 3 21 7.029 21 12Z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M9 12L11 14L15 10M21 12C21 16.971 16.971 21 12 21C7.029 21 3 16.971 3 12C3 7.029 7.029 3 12 3C16.971 3 21 7.029 21 12Z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
             <div>
@@ -155,7 +158,7 @@ export function OutputNode({ data, selected, id }: NodeProps) {
             >
               <MoreVertical className="w-4 h-4" />
             </button>
-            
+
             {/* Dropdown Menu */}
             <AnimatePresence>
               {showMenu && (
@@ -174,7 +177,7 @@ export function OutputNode({ data, selected, id }: NodeProps) {
                     <Download className="w-4 h-4" />
                     Download All
                   </button>
-                  
+
                   <button
                     onClick={handleDuplicate}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors"
@@ -182,7 +185,7 @@ export function OutputNode({ data, selected, id }: NodeProps) {
                     <Copy className="w-4 h-4" />
                     Duplicate Node
                   </button>
-                  
+
                   <button
                     onClick={handleReset}
                     disabled={images.length === 0}
@@ -191,9 +194,9 @@ export function OutputNode({ data, selected, id }: NodeProps) {
                     <RefreshCw className="w-4 h-4" />
                     Clear Output
                   </button>
-                  
+
                   <div className="border-t border-[#2a2a2a]" />
-                  
+
                   <button
                     onClick={handleDelete}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-red-400 hover:bg-[#2a2a2a] transition-colors"
@@ -209,20 +212,20 @@ export function OutputNode({ data, selected, id }: NodeProps) {
       </div>
 
       {/* Output Display */}
-      <div className="p-4">
+      <div className="p-4 flex-1 min-h-0 flex flex-col">
         {images.length === 0 ? (
-          <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg h-40 flex flex-col items-center justify-center">
+          <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg h-full flex-1 flex flex-col items-center justify-center min-h-[160px]">
             <MonitorPlay className="w-8 h-8 text-gray-600 mb-2" />
             <span className="text-xs text-gray-600">Waiting for results...</span>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3 flex-1 overflow-y-auto min-h-0 pr-1">
             {images.map((url: string, index: number) => (
-              <div key={index} className="relative group">
+              <div key={index} className="relative group flex-shrink-0">
                 <img
                   src={url}
                   alt={`Output ${index + 1}`}
-                  className="w-full rounded-lg"
+                  className="w-full h-auto object-cover rounded-lg"
                 />
                 <button
                   onClick={() => handleDownload(url, index)}
