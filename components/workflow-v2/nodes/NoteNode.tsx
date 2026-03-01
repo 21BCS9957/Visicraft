@@ -173,35 +173,61 @@ export function NoteNode({ data, selected, id }: NodeProps) {
               onClick={() => setShowColorPicker(!showColorPicker)}
               className="p-1.5 rounded hover:bg-black/10 transition-colors"
               style={{ color: currentColor.text }}
+              title="Change color"
             >
               <Palette className="w-4 h-4" />
             </button>
 
-            {/* Color Picker Dropdown */}
             <AnimatePresence>
               {showColorPicker && (
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                  initial={{ opacity: 0, scale: 0.85, y: -6 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                  transition={{ duration: 0.1 }}
-                  className="absolute right-0 top-full mt-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl z-50 p-2"
+                  exit={{ opacity: 0, scale: 0.85, y: -6 }}
+                  transition={{ type: 'spring', bounce: 0.35, duration: 0.3 }}
+                  className="absolute right-0 top-full mt-2 z-50"
+                  style={{
+                    background: 'rgba(0,0,0,0.55)',
+                    backdropFilter: 'blur(10px)',
+                    borderRadius: '999px',
+                    padding: '6px 10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.35)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                  }}
                 >
-                  <div className="grid grid-cols-3 gap-2">
-                    {NOTE_COLORS.map((color, index) => (
-                      <button
-                        key={index}
-                        onClick={() => handleColorChange(index)}
-                        className={`w-8 h-8 rounded-lg border-2 transition-transform hover:scale-110 ${colorIndex === index ? 'ring-2 ring-white ring-offset-2 ring-offset-[#1a1a1a]' : ''
-                          }`}
-                        style={{
-                          backgroundColor: color.bg,
-                          borderColor: color.border,
-                        }}
-                        title={color.name}
-                      />
-                    ))}
-                  </div>
+                  {NOTE_COLORS.map((color, index) => (
+                    <motion.button
+                      key={index}
+                      initial={{ opacity: 0, scale: 0.4 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.4 }}
+                      transition={{
+                        type: 'spring',
+                        bounce: 0.5,
+                        duration: 0.35,
+                        delay: index * 0.04,
+                      }}
+                      onClick={() => handleColorChange(index)}
+                      title={color.name}
+                      style={{
+                        width: 22,
+                        height: 22,
+                        borderRadius: '50%',
+                        backgroundColor: color.bg,
+                        border: `2.5px solid ${color.border}`,
+                        flexShrink: 0,
+                        boxShadow: colorIndex === index
+                          ? `0 0 0 2px white, 0 0 0 4px ${color.border}`
+                          : '0 1px 4px rgba(0,0,0,0.3)',
+                        transform: colorIndex === index ? 'scale(1.2)' : 'scale(1)',
+                        transition: 'transform 0.15s, box-shadow 0.15s',
+                        cursor: 'pointer',
+                      }}
+                    />
+                  ))}
                 </motion.div>
               )}
             </AnimatePresence>
