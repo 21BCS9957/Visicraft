@@ -173,9 +173,12 @@ export function ImportNode({ data, selected, id }: NodeProps) {
         border-2 border-[#2a2a2a]
         rounded-2xl
         shadow-xl
-        min-w-[320px]
+        w-full
         h-full
+        min-w-[320px]
+        min-h-[250px]
         flex flex-col
+        overflow-hidden
         transition-all
         ${selected ? 'ring-2 ring-blue-500/50 border-blue-500/30' : ''}
       `}
@@ -259,9 +262,9 @@ export function ImportNode({ data, selected, id }: NodeProps) {
       </div>
 
       {/* Image Preview or Upload Zone */}
-      <div className="p-4 flex-1 min-h-0 flex flex-col">
+      <div className="p-4 flex-1 min-h-0 flex flex-col overflow-hidden">
         {image ? (
-          <div className="relative group flex-1 min-h-0 flex flex-col h-full">
+          <div className="relative group flex-1 min-h-0 flex flex-col h-full overflow-hidden rounded-lg">
             {/* Loading skeleton */}
             {imageLoading && (
               <div className="absolute inset-0 bg-[#1a1a1a] rounded-lg animate-pulse flex items-center justify-center z-10">
@@ -271,7 +274,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
             <img
               src={image}
               alt="Imported"
-              className={`w-full h-full object-cover rounded-lg flex-1 min-h-0 transition-opacity duration-300 ${imageLoading ? 'opacity-0' : 'opacity-100'}`}
+              className={`absolute inset-0 w-full h-full object-cover rounded-lg transition-opacity duration-300 ${imageLoading ? 'opacity-0' : 'opacity-100'}`}
               loading="lazy"
               decoding="async"
               onLoad={() => setImageLoading(false)}

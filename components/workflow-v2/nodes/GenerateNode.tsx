@@ -237,10 +237,12 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
         border-2 border-[#2a2a2a]
         rounded-2xl
         shadow-xl
+        w-full
+        h-full
         min-w-[320px]
         min-h-[300px]
-        h-full
         flex flex-col
+        overflow-hidden
         transition-all
         ${selected ? 'ring-2 ring-cyan-500/50 border-cyan-500/30' : ''}
       `}
@@ -333,13 +335,13 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       </div>
 
       {/* Preview */}
-      <div className="p-3 relative flex-1 min-h-0 flex flex-col">
+      <div className="p-3 relative flex-1 min-h-0 flex flex-col overflow-hidden">
         {result ? (
           <div className="relative flex-1 min-h-0 w-full rounded overflow-hidden">
             <img
               src={result}
               alt="Generated"
-              className="w-full h-full object-cover cursor-pointer"
+              className="absolute inset-0 w-full h-full object-cover cursor-pointer"
               loading="lazy"
               decoding="async"
               onClick={(e) => {
