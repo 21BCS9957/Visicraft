@@ -26,7 +26,7 @@ export async function signInWithGoogle() {
     throw error;
   }
 
-  console.log('✅ Google sign-in initiated successfully: ', data);
+  console.log('✅ Google sign-in initiated successfully');
   return data;
 }
 

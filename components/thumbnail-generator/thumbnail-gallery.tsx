@@ -17,10 +17,7 @@ export function ThumbnailGallery({ thumbnails }: ThumbnailGalleryProps) {
       
       const link = document.createElement('a');
       link.href = blobUrl;
-      const isVideoPath = url.match(/\.(mp4|webm|mov)$/i);
-      const isDataVideo = url.startsWith('data:video/');
-      const ext = isVideoPath ? isVideoPath[1].toLowerCase() : isDataVideo ? url.split(';')[0].split('/')[1] : 'jpg';
-      link.download = `output-${index + 1}.${ext}`;
+      link.download = `thumbnail-${index + 1}.jpg`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -44,7 +41,7 @@ export function ThumbnailGallery({ thumbnails }: ThumbnailGalleryProps) {
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-extralight text-[#f8f7f5] tracking-wide">
-          Generated Results
+          Generated Thumbnails
         </h2>
         <Button
           onClick={downloadAll}
@@ -63,22 +60,11 @@ export function ThumbnailGallery({ thumbnails }: ThumbnailGalleryProps) {
             className="group relative overflow-hidden border-[#c8b4a0]/20 bg-gradient-to-br from-[#1a1d18] to-[#2a2e26]"
           >
             <div className="aspect-video relative flex items-center justify-center bg-[#1a1d18]">
-              {(thumbnail.match(/\.(mp4|webm|mov)(\?.*)?$/i) || thumbnail.startsWith('data:video/')) ? (
-                <video
-                  src={thumbnail}
-                  className="max-w-full max-h-full object-contain"
-                  controls
-                  autoPlay
-                  loop
-                  muted
-                />
-              ) : (
-                <img
-                  src={thumbnail}
-                  alt={`Generated Media ${index + 1}`}
-                  className="max-w-full max-h-full object-contain"
-                />
-              )}
+              <img
+                src={thumbnail}
+                alt={`Generated thumbnail ${index + 1}`}
+                className="max-w-full max-h-full object-contain"
+              />
               <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                 <Button
                   onClick={() => downloadImage(thumbnail, index)}

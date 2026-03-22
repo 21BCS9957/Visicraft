@@ -3,7 +3,6 @@
 import { useState, useCallback } from 'react';
 import { ImageUploadZone } from '@/components/thumbnail-generator/image-upload-zone';
 import { ReferenceUpload } from '@/components/thumbnail-generator/reference-upload';
-import { VideoUpload } from '@/components/thumbnail-generator/video-upload';
 import { GenerationForm } from '@/components/thumbnail-generator/generation-form';
 import { ThumbnailGallery } from '@/components/thumbnail-generator/thumbnail-gallery';
 import { UploadedImage } from '@/types';
@@ -16,7 +15,7 @@ import { ChevronDown } from 'lucide-react';
 import toast from '@/lib/toast';
 import { useRouter } from 'next/navigation';
 
-type FeatureMode = 'generate' | 'thumbnail' | 'upscale' | 'unblur' | 'edit' | 'img2vid' | 'vid2vid';
+type FeatureMode = 'generate' | 'thumbnail' | 'upscale' | 'unblur' | 'edit';
 
 interface Feature {
   id: FeatureMode;
@@ -62,20 +61,6 @@ const FEATURES: Feature[] = [
     icon: 'ph:pencil-fill',
     color: '#f59e0b',
   },
-  {
-    id: 'img2vid',
-    name: 'Image to Video',
-    description: 'Animate a static image into a video',
-    icon: 'ph:film-strip-fill',
-    color: '#a855f7',
-  },
-  {
-    id: 'vid2vid',
-    name: 'Video to Video',
-    description: 'Transform a video with AI styling',
-    icon: 'ph:video-camera-fill',
-    color: '#ec4899',
-  },
 ];
 
 // Strategic pricing based on API costs and profitability
@@ -87,8 +72,6 @@ const CREDIT_COSTS: Record<FeatureMode, number> = {
   'upscale': 80,       // Most resource-intensive - 4x resolution processing
   'unblur': 75,        // Complex enhancement algorithms
   'edit': 70,          // AI-powered editing with prompt processing
-  'img2vid': 120,
-  'vid2vid': 150,
 };
 
 export default function GeneratePage() {
@@ -97,53 +80,26 @@ export default function GeneratePage() {
     referenceImage,
     sourceImages,
     singleImage,
-    referenceVideo,
-    sourceVideo,
     prompt,
     setSelectedFeatureId,
     setReferenceImage,
     setSourceImages,
     setSingleImage,
-    setReferenceVideo,
-    setSourceVideo,
     setPrompt,
-    videoNumResults,
-    videoAspectRatio,
-    videoDuration,
-    videoResolution,
-    videoNegativePrompt,
   } = useGenerateState();
 
   const selectedFeature = FEATURES.find(f => f.id === selectedFeatureId) ?? FEATURES[0];
   const [showFeatureMenu, setShowFeatureMenu] = useState(false);
   const [generatedThumbnails, setGeneratedThumbnails] = useState<string[]>([]);
   const [error, setError] = useState<string>('');
-  const [generationProgress, setGenerationProgress] = useState<number>(0);
-  const [statusMessage, setStatusMessage] = useState<string>('');
   const { user } = useAuth();
   const { credits, deductCredits, refreshCredits, addCredits } = useCredits();
   const router = useRouter();
 
   const handlePromptChange = useCallback((val: string) => setPrompt(val), [setPrompt]);
 
-  const getDynamicCreditCost = () => {
-    let base = CREDIT_COSTS[selectedFeature.id] || 50;
-    
-    if (selectedFeature.id === 'img2vid' || selectedFeature.id === 'vid2vid') {
-      let multiplier = videoNumResults;
-      if (videoDuration === '10s') multiplier *= 2;
-      if (videoResolution === '1080p') multiplier *= 1.5;
-      if (videoResolution === '4K') multiplier *= 2;
-      return Math.round(base * multiplier);
-    }
-    
-    return base;
-  };
-
   const handleGenerate = async (prompt?: string, selectedModel?: string) => {
     setError('');
-    setGenerationProgress(0);
-    setStatusMessage('');
     
     // Check if user is logged in
     if (!user) {
@@ -156,16 +112,10 @@ export default function GeneratePage() {
       return;
     }
     
-    console.log("DEBUG: 3 : " ,selectedFeature)
     // Validation based on feature mode
     if (selectedFeature.id === 'generate' || selectedFeature.id === 'thumbnail') {
       if (!referenceImage || sourceImages.length === 0) {
         setError('Please upload both reference and source images');
-        return;
-      }
-    } else if (selectedFeature.id === 'vid2vid') {
-      if (!sourceVideo) {
-        setError('Please upload a source video');
         return;
       }
     } else {
@@ -175,22 +125,20 @@ export default function GeneratePage() {
       }
     }
 
-    const creditCost = getDynamicCreditCost();
+    const creditCost = CREDIT_COSTS[selectedFeature.id];
 
-    // if (credits < creditCost) {
-    //   toast.error(`Insufficient credits! Need ${creditCost}, have ${credits}`);
-    //   setError(`You need ${creditCost} credits. Current balance: ${credits} credits.`);
-    //   return;
-    // }
+    if (credits < creditCost) {
+      toast.error(`Insufficient credits! Need ${creditCost}, have ${credits}`);
+      setError(`You need ${creditCost} credits. Current balance: ${credits} credits.`);
+      return;
+    }
 
-    // const amountToDeduct = creditCost;
-    // const deducted = await deductCredits(amountToDeduct);
-    // if (!deducted) {
-    //   toast.error('Failed to deduct credits. Please try again.');
-    //   return;
-    // }
-    
-    const amountToDeduct = 0;
+    const amountToDeduct = creditCost;
+    const deducted = await deductCredits(amountToDeduct);
+    if (!deducted) {
+      toast.error('Failed to deduct credits. Please try again.');
+      return;
+    }
 
     toast.success(`${amountToDeduct} credits deducted. Processing...`);
 
@@ -252,102 +200,6 @@ export default function GeneratePage() {
         }
 
         result = await generateResponse.json();
-      } else if (selectedFeature.id === 'img2vid' || selectedFeature.id === 'vid2vid') {
-        const isVid2vid = selectedFeature.id === 'vid2vid';
-        const fileToUpload = isVid2vid ? sourceVideo!.file : singleImage!.file;
-        const formData = new FormData();
-        formData.append('file', fileToUpload);
-        formData.append('bucket', isVid2vid ? 'source-video' : 'source-images');
-        
-        const uploadResponse = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        });
-        
-        if (!uploadResponse.ok) throw new Error(`Failed to upload ${isVid2vid ? 'video' : 'image'}`);
-        const { url: fileUrl } = await uploadResponse.json();
-
-        const apiEndpoint = `/api/${selectedFeature.id}`;
-        
-        const payload: Record<string, any> = {
-          prompt,
-          model: selectedModel || 'nano-banana-pro',
-          numResults: videoNumResults,
-          aspectRatio: videoAspectRatio,
-          duration: videoDuration,
-          resolution: videoResolution,
-          negativePrompt: videoNegativePrompt,
-        };
-        
-        if (isVid2vid) {
-          payload.videoUrl = fileUrl;
-        } else {
-          payload.imageUrl = fileUrl;
-        }
-
-        const apiResponse = await fetch(apiEndpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-
-        if (!apiResponse.ok) {
-          const errorData = await apiResponse.json();
-          throw new Error(errorData.error || `${selectedFeature.name} failed`);
-        }
-
-        result = await apiResponse.json();
-        
-        // --- Client-Side Polling for Vertex LROs ---
-        if (result.operationId) {
-          setStatusMessage('Initializing video sequence...');
-          setGenerationProgress(5);
-          
-          let isDone = false;
-          let failed = false;
-          let finalImages: string[] = [];
-
-          while (!isDone) {
-            await new Promise((res) => setTimeout(res, 10000)); // Poll every 10 seconds
-            
-            try {
-              const statusRes = await fetch('/api/video-status', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ operationId: result.operationId })
-              });
-              
-              if (statusRes.ok) {
-                const statusData = await statusRes.json();
-                
-                if (statusData.error) {
-                  failed = true;
-                  isDone = true;
-                  throw new Error(statusData.error);
-                }
-                
-                if (statusData.done) {
-                  isDone = true;
-                  // If we get a valid URI back
-                  finalImages = statusData.url ? [statusData.url] : [];
-                  setGenerationProgress(100);
-                  setStatusMessage('Finalizing...');
-                } else {
-                  // Some models don't return accurate progress percentages, so we safeguard with 10%
-                  const currentProgress = typeof statusData.progress === 'number' && statusData.progress > 0 ? statusData.progress : 15;
-                  setGenerationProgress(currentProgress);
-                  setStatusMessage(`Rendering video... ${currentProgress}%`);
-                }
-              }
-            } catch (e) {
-               console.error("Polling error:", e);
-               // We don't break the loop on transient network errors, just keep waiting.
-            }
-          }
-          
-          if (failed) throw new Error('Generation failed during Google Vertex polling.');
-          result.images = finalImages;
-        }
       } else {
         // Upload single image for other operations
         const formData = new FormData();
@@ -397,8 +249,6 @@ export default function GeneratePage() {
 
   const canGenerate = (selectedFeature.id === 'generate' || selectedFeature.id === 'thumbnail')
     ? (referenceImage !== null && sourceImages.length > 0)
-    : selectedFeature.id === 'vid2vid'
-    ? (sourceVideo !== null)
     : (singleImage !== null);
 
   return (
@@ -484,7 +334,7 @@ export default function GeneratePage() {
           <div className="mt-4 inline-flex items-center gap-2 px-3 sm:px-4 py-2 bg-[#8b7355]/10 border border-[#8b7355]/30 rounded-lg">
             <Icon icon="ph:coins-fill" className="w-4 h-4 sm:w-5 sm:h-5 text-[#c8b4a0]" />
             <span className="text-[#c8b4a0] text-xs sm:text-sm font-light">
-              {getDynamicCreditCost()} credits per operation
+              {CREDIT_COSTS[selectedFeature.id]} credits per operation
             </span>
           </div>
         </div>
@@ -519,20 +369,6 @@ export default function GeneratePage() {
               <ImageUploadZone onImagesChange={setSourceImages} initialImages={sourceImages} />
             </Card>
           </div>
-        ) : selectedFeature.id === 'vid2vid' ? (
-          <div className="max-w-2xl mx-auto mb-6 sm:mb-8 lg:mb-12">
-            <Card className="p-4 sm:p-6 border-[#c8b4a0]/20 bg-gradient-to-br from-[#1a1d18] to-[#2a2e26]">
-              <h2 className="text-lg sm:text-xl font-light text-[#f8f7f5] mb-3 sm:mb-4 tracking-wide">
-                Upload Source Video
-              </h2>
-              <VideoUpload 
-                onVideoChange={setSourceVideo}
-                initialVideo={sourceVideo}
-                description="Upload a video to transform with AI styling"
-                title="Upload Source Video"
-              />
-            </Card>
-          </div>
         ) : (
           <div className="max-w-2xl mx-auto mb-6 sm:mb-8 lg:mb-12">
             <Card className="p-4 sm:p-6 border-[#c8b4a0]/20 bg-gradient-to-br from-[#1a1d18] to-[#2a2e26]">
@@ -549,8 +385,6 @@ export default function GeneratePage() {
                     ? 'Upload a blurry image to sharpen and enhance'
                     : selectedFeature.id === 'edit'
                     ? 'Upload an image you want to edit with AI'
-                    : selectedFeature.id === 'img2vid'
-                    ? 'Upload an image to animate into a video'
                     : 'Upload an image to process'
                 }
                 title={
@@ -560,8 +394,6 @@ export default function GeneratePage() {
                     ? 'Upload Blurry Image'
                     : selectedFeature.id === 'edit'
                     ? 'Upload Image to Edit'
-                    : selectedFeature.id === 'img2vid'
-                    ? 'Upload Image to Animate'
                     : 'Upload Image'
                 }
               />
@@ -577,8 +409,6 @@ export default function GeneratePage() {
             featureMode={selectedFeature.id}
             defaultPrompt={prompt}
             onPromptChange={handlePromptChange}
-            generationProgress={generationProgress}
-            statusMessage={statusMessage}
           />
         </Card>
 
