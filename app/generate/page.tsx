@@ -155,8 +155,6 @@ export default function GeneratePage() {
       }, 2000);
       return;
     }
-    
-    console.log("DEBUG: 3 : " ,selectedFeature)
     // Validation based on feature mode
     if (selectedFeature.id === 'generate' || selectedFeature.id === 'thumbnail') {
       if (!referenceImage || sourceImages.length === 0) {
@@ -177,21 +175,19 @@ export default function GeneratePage() {
 
     const creditCost = getDynamicCreditCost();
 
-    // if (credits < creditCost) {
-    //   toast.error(`Insufficient credits! Need ${creditCost}, have ${credits}`);
-    //   setError(`You need ${creditCost} credits. Current balance: ${credits} credits.`);
-    //   return;
-    // }
+    if (credits < creditCost) {
+      toast.error(`Insufficient credits! Need ${creditCost}, have ${credits}`);
+      setError(`You need ${creditCost} credits. Current balance: ${credits} credits.`);
+      return;
+    }
 
-    // const amountToDeduct = creditCost;
-    // const deducted = await deductCredits(amountToDeduct);
-    // if (!deducted) {
-    //   toast.error('Failed to deduct credits. Please try again.');
-    //   return;
-    // }
+    const amountToDeduct = creditCost;
+    const deducted = await deductCredits(amountToDeduct);
+    if (!deducted) {
+      toast.error('Failed to deduct credits. Please try again.');
+      return;
+    }
     
-    const amountToDeduct = 0;
-
     toast.success(`${amountToDeduct} credits deducted. Processing...`);
 
     try {
