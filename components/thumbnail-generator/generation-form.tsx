@@ -6,7 +6,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2, Sparkles, ChevronDown } from 'lucide-react';
 import { Icon } from '@iconify/react';
 import { generationFormSchema, type GenerationFormData } from '@/lib/validations';
-import { useGenerateState } from '@/lib/contexts/GenerateContext';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -14,11 +13,9 @@ import { Label } from '@/components/ui/label';
 interface GenerationFormProps {
   onGenerate: (prompt?: string, selectedModel?: string) => Promise<void>;
   disabled: boolean;
-  featureMode?: 'generate' | 'thumbnail' | 'upscale' | 'unblur' | 'edit' | 'img2vid' | 'vid2vid';
+  featureMode?: 'generate' | 'thumbnail' | 'upscale' | 'unblur' | 'edit';
   defaultPrompt?: string;
   onPromptChange?: (value: string) => void;
-  generationProgress?: number;
-  statusMessage?: string;
 }
 
 const AI_MODELS = [
@@ -109,26 +106,8 @@ export function GenerationForm({
   statusMessage
 }: GenerationFormProps) {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [selectedModel, setSelectedModel] = useState(AI_MODELS[0]);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
-  
-  const isVideoMode = featureMode === 'img2vid' || featureMode === 'vid2vid';
-  const currentModels = isVideoMode ? VIDEO_MODELS : AI_MODELS;
-  
-  const [selectedModel, setSelectedModel] = useState(currentModels[0]);
-  
-  useEffect(() => {
-    if (!currentModels.find(m => m.id === selectedModel.id)) {
-      setSelectedModel(currentModels[0]);
-    }
-  }, [featureMode, isVideoMode]);
-  
-  const {
-    videoNumResults, setVideoNumResults,
-    videoAspectRatio, setVideoAspectRatio,
-    videoDuration, setVideoDuration,
-    videoResolution, setVideoResolution,
-    videoNegativePrompt, setVideoNegativePrompt
-  } = useGenerateState();
   
   const { register, handleSubmit, formState: { errors }, watch } = useForm<GenerationFormData>({
     resolver: zodResolver(generationFormSchema),
@@ -199,7 +178,7 @@ export function GenerationForm({
           {/* Dropdown Menu */}
           {showModelDropdown && (
             <div className="absolute top-full left-0 right-0 mt-2 bg-[#1a1d18] border border-[#c8b4a0]/20 rounded-lg shadow-2xl z-10 overflow-hidden">
-              {currentModels.map((model) => (
+              {AI_MODELS.map((model) => (
                 <button
                   key={model.id}
                   type="button"
@@ -264,10 +243,6 @@ export function GenerationForm({
               ? 'E.g., Enhance details, Preserve quality...'
               : featureMode === 'unblur'
               ? 'E.g., Maximum sharpness, Focus on faces...'
-              : featureMode === 'img2vid'
-              ? 'E.g., Make the background move, add camera pan, animate character...'
-              : featureMode === 'vid2vid'
-              ? 'E.g., Convert to anime style, make it look cinematic...'
               : 'E.g., Make it more vibrant, add text overlay, focus on faces...'
           }
           className="min-h-[100px] bg-[#1a1d18] border-[#c8b4a0]/20 text-[#f8f7f5] placeholder:text-[#c8b4a0]/40"
@@ -278,92 +253,6 @@ export function GenerationForm({
         )}
       </div>
 
-      {(featureMode === 'img2vid' || featureMode === 'vid2vid') && (
-        <div className="space-y-4 pt-4 border-t border-[#c8b4a0]/10">
-          <h3 className="text-[#f8f7f5] font-light">Advanced Video Settings</h3>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-[#c8b4a0] text-xs">Aspect Ratio</Label>
-              <select 
-                value={videoAspectRatio}
-                onChange={(e) => setVideoAspectRatio(e.target.value)}
-                className="w-full bg-[#1a1d18] border border-[#c8b4a0]/20 rounded-lg p-2.5 text-sm text-[#f8f7f5] focus:outline-none focus:border-[#c8b4a0]/40"
-              >
-                <option value="16:9">16:9 (Landscape)</option>
-                <option value="9:16">9:16 (Portrait)</option>
-                <option value="1:1">1:1 (Square)</option>
-              </select>
-            </div>
-            
-            <div className="space-y-2">
-              <Label className="text-[#c8b4a0] text-xs">Duration</Label>
-              <select 
-                value={videoDuration}
-                onChange={(e) => setVideoDuration(e.target.value)}
-                className="w-full bg-[#1a1d18] border border-[#c8b4a0]/20 rounded-lg p-2.5 text-sm text-[#f8f7f5] focus:outline-none focus:border-[#c8b4a0]/40"
-              >
-                <option value="4s">4 Seconds</option>
-                <option value="6s">6 Seconds</option>
-                <option value="8s">8 Seconds</option>
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-[#c8b4a0] text-xs">Resolution</Label>
-              <select 
-                value={videoResolution}
-                onChange={(e) => setVideoResolution(e.target.value)}
-                className="w-full bg-[#1a1d18] border border-[#c8b4a0]/20 rounded-lg p-2.5 text-sm text-[#f8f7f5] focus:outline-none focus:border-[#c8b4a0]/40"
-              >
-                <option value="720p">720p HD</option>
-                <option value="1080p">1080p Full HD</option>
-                <option value="4K">4K Ultra HD</option>
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-[#c8b4a0] text-xs">Number of Results</Label>
-              <select 
-                value={videoNumResults.toString()}
-                onChange={(e) => setVideoNumResults(parseInt(e.target.value))}
-                className="w-full bg-[#1a1d18] border border-[#c8b4a0]/20 rounded-lg p-2.5 text-sm text-[#f8f7f5] focus:outline-none focus:border-[#c8b4a0]/40"
-              >
-                <option value="1">1 Video</option>
-                <option value="2">2 Videos</option>
-                <option value="3">3 Videos</option>
-                <option value="4">4 Videos</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-[#c8b4a0] text-xs">Negative Prompt</Label>
-            <Textarea
-              value={videoNegativePrompt}
-              onChange={(e) => setVideoNegativePrompt(e.target.value)}
-              placeholder="E.g., blurry, distorted, bad quality..."
-              className="min-h-[80px] bg-[#1a1d18] border-[#c8b4a0]/20 text-[#f8f7f5] placeholder:text-[#c8b4a0]/40 text-sm"
-            />
-          </div>
-        </div>
-      )}
-
-      {isGenerating && generationProgress !== undefined && generationProgress > 0 && (
-        <div className="space-y-2">
-          <div className="flex justify-between text-xs text-[#c8b4a0] font-light px-1">
-            <span>{statusMessage || 'Processing...'}</span>
-            <span>{generationProgress}%</span>
-          </div>
-          <div className="h-1.5 w-full bg-[#1a1d18] rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-gradient-to-r from-[#6b5545] to-[#8a7060] transition-all duration-500 ease-out"
-              style={{ width: `${generationProgress}%` }}
-            />
-          </div>
-        </div>
-      )}
-
       <Button
         type="submit"
         disabled={disabled || isGenerating}
@@ -372,17 +261,11 @@ export function GenerationForm({
         {isGenerating ? (
           <>
             <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-            {statusMessage ? statusMessage : (
-              <>
-                {featureMode === 'generate' && 'Generating...'}
-                {featureMode === 'thumbnail' && 'Creating Thumbnail...'}
-                {featureMode === 'upscale' && 'Upscaling...'}
-                {featureMode === 'unblur' && 'Enhancing...'}
-                {featureMode === 'edit' && 'Editing...'}
-                {featureMode === 'img2vid' && 'Animating Image...'}
-                {featureMode === 'vid2vid' && 'Processing Video...'}
-              </>
-            )}
+            {featureMode === 'generate' && 'Generating...'}
+            {featureMode === 'thumbnail' && 'Creating Thumbnail...'}
+            {featureMode === 'upscale' && 'Upscaling...'}
+            {featureMode === 'unblur' && 'Enhancing...'}
+            {featureMode === 'edit' && 'Editing...'}
           </>
         ) : (
           <>
@@ -392,8 +275,6 @@ export function GenerationForm({
             {featureMode === 'upscale' && 'Upscale Image'}
             {featureMode === 'unblur' && 'Unblur & Enhance'}
             {featureMode === 'edit' && 'Edit Image'}
-            {featureMode === 'img2vid' && 'Animate Image'}
-            {featureMode === 'vid2vid' && 'Transform Video'}
           </>
         )}
       </Button>
@@ -402,8 +283,6 @@ export function GenerationForm({
         <p className="text-[#c8b4a0]/60 text-sm text-center">
           {(featureMode === 'generate' || featureMode === 'thumbnail')
             ? 'Please upload a reference image and at least one source image'
-            : featureMode === 'vid2vid'
-            ? 'Please upload a video to continue'
             : 'Please upload an image to continue'
           }
         </p>

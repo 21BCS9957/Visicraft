@@ -22,18 +22,3 @@ export function validateImageFile(file: File): { valid: boolean; error?: string 
 
   return { valid: true };
 }
-
-export const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
-export const ACCEPTED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
-
-export function validateVideoFile(file: File): { valid: boolean; error?: string } {
-  if (!ACCEPTED_VIDEO_TYPES.includes(file.type)) {
-    return { valid: false, error: 'Only MP4, WebM, and MOV videos are allowed' };
-  }
-
-  if (file.size > MAX_VIDEO_SIZE) {
-    return { valid: false, error: 'File size must be less than 50MB' };
-  }
-
-  return { valid: true };
-}
