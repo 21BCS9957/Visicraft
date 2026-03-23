@@ -131,7 +131,14 @@ export default function GeneratePage() {
     
     if (selectedFeature.id === 'img2vid' || selectedFeature.id === 'vid2vid') {
       let multiplier = videoNumResults;
-      if (videoDuration === '10s') multiplier *= 2;
+      
+      const durationMultipliers: Record<string, number> = {
+        '4s': 0.8,
+        '6s': 1.2,
+        '8s': 1.6,
+      };
+      multiplier *= (durationMultipliers[videoDuration] || 1.0);
+
       if (videoResolution === '1080p') multiplier *= 1.5;
       if (videoResolution === '4K') multiplier *= 2;
       return Math.round(base * multiplier);
