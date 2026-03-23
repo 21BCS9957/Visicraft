@@ -66,6 +66,14 @@ const AI_MODELS = [
 
 const VIDEO_MODELS = [
   {
+    id: 'veo-3.1-generate-001',
+    name: 'Google Veo 3.1',
+    provider: 'Google AI',
+    icon: 'simple-icons:google',
+    iconType: 'icon',
+    color: '#4285F4',
+  },
+  {
     id: 'veo-2.0-generate-001',
     name: 'Google Veo 2.0',
     provider: 'Google AI',

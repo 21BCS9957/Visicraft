@@ -36,8 +36,10 @@ export async function POST(request: NextRequest) {
     const base64Data = dataUrl.split(',')[1];
 
     const location = 'us-central1';
-    // As instructed by Google, Veo must use predictLongRunning on v1beta1
-    const endpoint = `https://${location}-aiplatform.googleapis.com/v1beta1/projects/${projectId}/locations/${location}/publishers/google/models/veo-2.0-generate-001:predictLongRunning`;
+    
+    // Check if the requested model is a Veo engine variant, fallback to Veo 2.0
+    const targetModel = model && model.includes('veo') ? model : 'veo-2.0-generate-001';
+    const endpoint = `https://${location}-aiplatform.googleapis.com/v1beta1/projects/${projectId}/locations/${location}/publishers/google/models/${targetModel}:predictLongRunning`;
 
     const payload = {
       instances: [

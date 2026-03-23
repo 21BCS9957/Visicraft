@@ -34,7 +34,9 @@ export async function POST(request: NextRequest) {
     }
 
     const location = 'us-central1';
-    const endpoint = `https://${location}-aiplatform.googleapis.com/v1beta1/projects/${projectId}/locations/${location}/publishers/google/models/veo-2.0-generate-001:predictLongRunning`;
+    
+    const targetModel = model && model.includes('veo') ? model : 'veo-2.0-generate-001';
+    const endpoint = `https://${location}-aiplatform.googleapis.com/v1beta1/projects/${projectId}/locations/${location}/publishers/google/models/${targetModel}:predictLongRunning`;
 
     // Download the video from Supabase and convert it to Base64 since Veo doesn't accept public HTTP URIs natively
     console.log(`Downloading source video from ${videoUrl}...`);
