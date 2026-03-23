@@ -8,6 +8,7 @@ export async function POST(request: NextRequest) {
 
     console.log('📝 Creating order:', { amount, planName, billingCycle, credits, userId });
 
+    
     if (!amount || !planName) {
       return NextResponse.json(
         { error: 'Amount and plan name are required' },
