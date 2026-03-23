@@ -228,7 +228,16 @@ MIT License - see LICENSE file for details
 
 ## 🎉 Recent Updates
 
-### Animated Workflow Section - CREATIVE UX (Latest)
+### Video Generation with Veo 3 API (Latest)
+- ✅ **Veo 3 Integration**: Google's latest video generation model
+- ✅ **Correct API Endpoints**: Using `veo-3.1-generate-001` model
+- ✅ **Audio Support**: Native audio generation with videos
+- ✅ **Improved UX**: Realistic timing expectations (2-3 minutes)
+- ✅ **Background Processing**: Users can navigate away during generation
+- ✅ **Better Error Handling**: Clear error messages and troubleshooting
+- ✅ **Test Scripts**: Verify API access and configuration
+
+### Animated Workflow Section - CREATIVE UX
 - ✅ **Static Nodes**: Cards stay in place for clarity
 - ✅ **Animated Lines**: Connection lines draw on scroll with glow effect
 - ✅ **Interactive States**: Nodes activate with loading animations

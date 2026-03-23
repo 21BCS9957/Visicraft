@@ -1,0 +1,98 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { GoogleAuth } from 'google-auth-library';
+import { imageToBase64 } from '@/lib/banana/api';
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { imageUrl, prompt, model, numResults, aspectRatio, duration, resolution, negativePrompt } = body;
+
+    if (!imageUrl) {
+      return NextResponse.json({ error: 'Image URL is required' }, { status: 400 });
+    }
+
+    const serviceAccountJsonStr = process.env.GOOGLE_VIDEO_SERVICE_ACCOUNT_JSON;
+    if (!serviceAccountJsonStr) {
+      return NextResponse.json({ error: 'Video generation is not configured yet (missing GOOGLE_VIDEO_SERVICE_ACCOUNT_JSON).' }, { status: 500 });
+    }
+
+    const credentials = JSON.parse(serviceAccountJsonStr);
+    const projectId = credentials.project_id;
+
+    const auth = new GoogleAuth({
+      credentials,
+      scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+    });
+
+    const client = await auth.getClient();
+    const tokenResponse = await client.getAccessToken();
+    const accessToken = tokenResponse.token;
+
+    if (!accessToken) {
+      throw new Error('Failed to obtain access token from Google Auth.');
+    }
+
+    const dataUrl = await imageToBase64(imageUrl);
+    const base64Data = dataUrl.split(',')[1];
+
+    const location = 'us-central1';
+    
+    // Check if the requested model is a Veo engine variant, fallback to Veo 2.0
+    const targetModel = model && model.includes('veo') ? model : 'veo-2.0-generate-001';
+    const endpoint = `https://${location}-aiplatform.googleapis.com/v1beta1/projects/${projectId}/locations/${location}/publishers/google/models/${targetModel}:predictLongRunning`;
+
+    const payload = {
+      instances: [
+        {
+          prompt: prompt || "A smooth cinematic tracking shot",
+          negativePrompt: negativePrompt || undefined,
+          image: {
+             bytesBase64Encoded: base64Data,
+             mimeType: 'image/jpeg'
+          }
+        }
+      ],
+      parameters: {
+        sampleCount: numResults || 1,
+        duration: duration || '5s',
+        resolution: '720p', // Locked to 720p as per standard Veo preview limitations
+        aspectRatio: aspectRatio || '16:9'
+      }
+    };
+
+    console.log('🎬 Submitting img2vid task to Vertex PredictLongRunning API...');
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return NextResponse.json(
+        { error: `Failed to submit Vertex job: ${response.status} ${errText}` },
+        { status: 500 }
+      );
+    }
+    
+    const data = await response.json();
+    const operationName = data.name; // e.g. "projects/.../locations/.../operations/..."
+    console.log(`✅ LRO Job created successfully! Operation ID: ${operationName}`);
+
+    // Step 2: Return Operation ID Immediately for the client to begin polling
+    return NextResponse.json({
+      success: true,
+      operationId: operationName,
+    });
+  } catch (error) {
+    console.error('Image-to-Video API Error:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Generation failed' },
+      { status: 500 }
+    );
+  }
+}
