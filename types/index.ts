@@ -14,6 +14,12 @@ export interface UploadedImage {
   id: string;
 }
 
+export interface UploadedVideo {
+  file: File;
+  preview: string;
+  id: string;
+}
+
 export interface GenerationRequest {
   referenceImage: string;
   sourceImages: string[];
