@@ -16,7 +16,7 @@ import { ChevronDown } from 'lucide-react';
 import toast from '@/lib/toast';
 import { useRouter } from 'next/navigation';
 
-type FeatureMode = 'generate' | 'thumbnail' | 'upscale' | 'unblur' | 'edit' | 'img2vid' | 'vid2vid';
+type FeatureMode = 'generate' | 'upscale' | 'unblur' | 'edit' | 'img2vid' | 'vid2vid';
 
 interface Feature {
   id: FeatureMode;
@@ -33,13 +33,6 @@ const FEATURES: Feature[] = [
     description: 'Create AI-generated images from reference',
     icon: 'ph:magic-wand-fill',
     color: '#8b7355',
-  },
-  {
-    id: 'thumbnail',
-    name: 'Generate Thumbnail',
-    description: 'Create eye-catching thumbnails for videos',
-    icon: 'ph:video-fill',
-    color: '#ef4444',
   },
   {
     id: 'upscale',
@@ -83,7 +76,6 @@ const FEATURES: Feature[] = [
 // Target margin: 80-90% profit
 const CREDIT_COSTS: Record<FeatureMode, number> = {
   'generate': 65,      // Standard generation - moderate complexity
-  'thumbnail': 70,     // Thumbnail optimization - higher value for creators
   'upscale': 80,       // Most resource-intensive - 4x resolution processing
   'unblur': 75,        // Complex enhancement algorithms
   'edit': 70,          // AI-powered editing with prompt processing
@@ -163,9 +155,9 @@ export default function GeneratePage() {
       return;
     }
     // Validation based on feature mode
-    if (selectedFeature.id === 'generate' || selectedFeature.id === 'thumbnail') {
-      if (!referenceImage || sourceImages.length === 0) {
-        setError('Please upload both reference and source images');
+    if (selectedFeature.id === 'generate') {
+      if (sourceImages.length === 0) {
+        setError('Please upload at least one reference image');
         return;
       }
     } else if (selectedFeature.id === 'vid2vid') {
@@ -178,6 +170,12 @@ export default function GeneratePage() {
         setError('Please upload an image');
         return;
       }
+    }
+
+    if ((selectedFeature.id === 'img2vid' || selectedFeature.id === 'vid2vid') && !prompt?.trim()) {
+      setError('A prompt is required for video generation');
+      toast.error('A prompt is required for video generation');
+      return;
     }
 
     const creditCost = getDynamicCreditCost();
@@ -200,51 +198,32 @@ export default function GeneratePage() {
     try {
       let result;
 
-      if (selectedFeature.id === 'generate' || selectedFeature.id === 'thumbnail') {
-        // Upload reference image
-        const refFormData = new FormData();
-        refFormData.append('file', referenceImage!.file);
-        refFormData.append('bucket', 'reference-images');
-        
-        const refResponse = await fetch('/api/upload', {
-          method: 'POST',
-          body: refFormData,
-        });
-        
-        if (!refResponse.ok) throw new Error('Failed to upload reference image');
-        const { url: refUrl } = await refResponse.json();
-
-        // Upload source images
-        const sourceUrls = await Promise.all(
+      if (selectedFeature.id === 'generate') {
+        // Upload reference images (1-10)
+        const referenceUrls = await Promise.all(
           sourceImages.map(async (img) => {
             const formData = new FormData();
             formData.append('file', img.file);
-            formData.append('bucket', 'source-images');
+            formData.append('bucket', 'reference-images');
             
             const response = await fetch('/api/upload', {
               method: 'POST',
               body: formData,
             });
             
-            if (!response.ok) throw new Error('Failed to upload source image');
+            if (!response.ok) throw new Error('Failed to upload reference image');
             const { url } = await response.json();
             return url;
           })
         );
 
-        // Choose API endpoint based on feature
-        const apiEndpoint = selectedFeature.id === 'thumbnail' ? '/api/thumbnail' : '/api/generate';
-        
-        // Generate images
-        const generateResponse = await fetch(apiEndpoint, {
+        const generateResponse = await fetch('/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            referenceImage: refUrl,
-            sourceImages: sourceUrls,
-            prompt: selectedFeature.id === 'thumbnail' 
-              ? `Create an eye-catching, professional YouTube thumbnail. ${prompt || 'Make it vibrant and attention-grabbing with bold text and clear focal points.'}`
-              : prompt,
+            mode: 'generate',
+            referenceImages: referenceUrls,
+            prompt: prompt ?? '',
             model: selectedModel || 'nano-banana-pro',
           }),
         });
@@ -365,13 +344,12 @@ export default function GeneratePage() {
         if (!uploadResponse.ok) throw new Error('Failed to upload image');
         const { url: imageUrl } = await uploadResponse.json();
 
-        // Call appropriate API based on feature
-        const apiEndpoint = `/api/${selectedFeature.id}`;
-        const apiResponse = await fetch(apiEndpoint, {
+        const apiResponse = await fetch('/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            imageUrl,
+            mode: selectedFeature.id,
+            referenceImages: [imageUrl],
             prompt: selectedFeature.id === 'edit' ? prompt : undefined,
             model: selectedModel || 'nano-banana-pro',
           }),
@@ -398,8 +376,8 @@ export default function GeneratePage() {
     }
   };
 
-  const canGenerate = (selectedFeature.id === 'generate' || selectedFeature.id === 'thumbnail')
-    ? (referenceImage !== null && sourceImages.length > 0)
+  const canGenerate = (selectedFeature.id === 'generate')
+    ? (sourceImages.length > 0)
     : selectedFeature.id === 'vid2vid'
     ? (sourceVideo !== null)
     : (singleImage !== null);
@@ -493,31 +471,11 @@ export default function GeneratePage() {
         </div>
 
         {/* Upload Section - Dynamic based on feature */}
-        {(selectedFeature.id === 'generate' || selectedFeature.id === 'thumbnail') ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8 mb-6 sm:mb-8 lg:mb-12">
+        {(selectedFeature.id === 'generate') ? (
+          <div className="max-w-2xl mx-auto mb-6 sm:mb-8 lg:mb-12">
             <Card className="p-4 sm:p-6 border-[#c8b4a0]/20 bg-gradient-to-br from-[#1a1d18] to-[#2a2e26]">
               <h2 className="text-lg sm:text-xl font-light text-[#f8f7f5] mb-3 sm:mb-4 tracking-wide">
-                {selectedFeature.id === 'thumbnail' ? 'Reference Thumbnail' : 'Reference Image'}
-              </h2>
-              <ReferenceUpload 
-                onImageChange={setReferenceImage}
-                initialImage={referenceImage}
-                description={
-                  selectedFeature.id === 'thumbnail'
-                    ? 'Upload a reference thumbnail that defines the style and layout you want'
-                    : 'Upload a reference image that defines the style and composition you want'
-                }
-                title={
-                  selectedFeature.id === 'thumbnail'
-                    ? 'Upload Reference Thumbnail'
-                    : 'Upload Reference Image'
-                }
-              />
-            </Card>
-
-            <Card className="p-4 sm:p-6 border-[#c8b4a0]/20 bg-gradient-to-br from-[#1a1d18] to-[#2a2e26]">
-              <h2 className="text-lg sm:text-xl font-light text-[#f8f7f5] mb-3 sm:mb-4 tracking-wide">
-                Source Images (1-10)
+                Reference Images (1-10)
               </h2>
               <ImageUploadZone onImagesChange={setSourceImages} initialImages={sourceImages} />
             </Card>

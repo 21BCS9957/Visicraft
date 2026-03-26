@@ -11,12 +11,13 @@ const colorMap: Record<string, string> = {
 };
 
 const getEdgeColor = (sourceHandle?: string | null, targetHandle?: string | null): string => {
-    if (targetHandle === 'referenceImage' || targetHandle === 'sourceImage') return colorMap.reference;
+    if (targetHandle === 'referenceImage') return colorMap.reference;
     if (targetHandle === 'prompt') return colorMap.prompt;
     if (targetHandle === 'image') return colorMap.output;
     if (sourceHandle === 'image') return colorMap.image;
     if (sourceHandle === 'prompt') return colorMap.prompt;
     if (sourceHandle === 'generatedImage') return colorMap.output;
+    if (sourceHandle === 'generatedVideo') return '#a855f7';
     return colorMap.output;
 };
 

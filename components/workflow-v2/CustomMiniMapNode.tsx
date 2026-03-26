@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { useStore } from 'reactflow';
-import { Image as ImageIcon, Zap, MessageSquare, StickyNote, Play, Upload } from 'lucide-react';
+import { Image as ImageIcon, Zap, MessageSquare, StickyNote, Play, Upload, Clapperboard } from 'lucide-react';
 
 const NOTE_COLORS = [
     { name: 'Yellow', bg: '#fef3c7', border: '#fbbf24', text: '#78350f' },
@@ -24,12 +24,12 @@ export const CustomMiniMapNode = memo(({ x, y, width, height, id }: any) => {
                 <div style={{ width: width, height: height }}>
                     {type === 'import' && <ImportMiniNode data={data} />}
                     {type === 'generate' && <GenerateMiniNode data={data} />}
+                    {type === 'videoGenerate' && <VideoGenerateMiniNode data={data} />}
                     {type === 'prompt' && <PromptMiniNode data={data} />}
                     {type === 'note' && <NoteMiniNode data={data} />}
                     {type === 'output' && <OutputMiniNode data={data} />}
 
-                    {/* Fallback for unknown node types */}
-                    {!['import', 'generate', 'prompt', 'note', 'output'].includes(type) && (
+                    {!['import', 'generate', 'videoGenerate', 'prompt', 'note', 'output'].includes(type) && (
                         <div className="w-full h-full bg-[#1a1a1a]/90 backdrop-blur-sm border-2 border-[#2a2a2a] rounded-2xl flex items-center justify-center p-4">
                             <span className="text-white text-sm font-bold truncate pr-2">{data?.label || type}</span>
                         </div>
@@ -126,6 +126,57 @@ function GenerateMiniNode({ data }: { data: any }) {
                 )
             }
         </div >
+    );
+}
+
+function VideoGenerateMiniNode({ data }: { data: any }) {
+    const status = data.status || 'idle';
+    const result = data.generatedVideo;
+    const aspectRatio = data.aspectRatio || '16:9';
+
+    return (
+        <div className="w-full h-full bg-[#1a1a1a]/90 backdrop-blur-md border-2 border-[#2a2a2a]/80 rounded-2xl flex flex-col overflow-hidden box-border">
+            <div className="px-4 py-3 border-b border-[#2a2a2a]/80 flex items-center">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="2" y="4" width="20" height="16" rx="2" stroke="white" strokeWidth="2" />
+                            <path d="M2 8H22" stroke="white" strokeWidth="2" />
+                            <circle cx="5" cy="6" r="1" fill="white" />
+                            <circle cx="8" cy="6" r="1" fill="white" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 className="text-white font-semibold text-[14px] leading-tight m-0">Video Generate</h3>
+                        <p className="text-gray-500 text-[12px] leading-tight m-0">AI Video Generation</p>
+                    </div>
+                </div>
+            </div>
+            <div className="p-3 relative flex-1 min-h-0 flex flex-col">
+                {result ? (
+                    <video src={result} className="w-full h-full object-cover rounded flex-1 min-h-0" muted />
+                ) : (
+                    <div className="border border-dashed border-[#a855f7]/30 rounded flex-1 w-full h-full flex flex-col items-center justify-center min-h-0">
+                        <Clapperboard className="w-8 h-8 text-[#a855f7]/50 mb-2" />
+                        <span className="text-[12px] text-[#666666]">Video will appear here</span>
+                        <span className="text-[10px] text-[#444444] mt-1">{aspectRatio}</span>
+                    </div>
+                )}
+            </div>
+            <div className="px-3 pb-3">
+                <div className="w-full flex items-center justify-center gap-2 py-2 bg-[#a855f7]/10 border border-[#a855f7]/30 rounded text-[#a855f7] text-[12px] font-medium">
+                    <Play className="w-3 h-3" />
+                    Create Video
+                </div>
+            </div>
+            {status === 'complete' && (
+                <div className="px-3 pb-2">
+                    <div className="text-[12px] text-center py-1 rounded bg-green-500/10 text-green-500">
+                        ✓ Complete
+                    </div>
+                </div>
+            )}
+        </div>
     );
 }
 

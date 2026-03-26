@@ -10,6 +10,7 @@ import {
   Image,
   MessageSquare,
   Zap,
+  Clapperboard,
   Upload,
   FileImage,
 } from 'lucide-react';
@@ -37,9 +38,9 @@ const tools = [
 
 const nodeTypes = [
   { icon: Image, label: 'Reference', type: 'import', nodeType: 'reference', color: '#f97316' },
-  { icon: Image, label: 'Source', type: 'import', nodeType: 'source', color: '#3b82f6' },
   { icon: MessageSquare, label: 'Prompt', type: 'prompt', color: '#8b5cf6' },
   { icon: Zap, label: 'Generate', type: 'generate', color: '#ef4444' },
+  { icon: Clapperboard, label: 'Video Generate', type: 'videoGenerate', color: '#a855f7' },
   { icon: StickyNote, label: 'Note', type: 'note', color: '#fbbf24' },
 ];
 

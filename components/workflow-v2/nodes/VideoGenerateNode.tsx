@@ -3,18 +3,18 @@
 import { useState, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { Position, NodeProps, useReactFlow, NodeResizer } from 'reactflow';
-import { MoreVertical, Zap, Play, Loader2, Download, Copy, Trash2, RefreshCw, Maximize2, X } from 'lucide-react';
+import { MoreVertical, Play, Loader2, Download, Copy, Trash2, RefreshCw, Maximize2, X, Clapperboard } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from '@/lib/toast';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
-import { executeGeneration } from '@/lib/workflow/generateNode';
+import { executeVideoGeneration } from '@/lib/workflow/videoGenerateNode';
 import { collectReferenceImageUrls } from '@/lib/workflow/collectReferenceUrls';
 import { SmartHandle } from '../SmartHandle';
 import { useWorkflow } from '../WorkflowContext';
 
-export function GenerateNode({ data, selected, id }: NodeProps) {
+export function VideoGenerateNode({ data, selected, id }: NodeProps) {
   const router = useRouter();
   const { user } = useAuth();
   const { getNodes, getEdges } = useReactFlow();
@@ -25,42 +25,16 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
   const status = data.status || 'idle';
-  const result = data.generatedImage || null;
+  const result = data.generatedVideo || null;
   const isThisNodeProcessing = status === 'processing';
-  const aspectRatio = data.aspectRatio || '16:9';
+  const videoProgress = data.videoProgress || 0;
 
-  // Calculate preview height based on aspect ratio
-  const getPreviewHeight = (ratio: string) => {
-    const heightMap: Record<string, string> = {
-      '16:9': 'h-[169px]',   // 300px width * 9/16 = 169px
-      '1:1': 'h-[300px]',    // Square
-      '4:3': 'h-[225px]',    // 300px * 3/4 = 225px
-      '9:16': 'h-[533px]',   // 300px * 16/9 = 533px (vertical)
-      '21:9': 'h-[129px]',   // 300px * 9/21 = 129px (ultrawide)
-    };
-    return heightMap[ratio] || 'h-[180px]';
-  };
-
-  const previewHeight = getPreviewHeight(aspectRatio);
-
-  // Debug log to see when data changes
-  useEffect(() => {
-    console.log('🔄 GenerateNode data updated:', {
-      nodeId: id,
-      status,
-      hasResult: !!result,
-      resultPreview: result ? result.substring(0, 50) + '...' : 'none'
-    });
-  }, [id, status, result]);
-
-  // Close menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setShowMenu(false);
       }
     };
-
     if (showMenu) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -69,36 +43,31 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
 
   const handleDownload = async () => {
     if (!result) {
-      toast.error('No image to download');
+      toast.error('No video to download');
       return;
     }
-
     try {
-      // If it's a base64 data URL
       if (result.startsWith('data:')) {
         const link = document.createElement('a');
         link.href = result;
-        link.download = `thumbnail-${Date.now()}.png`;
+        link.download = `video-${Date.now()}.mp4`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        toast.success('Image downloaded!');
       } else {
-        // If it's a URL, fetch and download
         const response = await fetch(result);
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `thumbnail-${Date.now()}.png`;
+        link.download = `video-${Date.now()}.mp4`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
-        toast.success('Image downloaded!');
       }
-    } catch (error) {
-      console.error('Download failed:', error);
+      toast.success('Video downloaded!');
+    } catch {
       toast.error('Download failed');
     }
     setShowMenu(false);
@@ -108,25 +77,15 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     const nodes = getNodes();
     const edges = getEdges();
     const currentNode = nodes.find(n => n.id === id);
-
     if (!currentNode) return;
 
-    // Create new node with offset position
     const newNode = {
       ...currentNode,
-      id: `generate-${Date.now()}`,
-      position: {
-        x: currentNode.position.x + 50,
-        y: currentNode.position.y + 50,
-      },
-      data: {
-        ...currentNode.data,
-        status: 'idle',
-        generatedImage: null,
-      },
+      id: `videoGenerate-${Date.now()}`,
+      position: { x: currentNode.position.x + 50, y: currentNode.position.y + 50 },
+      data: { ...currentNode.data, status: 'idle', generatedVideo: null, videoProgress: 0 },
     };
 
-    // Duplicate incoming connections
     const incomingEdges = edges.filter(e => e.target === id);
     const newEdges = incomingEdges.map(edge => ({
       ...edge,
@@ -144,14 +103,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     setNodes((nds) =>
       nds.map((node) =>
         node.id === id
-          ? {
-            ...node,
-            data: {
-              ...node.data,
-              status: 'idle',
-              generatedImage: null,
-            },
-          }
+          ? { ...node, data: { ...node.data, status: 'idle', generatedVideo: null, videoProgress: 0 } }
           : node
       )
     );
@@ -160,12 +112,8 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
   };
 
   const handleDelete = () => {
-    // Remove node
     setNodes((nds) => nds.filter((node) => node.id !== id));
-
-    // Remove connected edges
     setEdges((eds) => eds.filter((edge) => edge.source !== id && edge.target !== id));
-
     toast.success('Node deleted!');
     setShowMenu(false);
   };
@@ -194,23 +142,24 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     });
 
     try {
-      await executeGeneration({
+      await executeVideoGeneration({
         nodeId: id,
         referenceImageUrls,
         promptText: actualPromptText,
-        model: data.model || 'nano-banana-pro',
+        model: data.model || 'veo-2.0-generate-001',
         aspectRatio: data.aspectRatio || '16:9',
-        resolution: data.resolution || '2K',
+        duration: data.duration || '5s',
+        resolution: data.resolution || '720p',
         updateNodeData,
         credits,
         deductCredits,
         addCredits,
         refreshCredits,
       });
-      toast.success('Amazing! Your image is ready', { id: `generate-${id}` });
+      toast.success('Video generated!', { id: `videogen-${id}` });
     } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Generation failed';
-      toast.error(msg, { id: `generate-${id}` });
+      const msg = error instanceof Error ? error.message : 'Video generation failed';
+      toast.error(msg, { id: `videogen-${id}` });
     }
   };
 
@@ -219,46 +168,30 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       initial={{ scale: 0.95, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       className={`
-        group
-        bg-[#1a1a1a]
-        border-2 border-[#2a2a2a]
-        rounded-2xl
-        shadow-xl
-        w-full
-        h-full
-        min-w-[320px]
-        min-h-[300px]
-        flex flex-col
-        overflow-hidden
-        transition-all
-        ${selected ? 'ring-2 ring-cyan-500/50 border-cyan-500/30' : ''}
+        group bg-[#1a1a1a] border-2 border-[#2a2a2a] rounded-2xl shadow-xl
+        w-full h-full min-w-[320px] min-h-[300px] flex flex-col overflow-hidden transition-all
+        ${selected ? 'ring-2 ring-purple-500/50 border-purple-500/30' : ''}
       `}
       style={{ cursor: 'default' }}
     >
-      {/* Node Resizer */}
       <NodeResizer
-        color="#06b6d4"
+        color="#a855f7"
         isVisible={selected}
         minWidth={320}
         minHeight={300}
-        handleStyle={{
-          width: 8,
-          height: 8,
-          borderRadius: 4,
-        }}
+        handleStyle={{ width: 8, height: 8, borderRadius: 4 }}
       />
+
       {/* Header */}
       <div className="px-4 py-3 border-b border-[#2a2a2a]">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shadow-lg">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M13 2L3 14H12L11 22L21 10H12L13 2Z" fill="white" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-lg">
+              <Clapperboard className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h3 className="text-white font-semibold text-sm">Generate</h3>
-              <p className="text-gray-500 text-xs">AI Image Generation</p>
+              <h3 className="text-white font-semibold text-sm">Video Generate</h3>
+              <p className="text-gray-500 text-xs">AI Video Generation</p>
             </div>
           </div>
           <div className="relative" ref={menuRef}>
@@ -269,7 +202,6 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
               <MoreVertical className="w-4 h-4" />
             </button>
 
-            {/* Dropdown Menu */}
             <AnimatePresence>
               {showMenu && (
                 <motion.div
@@ -285,9 +217,8 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Download className="w-4 h-4" />
-                    Download Image
+                    Download Video
                   </button>
-
                   <button
                     onClick={handleDuplicate}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors"
@@ -295,7 +226,6 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
                     <Copy className="w-4 h-4" />
                     Duplicate Node
                   </button>
-
                   <button
                     onClick={handleReset}
                     disabled={!result && status === 'idle'}
@@ -304,9 +234,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
                     <RefreshCw className="w-4 h-4" />
                     Reset Node
                   </button>
-
                   <div className="border-t border-[#2a2a2a]" />
-
                   <button
                     onClick={handleDelete}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-red-400 hover:bg-[#2a2a2a] transition-colors"
@@ -325,24 +253,15 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       <div className="p-3 relative flex-1 min-h-0 flex flex-col overflow-hidden">
         {result ? (
           <div className="relative flex-1 min-h-0 w-full rounded overflow-hidden">
-            <img
+            <video
               src={result}
-              alt="Generated"
+              controls
               className="absolute inset-0 w-full h-full object-cover cursor-pointer"
-              loading="lazy"
-              decoding="async"
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowFullscreen(true);
-              }}
+              onClick={(e) => { e.stopPropagation(); setShowFullscreen(true); }}
             />
-            {/* Fullscreen button overlay */}
             {!isThisNodeProcessing && (
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowFullscreen(true);
-                }}
+                onClick={(e) => { e.stopPropagation(); setShowFullscreen(true); }}
                 className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white p-2 rounded-lg opacity-0 hover:opacity-100 transition-opacity"
               >
                 <Maximize2 className="w-4 h-4" />
@@ -350,22 +269,31 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
             )}
           </div>
         ) : (
-          <div className="border border-dashed border-[#ef4444]/30 rounded flex-1 w-full h-full flex flex-col items-center justify-center min-h-[150px]">
-            <Zap className="w-8 h-8 text-[#ef4444]/50 mb-2" />
-            <span className="text-xs text-[#666666]">Result will appear here</span>
-            <span className="text-[10px] text-[#444444] mt-1">{aspectRatio}</span>
+          <div className="border border-dashed border-purple-500/30 rounded flex-1 w-full h-full flex flex-col items-center justify-center min-h-[150px]">
+            <Clapperboard className="w-8 h-8 text-purple-500/50 mb-2" />
+            <span className="text-xs text-[#666666]">Video will appear here</span>
           </div>
         )}
 
-        {/* Loading overlay when this node is generating */}
         {isThisNodeProcessing && (
-          <div className="absolute inset-0 bg-black/70 flex items-center justify-center rounded">
+          <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center rounded gap-3">
             <motion.div
               animate={{ rotate: 360 }}
               transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
             >
-              <Zap className="w-8 h-8 text-[#ef4444]" />
+              <Clapperboard className="w-8 h-8 text-purple-400" />
             </motion.div>
+            {videoProgress > 0 && (
+              <div className="w-3/4">
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-purple-500 to-indigo-400 transition-all duration-500"
+                    style={{ width: `${videoProgress}%` }}
+                  />
+                </div>
+                <p className="text-center text-[10px] text-purple-300 mt-1">{videoProgress}%</p>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -381,7 +309,6 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
             style={{ zIndex: 99999999 }}
             onClick={() => setShowFullscreen(false)}
           >
-            {/* Close button */}
             <button
               onClick={() => setShowFullscreen(false)}
               className="fixed top-8 right-8 text-white hover:text-gray-300 transition-colors bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full p-3 border border-white/20"
@@ -389,49 +316,46 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
             >
               <X className="w-6 h-6" />
             </button>
-
-            {/* Image - centered with padding */}
-            <motion.img
+            <motion.video
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               src={result}
-              alt="Generated - Fullscreen"
-              className="max-w-[85vw] max-h-[85vh] w-auto h-auto object-contain rounded-lg shadow-2xl"
+              controls
+              autoPlay
+              className="max-w-[85vw] max-h-[85vh] w-auto h-auto rounded-lg shadow-2xl"
               style={{ zIndex: 100000000 }}
               onClick={(e) => e.stopPropagation()}
             />
-
-            {/* Download button */}
             <button
               onClick={handleDownload}
-              className="fixed bottom-8 right-8 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 transition-all shadow-2xl border border-white/20"
+              className="fixed bottom-8 right-8 bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 transition-all shadow-2xl border border-white/20"
               style={{ zIndex: 100000001 }}
             >
               <Download className="w-5 h-5" />
-              Download Image
+              Download Video
             </button>
           </motion.div>
         </AnimatePresence>,
         document.body
       )}
 
-      {/* Run Button — disabled when any generation is running (Create or Run Selected) */}
+      {/* Run Button */}
       <div className="px-3 pb-3">
         <button
           onClick={handleRun}
           disabled={isGenerationRunning}
-          className="w-full flex items-center justify-center gap-2 py-2 bg-[#ef4444]/10 hover:bg-[#ef4444]/20 border border-[#ef4444]/30 rounded text-[#ef4444] text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full flex items-center justify-center gap-2 py-2 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 rounded text-purple-400 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isThisNodeProcessing ? (
             <>
               <Loader2 className="w-3 h-3 animate-spin" />
-              Creating...
+              Generating...
             </>
           ) : (
             <>
               <Play className="w-3 h-3" />
-              Create
+              Create Video
             </>
           )}
         </button>
@@ -440,9 +364,9 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       {/* Status Badge */}
       {status !== 'idle' && status !== 'processing' && (
         <div className="px-3 pb-2">
-          <div className={`text-xs text-center py-1 rounded ${status === 'complete' ? 'bg-green-500/10 text-green-500' :
-            'bg-red-500/10 text-red-500'
-            }`}>
+          <div className={`text-xs text-center py-1 rounded ${
+            status === 'complete' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'
+          }`}>
             {status === 'complete' && '✓ Complete'}
             {status === 'error' && '✗ Error'}
           </div>
@@ -450,33 +374,11 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       )}
 
       {/* Input Handles */}
-      <SmartHandle
-        nodeId={id}
-        handleId="referenceImage"
-        handleType="reference"
-        type="target"
-        position={Position.Left}
-        style={{ top: '35%' }}
-      />
-
-      <SmartHandle
-        nodeId={id}
-        handleId="prompt"
-        handleType="prompt"
-        type="target"
-        position={Position.Left}
-        style={{ top: '65%' }}
-      />
+      <SmartHandle nodeId={id} handleId="referenceImage" handleType="reference" type="target" position={Position.Left} style={{ top: '35%' }} />
+      <SmartHandle nodeId={id} handleId="prompt" handleType="prompt" type="target" position={Position.Left} style={{ top: '65%' }} />
 
       {/* Output Handle */}
-      <SmartHandle
-        nodeId={id}
-        handleId="generatedImage"
-        handleType="output"
-        type="source"
-        position={Position.Right}
-        style={{ top: '50%' }}
-      />
+      <SmartHandle nodeId={id} handleId="generatedVideo" handleType="output" type="source" position={Position.Right} style={{ top: '50%' }} />
     </motion.div>
   );
 }

@@ -36,8 +36,7 @@ interface GeminiResponse {
 }
 
 export async function generateThumbnail(
-  referenceImage: string,
-  sourceImages: string[],
+  referenceImages: string[],
   prompt?: string,
   model?: string,
   aspectRatio?: string,
@@ -92,8 +91,7 @@ export async function generateThumbnail(
     console.log('📐 Aspect Ratio (API):', selectedAspectRatio);
     console.log('🎬 Resolution (UI):', resolution);
     console.log('🎬 Resolution (API):', selectedResolution);
-    console.log('🖼️  Reference image:', referenceImage.substring(0, 50) + '...');
-    console.log('📸 Source images count:', sourceImages.length);
+    console.log('🖼️  Input images count:', referenceImages.length);
     
     // Validate aspect ratio
     const validAspectRatios = ['16:9', '1:1', '4:3', '9:16'];
@@ -103,22 +101,18 @@ export async function generateThumbnail(
     
     console.log('🎨 ========================================');
     
-    // Download and convert images to base64
-    const referenceBase64 = await urlToBase64(referenceImage);
-    const sourceBase64Array = await Promise.all(
-      sourceImages.map(url => urlToBase64(url))
-    );
+    if (!referenceImages.length) {
+      throw new Error('At least one image URL is required');
+    }
 
-    // Build the prompt - use empty string if not provided (for reference image only)
+    const imageBase64List = await Promise.all(referenceImages.map((url) => urlToBase64(url)));
     const fullPrompt = prompt || '';
 
-    // Build request parts: prompt + all images
     const parts: GeminiPart[] = [
       { text: fullPrompt },
-      { inlineData: { mimeType: 'image/jpeg', data: referenceBase64 } },
-      ...sourceBase64Array.map(data => ({
-        inlineData: { mimeType: 'image/jpeg', data }
-      }))
+      ...imageBase64List.map((data) => ({
+        inlineData: { mimeType: 'image/jpeg', data },
+      })),
     ];
 
     const requestData: GeminiRequest = {

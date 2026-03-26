@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Obsidian Alchemist | Vision Generation Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .bg-grid-pattern {
+            background-image: linear-gradient(to right, rgba(77, 69, 60, 0.05) 1px, transparent 1px),
+                              linear-gradient(to bottom, rgba(77, 69, 60, 0.05) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+        .glass-panel {
+            background: rgba(28, 27, 27, 0.7);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #0e0e0e;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #353534;
+            border-radius: 10px;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "outline": "#9a8f84",
+                        "secondary-fixed": "#e4e2e1",
+                        "surface-tint": "#dfc29e",
+                        "primary-fixed": "#fcdeb8",
+                        "secondary-fixed-dim": "#c8c6c5",
+                        "secondary": "#c8c6c5",
+                        "secondary-container": "#474746",
+                        "on-tertiary-container": "#332918",
+                        "on-tertiary-fixed": "#231a0a",
+                        "tertiary-fixed-dim": "#d5c4aa",
+                        "on-error-container": "#ffdad6",
+                        "background": "#131313",
+                        "surface-dim": "#131313",
+                        "tertiary-container": "#9f9078",
+                        "inverse-surface": "#e5e2e1",
+                        "on-surface-variant": "#d1c4b8",
+                        "surface-container-high": "#2a2a2a",
+                        "on-secondary-fixed-variant": "#474746",
+                        "inverse-on-surface": "#313030",
+                        "on-surface": "#e5e2e1",
+                        "on-secondary": "#303030",
+                        "surface-bright": "#393939",
+                        "inverse-primary": "#715b3d",
+                        "primary": "#dfc29e",
+                        "on-primary-container": "#39280f",
+                        "on-background": "#e5e2e1",
+                        "error-container": "#93000a",
+                        "on-secondary-container": "#b7b5b4",
+                        "outline-variant": "#4d453c",
+                        "on-primary-fixed-variant": "#574328",
+                        "on-secondary-fixed": "#1b1c1c",
+                        "on-tertiary-fixed-variant": "#514531",
+                        "on-primary-fixed": "#281903",
+                        "on-primary": "#3f2d14",
+                        "on-error": "#690005",
+                        "surface-container-low": "#1c1b1b",
+                        "primary-fixed-dim": "#dfc29e",
+                        "surface-variant": "#353534",
+                        "surface-container-highest": "#353534",
+                        "primary-container": "#a88e6d",
+                        "surface": "#131313",
+                        "on-tertiary": "#392f1d",
+                        "error": "#ffb4ab",
+                        "tertiary-fixed": "#f2e0c5",
+                        "surface-container-lowest": "#0e0e0e",
+                        "tertiary": "#d5c4aa",
+                        "surface-container": "#201f1f"
+                    },
+                    fontFamily: {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+                },
+            },
+        }
+    </script>
+</head>
+<body class="bg-background text-on-surface font-body selection:bg-primary/30 custom-scrollbar">
+<!-- Top Navigation Bar -->
+<nav class="fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 bg-[#131313] border-b border-[#353534]/15 font-['Manrope'] tracking-tight">
+<div class="flex items-center gap-12">
+<span class="text-xl font-bold tracking-tighter text-[#dfc29e]">Obsidian Alchemist</span>
+<div class="hidden md:flex items-center gap-8">
+<a class="text-[#e5e2e1]/60 hover:text-[#e5e2e1] transition-colors duration-300" href="#">Home</a>
+<a class="text-[#e5e2e1]/60 hover:text-[#e5e2e1] transition-colors duration-300" href="#">Workflow</a>
+<a class="text-[#dfc29e] border-b-2 border-[#dfc29e] pb-1 font-bold" href="#">Generate</a>
+<a class="text-[#e5e2e1]/60 hover:text-[#e5e2e1] transition-colors duration-300" href="#">Pricing</a>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 text-[#e5e2e1]/60 hover:bg-[#353534]/50 rounded-full transition-colors">
+<span class="material-symbols-outlined">account_balance_wallet</span>
+</button>
+<button class="p-2 text-[#e5e2e1]/60 hover:bg-[#353534]/50 rounded-full transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="bg-[#dfc29e] text-[#39280f] px-4 py-1.5 rounded-lg font-bold text-sm hover:brightness-110 active:scale-95 transition-all">
+                Upgrade
+            </button>
+<div class="w-8 h-8 rounded-full overflow-hidden border border-outline-variant/30 ml-2">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="Close up portrait of a stylized digital avatar with modern aesthetic" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBjp1jkNSGw2mggEq1PVlWrhI_AsjZJD7Y4xEDvN7wSyJZo32DwVib5YL2_PxJYlmAI1PQuY1PG3UOtVw9OjqNi_IJoTcEHA4LPchWPFj8a72j3eZndbhsaVEed_QyJm4ZT5z4hPj8vuRmXVyt3mO8k7MdUM0SyiVeFOuQzJUsJtOn5l21aJ72mZrdJcYaZvuuSsgPiR3DzmnvuM0qiiczrVMv2Va80Vo1ORN_p2isT5qMIsDTz86fTItXpb32sgHtFWfsprm5-PdL5"/>
+</div>
+</div>
+</nav>
+<!-- Side Navigation Bar -->
+<aside class="fixed left-0 top-0 h-full flex flex-col py-8 z-40 bg-[#0e0e0e] w-64 shadow-2xl shadow-black pt-24">
+<div class="px-6 mb-8">
+<div class="flex items-center gap-3 mb-1">
+<div class="w-8 h-8 rounded bg-primary/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-sm">auto_awesome</span>
+</div>
+<div>
+<h3 class="text-xs font-black uppercase tracking-widest text-[#dfc29e]">Alchemist AI</h3>
+<p class="text-[10px] text-on-surface/40">1,250 Credits</p>
+</div>
+</div>
+</div>
+<nav class="flex-1 px-4 space-y-1">
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-[#e5e2e1]/50 hover:bg-[#353534]/20 hover:text-[#dfc29e] transition-all group" href="#">
+<span class="material-symbols-outlined group-hover:scale-110 transition-transform">home</span>
+<span class="font-medium text-sm">Home</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-[#e5e2e1]/50 hover:bg-[#353534]/20 hover:text-[#dfc29e] transition-all group" href="#">
+<span class="material-symbols-outlined group-hover:scale-110 transition-transform">account_tree</span>
+<span class="font-medium text-sm">Workflow</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg bg-gradient-to-r from-[#dfc29e]/10 to-transparent text-[#dfc29e] border-l-4 border-[#dfc29e] group" href="#">
+<span class="material-symbols-outlined group-hover:scale-110 transition-transform">auto_awesome</span>
+<span class="font-medium text-sm">Generate</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-[#e5e2e1]/50 hover:bg-[#353534]/20 hover:text-[#dfc29e] transition-all group" href="#">
+<span class="material-symbols-outlined group-hover:scale-110 transition-transform">payments</span>
+<span class="font-medium text-sm">Pricing</span>
+</a>
+</nav>
+<div class="px-4 mt-auto space-y-1">
+<button class="w-full flex items-center justify-center gap-2 bg-surface-container-highest text-primary font-bold py-3 rounded-xl mb-4 hover:brightness-110 transition-all active:scale-98">
+<span class="material-symbols-outlined text-sm">add</span>
+<span class="text-sm">New Generation</span>
+</button>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-[#e5e2e1]/50 hover:bg-[#353534]/20 hover:text-[#dfc29e] transition-all group" href="#">
+<span class="material-symbols-outlined group-hover:scale-110 transition-transform">settings</span>
+<span class="font-medium text-sm">Settings</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-[#e5e2e1]/50 hover:bg-[#353534]/20 hover:text-[#dfc29e] transition-all group" href="#">
+<span class="material-symbols-outlined group-hover:scale-110 transition-transform">help</span>
+<span class="font-medium text-sm">Support</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-64 pt-16 min-h-screen bg-grid-pattern relative">
+<!-- Bronze Running Bar -->
+<div class="w-full bg-primary/90 py-2.5 overflow-hidden whitespace-nowrap border-y border-primary-container/20">
+<div class="flex animate-marquee">
+<span class="text-on-primary-container font-headline font-extrabold text-[10px] tracking-[0.2em] uppercase flex items-center gap-12 px-6">
+<span>10,000+ CREATORS TRUST OBSIDIAN</span>
+<span class="w-1.5 h-1.5 rounded-full bg-on-primary-container"></span>
+<span>ALCHEMIST v4.0 NOW LIVE</span>
+<span class="w-1.5 h-1.5 rounded-full bg-on-primary-container"></span>
+<span>UNLIMITED GENERATIONS FOR PRO USERS</span>
+<span class="w-1.5 h-1.5 rounded-full bg-on-primary-container"></span>
+<span>10,000+ CREATORS TRUST OBSIDIAN</span>
+<span class="w-1.5 h-1.5 rounded-full bg-on-primary-container"></span>
+<span>ALCHEMIST v4.0 NOW LIVE</span>
+<span class="w-1.5 h-1.5 rounded-full bg-on-primary-container"></span>
+</span>
+</div>
+</div>
+<section class="max-w-5xl mx-auto px-8 py-12 md:py-20 flex flex-col items-center">
+<!-- Hero Typography -->
+<div class="text-center mb-12">
+<h1 class="font-headline font-extrabold text-5xl md:text-7xl text-on-surface tracking-tighter mb-4">
+                    Master the <span class="text-primary italic">Art</span> of Alchemy
+                </h1>
+<p class="text-on-surface-variant/80 max-w-2xl mx-auto text-lg leading-relaxed">
+                    Transform your boldest ideas into cinematic visuals with the world's most advanced AI engine. Precision controlled, artistically inspired.
+                </p>
+</div>
+<!-- Sleek Prompt Box -->
+<div class="w-full max-w-3xl mx-auto glass-panel rounded-3xl p-4 shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-outline-variant/20 bg-gradient-to-b from-[#1c1b1b] to-[#131313]">
+<div class="flex flex-col">
+<!-- Text Input Area -->
+<div class="px-2 py-1">
+<textarea class="w-full bg-transparent border-none focus:ring-0 text-on-surface placeholder:text-on-surface-variant/40 text-lg font-medium resize-none custom-scrollbar min-h-[100px]" placeholder="How can I help you today?"></textarea>
+</div>
+<!-- Bottom Actions Row -->
+<div class="flex items-center justify-between mt-2 pt-2">
+<div class="flex items-center gap-2">
+<!-- Add Button -->
+<button class="w-10 h-10 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-highest transition-colors">
+<span class="material-symbols-outlined">add</span>
+</button>
+<!-- Voice Button -->
+<button class="w-10 h-10 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-highest transition-colors">
+<span class="material-symbols-outlined">mic</span>
+</button>
+<div class="h-4 w-[1px] bg-outline-variant/30 mx-1"></div>
+<!-- Model Selector -->
+<div class="relative group">
+<button class="flex items-center gap-2 bg-surface-container-low border border-outline-variant/10 px-3 py-1.5 rounded-full text-xs font-bold text-on-surface hover:bg-surface-container-highest transition-all">
+<span>3.1 Pro</span>
+<span class="material-symbols-outlined text-xs text-primary">expand_more</span>
+</button>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<!-- Magic/AI icon button -->
+<button class="p-2 text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-xl">auto_awesome</span>
+</button>
+<!-- Send Button -->
+<button class="bg-on-surface text-background w-10 h-10 rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all">
+<span class="material-symbols-outlined font-bold">arrow_upward</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Suggestions Grid (Bento Style) -->
+<div class="mt-16 w-full grid grid-cols-1 md:grid-cols-3 gap-6">
+<div class="md:col-span-2 group relative overflow-hidden rounded-3xl bg-surface-container-low p-8 border border-outline-variant/5 hover:bg-surface-container-high transition-colors">
+<div class="flex justify-between items-start mb-12">
+<span class="px-3 py-1 rounded-full bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-widest">Trending Workflow</span>
+<span class="material-symbols-outlined text-on-surface-variant">north_east</span>
+</div>
+<h3 class="font-headline text-3xl font-bold mb-2">Cinematic Neon Portraits</h3>
+<p class="text-on-surface-variant text-sm max-w-sm">Apply ultra-high detail cybernetic lighting with obsidian contrast rendering.</p>
+<div class="absolute -bottom-10 -right-10 w-64 h-64 opacity-20 group-hover:opacity-40 transition-opacity">
+<img alt="trending generation" class="w-full h-full object-cover rounded-full grayscale group-hover:grayscale-0 transition-all duration-700" data-alt="High-end cinematic portrait of a person in neon cybernetic environment with dramatic rim lighting and obsidian textures" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAi5ZbhtfDIUgTzyXwqjuvY3WLaBjOJ6g51r0RadayHKasRpmthz11_grpMn5-9eT4xakAZJXIRxvrZag1lvZAfbsKorfMMDE9dELp-GcgyYd1uY1mZwvx0LA-l0wAbu0rh_3h2350nsKC9zQM7CDavltb9nyYReneWNEyUAyFc9WjmdX9kVkn5dyjteCAGSBmhxhOx441S42oFFyMSwMfwI3pB5W2xhm9aFcSi-czb0RNSkfT7n7HsOy4RpHqENrOZrDAriEYf3Lag"/>
+</div>
+</div>
+<div class="group bg-surface-container-lowest rounded-3xl p-8 border border-outline-variant/5 flex flex-col justify-between hover:border-primary/20 transition-all">
+<div class="w-12 h-12 rounded-xl bg-surface-container-highest flex items-center justify-center mb-6 group-hover:text-primary transition-colors">
+<span class="material-symbols-outlined">history</span>
+</div>
+<div>
+<h4 class="font-headline font-bold mb-1">Recent Drafts</h4>
+<p class="text-on-surface-variant text-xs mb-4">Pick up where you left off with your last 12 generations.</p>
+<div class="flex -space-x-3 overflow-hidden">
+<div class="w-10 h-10 rounded-full border-2 border-surface-container-lowest bg-surface-container-high overflow-hidden">
+<img alt="draft" class="w-full h-full object-cover" data-alt="Microscopic view of golden crystalline structures growing on dark rock surface" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCj-kB83zrS_YJsweQ27sRIwfBqxsCF5nqrXMBi7GT-3D5VixurTuWhDs5Sg8pD8Uf3TMVWzbUrCDa3LCkB62JZUvdAy9EgHydZ1ekxDOWaCj-VoIXSCZOqajbZRIHAsUgK16oKnmkEJSmNW1RfsgZLw0mLx79FWmiOtsjcaQSQvQf_Cn2iet7l1d4eoDqWU7vS73udh9lce08XkAGkGK_tiYwZkoFYHr5FCkmWETjWGBXBT_QnDfM97m1Girh8e3tS8AhR4J9wy8Z_"/>
+</div>
+<div class="w-10 h-10 rounded-full border-2 border-surface-container-lowest bg-surface-container-high overflow-hidden">
+<img alt="draft" class="w-full h-full object-cover" data-alt="Abstract fluid simulation with swirling bronze and black liquids" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCo8MdQNMy0wySjeD_e61MDDDzYYAwlF2WdS9ow_aJXIPxmfDdrlz3csHq1XgHNCHtIgGNeCpG2tJkJjcofilnQJ-NyxNMsF1L0aP1MSCQW5COG7kIMG7Tt09BqWrP1cIStY_w_ZsPvQX0xbdECDWKKaJxBV4VKXyEr8F2DiCEmOd5iqUUtLNwdk2IzBJ13A9QYkXrtaKlGTaBR8dMDx08MvLEyTvHBNpoupgQFaiq7q__tSWFLI8t5H_GwyEbFB0j9b2AbwoNwkAaw"/>
+</div>
+<div class="w-10 h-10 rounded-full border-2 border-surface-container-lowest bg-surface-container-high overflow-hidden">
+<img alt="draft" class="w-full h-full object-cover" data-alt="Architectural visualization of a modern dark minimalist villa at night" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBwKEmc6iozCeQmOzxbhn7jlxZJD9FeQO0doQT2vA7Xtk4A-zonBvKQvt39J3ikvlpP5REp1V50Q36mEQ89esBbOVmNbAOtHncedFR0kuEsyLZti1WSadHktg1R9vf96r9UHqhG1Ss00xRWXaxFYjGo6K_6rugxfdDaSPWfes-wrcwxdlkcwEbIBMJSw7Pk5JV-_wsZmafqNdKBuc4nr9DP6wcRajbCnNfQOofg8f9uzCJm1MhwDZ0sD54WYUz3QuRgf3DhkPIIECbO"/>
+</div>
+<div class="w-10 h-10 rounded-full border-2 border-surface-container-lowest bg-surface-container-high flex items-center justify-center text-[10px] font-bold text-primary">
+                                +9
+                            </div>
+</div>
+</div>
+</div>
+</div>
+<!-- Secondary Prompt Ideas -->
+<div class="mt-8 flex flex-wrap justify-center gap-3">
+<button class="bg-surface-container-high hover:bg-surface-container-highest text-on-surface-variant text-xs font-medium px-5 py-2.5 rounded-full transition-all border border-outline-variant/10">
+                    "Hyper-realistic obsidian sculpture of a lion"
+                </button>
+<button class="bg-surface-container-high hover:bg-surface-container-highest text-on-surface-variant text-xs font-medium px-5 py-2.5 rounded-full transition-all border border-outline-variant/10">
+                    "Floating golden islands in a stormy dark sea"
+                </button>
+<button class="bg-surface-container-high hover:bg-surface-container-highest text-on-surface-variant text-xs font-medium px-5 py-2.5 rounded-full transition-all border border-outline-variant/10">
+                    "Cyberpunk alchemist workshop, cinematic lighting"
+                </button>
+</div>
+</section>
+</main>
+<!-- Style for Marquee Animation -->
+<style>
+        @keyframes marquee {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+        .animate-marquee {
+            animation: marquee 30s linear infinite;
+            display: flex;
+            width: fit-content;
+        }
+    </style>
+</body></html>

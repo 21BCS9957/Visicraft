@@ -2,25 +2,20 @@ import { getCreditCost } from '@/lib/credits/calculator';
 
 /** Shared validation - used by Create, Run This Node, and Run Selected */
 export function validateGenerateNode(
-  referenceImageUrl: string | null,
-  sourceImageUrl: string | null,
+  referenceImageUrls: string[],
   promptText: string | null
 ): void {
-  if (!referenceImageUrl && !sourceImageUrl) {
-    throw new Error('Upload at least one image to generate');
+  if (referenceImageUrls.length === 0) {
+    throw new Error('Connect at least one reference image to generate');
   }
-  const hasOnlyOne =
-    (!!referenceImageUrl && !sourceImageUrl) ||
-    (!referenceImageUrl && !!sourceImageUrl);
-  if (hasOnlyOne && (!promptText || !String(promptText).trim())) {
-    throw new Error('Please provide a prompt when using only one image');
+  if (referenceImageUrls.length === 1 && (!promptText || !String(promptText).trim())) {
+    throw new Error('Please provide a prompt when using a single image');
   }
 }
 
 export interface GenerateNodeParams {
   nodeId: string;
-  referenceImageUrl: string | null;
-  sourceImageUrl: string | null;
+  referenceImageUrls: string[];
   promptText: string | null;
   model: string;
   aspectRatio: string;
@@ -39,8 +34,7 @@ export interface GenerateNodeParams {
 export async function executeGeneration(params: GenerateNodeParams): Promise<string> {
   const {
     nodeId,
-    referenceImageUrl,
-    sourceImageUrl,
+    referenceImageUrls,
     promptText,
     model,
     aspectRatio,
@@ -54,15 +48,11 @@ export async function executeGeneration(params: GenerateNodeParams): Promise<str
 
   const creditCost = deductCredits ? getCreditCost(model, resolution) : 0;
 
-  // --- Validation (same order for all three flows) ---
-
   if (deductCredits && credits !== undefined && credits < creditCost) {
     throw new Error(`Insufficient credits! Need ${creditCost}, have ${credits}`);
   }
 
-  validateGenerateNode(referenceImageUrl, sourceImageUrl, promptText);
-
-  // --- Credits ---
+  validateGenerateNode(referenceImageUrls, promptText);
 
   updateNodeData(nodeId, { status: 'processing' });
 
@@ -74,34 +64,21 @@ export async function executeGeneration(params: GenerateNodeParams): Promise<str
     }
   }
 
-  // --- Generate ---
-
   try {
-    const requestBody: any = {
-      prompt: promptText || '',
-      model,
-      aspectRatio,
-      resolution,
-    };
-
-    if (referenceImageUrl && sourceImageUrl) {
-      requestBody.referenceImage = referenceImageUrl;
-      requestBody.sourceImages = [sourceImageUrl];
-    } else if (sourceImageUrl) {
-      requestBody.referenceImage = sourceImageUrl;
-      requestBody.sourceImages = [sourceImageUrl];
-    } else if (referenceImageUrl) {
-      requestBody.referenceImage = referenceImageUrl;
-      requestBody.sourceImages = [referenceImageUrl];
-    }
-
     const response = await fetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
+      body: JSON.stringify({
+        mode: 'generate',
+        referenceImages: referenceImageUrls,
+        prompt: promptText || '',
+        model,
+        aspectRatio,
+        resolution,
+      }),
     });
 
-    let result;
+    let result: { error?: string; images?: string[] };
     try {
       result = await response.json();
     } catch {

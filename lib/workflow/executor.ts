@@ -2,11 +2,14 @@ import { WorkflowNode, WorkflowEdge } from '@/types/workflow';
 import { useWorkflowStore } from '@/lib/stores/workflowStore';
 import { getCreditCost } from '@/lib/credits/calculator';
 import { executeGeneration } from './generateNode';
+import { executeVideoGeneration } from './videoGenerateNode';
+
+type InputValue = string | string[] | null;
 
 interface DependencyGraph {
   [nodeId: string]: {
     node: WorkflowNode;
-    inputs: { [handleId: string]: string | null };
+    inputs: { [handleId: string]: InputValue };
     outputs: { [handleId: string]: any };
   };
 }
@@ -30,19 +33,22 @@ export async function executeWorkflow(
 
   const graph = buildDependencyGraph(nodes, edges);
 
-  const hasGenerate = nodes.some(n => n.type === 'generate');
+  const hasGenerate = nodes.some(n => n.type === 'generate' || n.type === 'videoGenerate');
   if (!hasGenerate) {
-    throw new Error('Workflow must have at least one Generate node');
+    throw new Error('Workflow must have at least one Generate or Video Generate node');
   }
 
-  // Pre-validate in SAME order as Create (credits → image → prompt)
-  const generateNodes = nodes.filter(n => n.type === 'generate');
+  const VIDEO_CREDIT_COST = 120;
   let totalCreditCost = 0;
-  for (const n of generateNodes) {
+  for (const n of nodes) {
     const d = n.data as any;
-    totalCreditCost += getCreditCost(d?.model ?? 'nano-banana-pro', d?.resolution ?? '2K');
+    if (n.type === 'generate') {
+      totalCreditCost += getCreditCost(d?.model ?? 'nano-banana-pro', d?.resolution ?? '2K');
+    } else if (n.type === 'videoGenerate') {
+      totalCreditCost += VIDEO_CREDIT_COST;
+    }
   }
-  if (options?.deductCredits && options.credits !== undefined && options.credits < totalCreditCost) {
+  if (options?.deductCredits && options?.credits !== undefined && options.credits < totalCreditCost) {
     throw new Error(`Insufficient credits! Need ${totalCreditCost}, have ${options.credits}`);
   }
 
@@ -65,7 +71,13 @@ function buildDependencyGraph(nodes: WorkflowNode[], edges: WorkflowEdge[]): Dep
     const source = edge.source as string;
     const target = edge.target as string;
     const targetHandle = edge.targetHandle as string;
-    if (source && target && targetHandle) {
+    if (!source || !target || !targetHandle) return;
+
+    if (targetHandle === 'referenceImage') {
+      const prev = graph[target].inputs['referenceImage'];
+      const next: string[] = Array.isArray(prev) ? [...prev, source] : prev ? [prev as string, source] : [source];
+      graph[target].inputs['referenceImage'] = next;
+    } else {
       graph[target].inputs[targetHandle] = source;
     }
   });
@@ -77,13 +89,22 @@ function topologicalSort(graph: DependencyGraph, edges: WorkflowEdge[]): string[
   const visited = new Set<string>();
   const order: string[] = [];
 
+  function visitInputIds(value: InputValue) {
+    if (!value) return;
+    if (Array.isArray(value)) {
+      value.forEach(id => {
+        if (id) visit(id);
+      });
+    } else {
+      visit(value);
+    }
+  }
+
   function visit(nodeId: string) {
     if (visited.has(nodeId)) return;
     visited.add(nodeId);
     const nodeData = graph[nodeId];
-    Object.values(nodeData.inputs).forEach(sourceNodeId => {
-      if (sourceNodeId) visit(sourceNodeId);
-    });
+    Object.values(nodeData.inputs).forEach(visitInputIds);
     order.push(nodeId);
   }
 
@@ -108,8 +129,6 @@ async function executeNode(
         if (imageData.uploaded && imageData.supabaseUrl) {
           graph[node.id].outputs['image'] = imageData.supabaseUrl;
         }
-        // Don't throw — empty Import nodes are fine.
-        // executeGeneration validates if the Generate node has enough images.
         break;
       }
 
@@ -121,6 +140,10 @@ async function executeNode(
 
       case 'generate':
         await executeGenerateNode(node, graph, updateNodeData, options);
+        break;
+
+      case 'videoGenerate':
+        await executeVideoGenerateNode(node, graph, updateNodeData, options);
         break;
 
       case 'output':
@@ -142,12 +165,18 @@ async function executeGenerateNode(
   options?: ExecuteWorkflowOptions
 ) {
   const nodeData = graph[node.id];
-  const referenceImageNodeId = nodeData.inputs['referenceImage'];
-  const sourceImageNodeId = nodeData.inputs['sourceImage'];
-  const promptNodeId = nodeData.inputs['prompt'];
+  const refInput = nodeData.inputs['referenceImage'];
+  const refNodeIds: string[] = Array.isArray(refInput)
+    ? refInput
+    : refInput
+      ? [refInput as string]
+      : [];
+  const promptNodeId = nodeData.inputs['prompt'] as string | null;
 
-  const refUrl = referenceImageNodeId ? graph[referenceImageNodeId].outputs['image'] : null;
-  const srcUrl = sourceImageNodeId ? graph[sourceImageNodeId].outputs['image'] : null;
+  const referenceImageUrls = refNodeIds
+    .map(id => graph[id]?.outputs['image'])
+    .filter((u): u is string => typeof u === 'string' && u.length > 0);
+
   const prompt = promptNodeId ? graph[promptNodeId].outputs['prompt'] : null;
 
   const d = node.data as any;
@@ -157,8 +186,7 @@ async function executeGenerateNode(
 
   const generatedImageUrl = await executeGeneration({
     nodeId: node.id,
-    referenceImageUrl: refUrl,
-    sourceImageUrl: srcUrl,
+    referenceImageUrls,
     promptText: prompt,
     model,
     aspectRatio,
@@ -175,19 +203,65 @@ async function executeGenerateNode(
   graph[node.id].outputs['metadata'] = {};
 }
 
+async function executeVideoGenerateNode(
+  node: WorkflowNode,
+  graph: DependencyGraph,
+  updateNodeData: UpdateNodeDataFn,
+  options?: ExecuteWorkflowOptions
+) {
+  const nodeData = graph[node.id];
+  const refInput = nodeData.inputs['referenceImage'];
+  const refNodeIds: string[] = Array.isArray(refInput)
+    ? refInput
+    : refInput
+      ? [refInput as string]
+      : [];
+  const promptNodeId = nodeData.inputs['prompt'] as string | null;
+
+  const referenceImageUrls = refNodeIds
+    .map(id => graph[id]?.outputs['image'])
+    .filter((u): u is string => typeof u === 'string' && u.length > 0);
+
+  const prompt = promptNodeId ? graph[promptNodeId].outputs['prompt'] : null;
+
+  const d = node.data as any;
+  const model = d?.model ?? 'veo-2.0-generate-001';
+  const aspectRatio = d?.aspectRatio ?? '16:9';
+  const duration = d?.duration ?? '5s';
+  const resolution = d?.resolution ?? '720p';
+
+  const videoUrl = await executeVideoGeneration({
+    nodeId: node.id,
+    referenceImageUrls,
+    promptText: prompt,
+    model,
+    aspectRatio,
+    duration,
+    resolution,
+    updateNodeData,
+    credits: options?.credits,
+    deductCredits: options?.deductCredits,
+    addCredits: options?.addCredits,
+    refreshCredits: options?.refreshCredits,
+  });
+
+  graph[node.id].outputs['generatedVideo'] = videoUrl;
+  graph[node.id].outputs['image'] = videoUrl;
+}
+
 function executeOutputNode(
   node: WorkflowNode,
   graph: DependencyGraph,
   updateNodeData: UpdateNodeDataFn
 ) {
   const nodeData = graph[node.id];
-  const sourceNodeId = nodeData.inputs['image'];
+  const sourceNodeId = nodeData.inputs['image'] as string | null;
   if (!sourceNodeId) {
     throw new Error('Output node has no input connected');
   }
-  const imageUrl = graph[sourceNodeId].outputs['generatedImage'];
+  const imageUrl = graph[sourceNodeId].outputs['generatedImage'] || graph[sourceNodeId].outputs['generatedVideo'];
   if (!imageUrl) {
-    throw new Error('No generated image available');
+    throw new Error('No generated image or video available');
   }
   updateNodeData(node.id, {
     images: [imageUrl],

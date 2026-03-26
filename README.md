@@ -7,7 +7,7 @@ Transform your creative workflow with AI-powered image generation. Create stunni
 - 🎨 **Visual Workflow Editor** - Drag-and-drop node-based interface with full zoom controls
 - 🎬 **Animated Showcase** - GSAP-powered scroll animations demonstrating the workflow
 - 🤖 **AI Generation** - Powered by Google Gemini & Banana Pro
-- 📦 **Advanced Templates** - Pre-built workflows for common use cases
+- 📦 **Blank workflow canvas** - Node-based editor; connect multiple reference images to Generate
 - 💳 **Credits System** - Pay-as-you-go pricing with flexible plans
 - 🔐 **Secure Authentication** - Powered by Supabase
 - 💰 **Payment Integration** - Razorpay for seamless transactions
@@ -45,15 +45,6 @@ Visit http://localhost:3000
 - **File Manager**: Upload and manage images via Files button
 - **Auto-Zoom**: Canvas automatically fits view when adding nodes
 - **Smart Properties**: Panel won't reopen during generation
-
-### Template Library
-- **Product Showcase**: 5 product photography styles
-- **Viral Thumbnail Factory**: 4 emotion-driven thumbnails
-- **Brand Universe Explorer**: 7 aesthetic universes
-- **YouTube Thumbnail**: Optimized for video content
-- **Meta Ads**: Social media advertising
-- **Amazon Creative**: E-commerce product images
-- **Shopify Creative**: Online store visuals
 
 ## 🔧 Environment Variables
 
@@ -114,11 +105,11 @@ thumbnail-generator/
 - **Auto-Zoom**: Automatic view adjustment when adding nodes
 - **Smart Properties**: Context-aware property panels
 - **Real-time Execution**: Live workflow processing
-- **Template Library**: Pre-built workflow templates
+- **Multiple reference inputs**: Several reference nodes can connect to one Generate node
 - **Auto-Organize**: Automatic node layout
 
 ### Node Types
-- **Import Node**: Upload reference/source images (Orange/Blue)
+- **Import (Reference) Node**: Upload reference images (blue/orange styling)
 - **Prompt Node**: Add text descriptions (Purple)
 - **Generate Node**: AI image generation with settings (Red)
 - **Output Node**: Display and download results (Gray)
@@ -263,7 +254,7 @@ MIT License - see LICENSE file for details
 - UX psychology improvements
 - Payment flow enhancements
 - Production login fixes
-- Advanced workflow templates
+- Unified image generation API (`POST /api/generate`)
 
 ---
 

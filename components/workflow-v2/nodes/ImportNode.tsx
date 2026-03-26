@@ -12,14 +12,12 @@ import { useWorkflow } from '../WorkflowContext';
 export function ImportNode({ data, selected, id }: NodeProps) {
   const { getEdges, getNodes } = useReactFlow();
   const { updateNodeData, setNodes, setEdges } = useWorkflow();
-  // Prioritize supabaseUrl over imageUrl (template example)
   const [image, setImage] = useState<string | null>(data.supabaseUrl || data.imageUrl || null);
   const [imageLoading, setImageLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Update image when data changes (e.g., after restore from localStorage)
   useEffect(() => {
     const newImage = data.supabaseUrl || data.imageUrl || null;
     setImage(newImage);
@@ -28,8 +26,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
     }
   }, [data.supabaseUrl, data.imageUrl]);
 
-  // Determine node label based on data.nodeType or default to "Import"
-  const nodeLabel = data.nodeType === 'reference' ? 'Reference' : data.nodeType === 'source' ? 'Source' : 'Import';
+  const nodeLabel = 'Reference';
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -59,8 +56,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
       };
       reader.readAsDataURL(file);
 
-      // Upload to Supabase: reference-images for Reference nodes, source-images for Source nodes
-      const bucket = data.nodeType === 'reference' ? 'reference-images' : 'source-images';
+      const bucket = 'reference-images';
       const url = await uploadImage(file, bucket);
 
       console.log('🔵 [ImportNode] Upload complete, updating via context:', {
@@ -71,7 +67,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
 
       // Update this node's data via Canvas's React state (NOT useReactFlow)
       updateNodeData(id, {
-        imageUrl: null, // Clear template example image
+        imageUrl: null,
         uploaded: true,
         supabaseUrl: url,
       });
@@ -80,15 +76,11 @@ export function ImportNode({ data, selected, id }: NodeProps) {
       const edges = getEdges();
       const connectedEdges = edges.filter(edge => edge.source === id);
 
-      if (connectedEdges.length > 0) {
-        connectedEdges.forEach(edge => {
-          if (edge.targetHandle === 'referenceImage') {
-            updateNodeData(edge.target, { referenceImageUrl: url });
-          } else if (edge.targetHandle === 'sourceImage') {
-            updateNodeData(edge.target, { sourceImageUrl: url });
-          }
-        });
-      }
+      connectedEdges.forEach((edge) => {
+        if (edge.targetHandle === 'referenceImage') {
+          updateNodeData(edge.target, { referenceImageUrl: url });
+        }
+      });
 
       toast.success('Image uploaded!');
     } catch (error) {
@@ -97,7 +89,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
     } finally {
       setUploading(false);
     }
-  }, [id, updateNodeData, getEdges, data.nodeType]);
+  }, [id, updateNodeData, getEdges]);
 
   const handleDuplicate = () => {
     const nodes = getNodes();
@@ -207,7 +199,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
             </div>
             <div>
               <h3 className="text-white font-semibold text-sm">{nodeLabel}</h3>
-              <p className="text-gray-500 text-xs">{data.nodeType === 'reference' ? 'Reference Image' : 'Source Image'}</p>
+              <p className="text-gray-500 text-xs">Reference image</p>
             </div>
           </div>
           <div className="relative" ref={menuRef}>
