@@ -37,6 +37,9 @@ import toast from '@/lib/toast';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { useUndoRedo } from './useUndoRedo';
+import { motion } from 'framer-motion';
+import { MousePointer2, Lightbulb, Sparkles, Pencil, Combine } from 'lucide-react';
+import { NodeSelectorMenu } from './NodeSelectorMenu';
 
 const nodeTypes = {
   import: ImportNode,
@@ -113,8 +116,11 @@ function FlowCanvas() {
   const [gridVariant, setGridVariant] = useState<BackgroundVariant>(BackgroundVariant.Dots);
   const [showFilePanel, setShowFilePanel] = useState(false);
   const isMobile = useIsMobile();
+  
+  const [menuPosition, setMenuPosition] = useState<{ x: number, y: number, screenX: number, screenY: number } | null>(null);
 
   const isInitialLoadRef = useRef(true);
+  const lastPaneClickTimeRef = useRef(0);
   const nodesRef = useRef<Node[]>(nodes);
   const edgesRef = useRef<Edge[]>(edges);
 
@@ -365,6 +371,28 @@ function FlowCanvas() {
     toast.success('Nodes organized!');
   }, [setNodes]);
 
+  const handleAddPreset = useCallback((presetType: string) => {
+    const wrapper = reactFlowWrapper.current;
+    const center = reactFlowInstance.project({
+      x: wrapper ? wrapper.clientWidth / 2 : 400,
+      y: wrapper ? wrapper.clientHeight / 2 : 300,
+    });
+
+    if (presetType === 'prompt_idea') {
+      handleAddNode('prompt', { x: center.x - 125, y: center.y - 75 });
+    } else if (presetType === 'animate_image') {
+      handleAddNode('import', { x: center.x - 300, y: center.y - 75 }, 'reference');
+      setTimeout(() => handleAddNode('videoGenerate', { x: center.x + 50, y: center.y - 75 }), 50);
+    } else if (presetType === 'edit_image') {
+      handleAddNode('import', { x: center.x - 300, y: center.y - 75 }, 'reference');
+      setTimeout(() => handleAddNode('generate', { x: center.x + 50, y: center.y - 75 }), 50);
+    } else if (presetType === 'merge_styles') {
+      handleAddNode('import', { x: center.x - 300, y: center.y - 150 }, 'reference');
+      setTimeout(() => handleAddNode('import', { x: center.x - 300, y: center.y + 50 }, 'style'), 50);
+      setTimeout(() => handleAddNode('generate', { x: center.x + 100, y: center.y - 50 }), 100);
+    }
+  }, [handleAddNode, reactFlowInstance]);
+
   const handleNewBlankCanvas = useCallback(() => {
     clearHistory([], []);
     setNodes([]);
@@ -372,6 +400,25 @@ function FlowCanvas() {
     setSelectedNode(null);
     toast.success('New blank canvas');
   }, [clearHistory, setNodes, setEdges]);
+
+  const onPaneDoubleClick = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    const reactFlowBounds = reactFlowWrapper.current?.getBoundingClientRect();
+    if (!reactFlowBounds) return;
+
+    // Get position in ReactFlow units
+    const position = reactFlowInstance.project({
+      x: event.clientX - reactFlowBounds.left,
+      y: event.clientY - reactFlowBounds.top,
+    });
+
+    setMenuPosition({
+      x: position.x,
+      y: position.y,
+      screenX: event.clientX,
+      screenY: event.clientY
+    });
+  }, [reactFlowInstance]);
 
   return (
     <WorkflowContext.Provider value={workflowContextValue}>
@@ -411,6 +458,15 @@ function FlowCanvas() {
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
               onNodeClick={onNodeClick}
+              onPaneClick={(event) => {
+                const now = Date.now();
+                if (now - lastPaneClickTimeRef.current < 300) {
+                  onPaneDoubleClick(event as any);
+                } else {
+                  setMenuPosition(null);
+                }
+                lastPaneClickTimeRef.current = now;
+              }}
               nodeTypes={nodeTypes}
               edgeTypes={edgeTypes}
               fitView
@@ -473,6 +529,59 @@ function FlowCanvas() {
                 />
               )}
             </ReactFlow>
+
+            {/* Empty State Presets */}
+            {nodes.length === 0 && canvasReady && !menuPosition && (
+              <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center z-10 -mt-20">
+                <motion.div 
+                  initial={{ opacity: 0, y: 10, filter: 'blur(5px)' }}
+                  animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                  transition={{ delay: 0.1, duration: 0.4 }}
+                  className="flex flex-col items-center gap-6"
+                >
+                  <div className="flex items-center gap-2 text-gray-400 text-sm">
+                    <MousePointer2 className="w-4 h-4" />
+                    <span>Double click to add a new node, or select a preset...</span>
+                  </div>
+                  
+                  <div className="flex gap-4 pointer-events-auto">
+                    {[
+                      { id: 'prompt_idea', icon: <Lightbulb className="w-4 h-4" />, title: 'Get prompt idea', desc: 'Quick prompt suggestions.' },
+                      { id: 'animate_image', icon: <Sparkles className="w-4 h-4" />, title: 'Animate Image', desc: 'Add motion to your image.' },
+                      { id: 'edit_image', icon: <Pencil className="w-4 h-4" />, title: 'Edit Image', desc: 'Modify visual elements.' },
+                      { id: 'merge_styles', icon: <Combine className="w-4 h-4" />, title: 'Merge Styles', desc: 'Combine two artistic styles.' },
+                    ].map((preset, i) => (
+                      <motion.button
+                        key={preset.id}
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: 0.2 + i * 0.05, duration: 0.3 }}
+                        onClick={() => handleAddPreset(preset.id)}
+                        className="flex flex-col gap-1 p-4 rounded-2xl bg-[#111111] border border-white/5 hover:border-white/20 hover:bg-[#1a1a1a] transition-colors w-[240px] text-left group"
+                      >
+                        <div className="flex items-center gap-2 text-white font-medium text-[13px]">
+                          <span className="text-gray-400 group-hover:text-white transition-colors">{preset.icon}</span>
+                          {preset.title}
+                        </div>
+                        <div className="text-[11px] text-gray-500 font-normal mt-[2px] leading-snug">
+                          {preset.desc}
+                        </div>
+                      </motion.button>
+                    ))}
+                  </div>
+                </motion.div>
+              </div>
+            )}
+
+            {/* Node Selector Context Menu */}
+            <NodeSelectorMenu
+              isOpen={menuPosition !== null}
+              position={menuPosition ? { x: menuPosition.screenX, y: menuPosition.screenY } : null}
+              onClose={() => setMenuPosition(null)}
+              onSelect={(type, nodeType) => {
+                if (menuPosition) handleAddNode(type, { x: menuPosition.x, y: menuPosition.y }, nodeType);
+              }}
+            />
           </div>
 
           {!isMobile && (
