@@ -1,101 +1,55 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateThumbnail } from '@/lib/banana/api';
-import { supabase } from '@/lib/supabase/client';
-import { uploadFromDataUrl } from '@/lib/supabase/storage';
+import {
+  normalizeReferenceImages,
+  runImageGeneration,
+  type ImageGenMode,
+} from '@/lib/server/imageGeneration';
+
+const MODES: ImageGenMode[] = ['generate', 'thumbnail', 'edit', 'upscale', 'unblur'];
+
+function parseMode(raw: unknown): ImageGenMode {
+  if (typeof raw === 'string' && MODES.includes(raw as ImageGenMode)) {
+    return raw as ImageGenMode;
+  }
+  return 'generate';
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { 
-      referenceImage, 
-      sourceImages, 
-      prompt,
-      model,
-      aspectRatio,
-      resolution 
-    } = body;
+    const body = (await request.json()) as Record<string, unknown>;
+    const mode = parseMode(body.mode);
 
-    // Flexible validation: Need at least one image
-    if (!referenceImage && (!sourceImages || sourceImages.length === 0)) {
+    const referenceImages = normalizeReferenceImages(body);
+    if (referenceImages.length === 0) {
       return NextResponse.json(
-        { error: 'At least one image (reference or source) is required' },
+        { error: 'At least one image (referenceImages or legacy referenceImage/sourceImages/imageUrl) is required' },
         { status: 400 }
       );
     }
 
-    // Prompt is mandatory when using only one type of image
-    const hasReference = !!referenceImage;
-    const hasSource = sourceImages && sourceImages.length > 0;
-    
-    if ((hasReference && !hasSource) || (!hasReference && hasSource)) {
-      if (!prompt) {
-        return NextResponse.json(
-          { error: 'Please provide a prompt to describe what you want to generate' },
-          { status: 400 }
-        );
-      }
-    }
+    const prompt = typeof body.prompt === 'string' ? body.prompt : undefined;
+    const model = typeof body.model === 'string' ? body.model : undefined;
+    const aspectRatio = typeof body.aspectRatio === 'string' ? body.aspectRatio : undefined;
+    const resolution = typeof body.resolution === 'string' ? body.resolution : undefined;
 
-    console.log('🎨 ========================================');
-    console.log('🎨 GENERATION REQUEST RECEIVED');
-    console.log('🎨 ========================================');
-    console.log('🤖 Model:', model || 'nano-banana-pro (default)');
-    console.log('📐 Aspect Ratio:', aspectRatio || '16:9 (default)');
-    console.log('🎬 Resolution:', resolution || '1080p (default)');
-    console.log('💬 Prompt:', prompt?.substring(0, 50) || 'Using default prompt');
-    console.log('🖼️  Has Reference:', !!referenceImage);
-    console.log('📸 Has Source:', !!(sourceImages && sourceImages.length > 0));
-    console.log('🎨 ========================================');
-
-    // Generate thumbnails using Gemini API with selected parameters
-    const generatedThumbnailsDataUrls = await generateThumbnail(
-      referenceImage,
-      sourceImages,
+    const images = await runImageGeneration({
+      mode,
+      referenceImages,
       prompt,
       model,
       aspectRatio,
-      resolution
-    );
-
-    // Upload generated images to Supabase Storage and get public URLs (avoids storing base64 in DB/client/localStorage)
-    const generatedThumbnailsUrls = await Promise.all(
-      generatedThumbnailsDataUrls.map((dataUrl) =>
-        uploadFromDataUrl(dataUrl, 'generated-thumbnails')
-      )
-    );
-
-    // Save generation to database with URLs (not base64)
-    try {
-      const { error } = await supabase
-        .from('generations')
-        .insert({
-          reference_image_url: referenceImage,
-          source_images_urls: sourceImages,
-          generated_thumbnails: generatedThumbnailsUrls,
-          prompt: prompt || null,
-          model: model || 'nano-banana-pro',
-          aspect_ratio: aspectRatio || '16:9',
-          resolution: resolution || '2K',
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.warn('Database save failed (non-critical):', error);
-      }
-    } catch (dbError) {
-      console.warn('Database operation failed (non-critical):', dbError);
-    }
+      resolution,
+      persistToGenerationsTable: mode === 'generate',
+    });
 
     return NextResponse.json({
       success: true,
-      images: generatedThumbnailsUrls,
+      images,
     });
   } catch (error) {
     console.error('Generation error:', error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Generation failed' },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : 'Generation failed';
+    const status = message.includes('required') || message.includes('prompt') ? 400 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

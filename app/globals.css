@@ -120,6 +120,9 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    overflow-y: scroll;
+  }
   body {
     @apply bg-[#0a0a0a] text-[#e5e5e5];
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
@@ -181,6 +184,22 @@
   100% {
     transform: translate3d(-50%, 0, 0);
   }
+}
+
+/* Voice mic: outer ring scales in/out while listening */
+@keyframes mic-listen-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(0.9);
+  }
+}
+
+.animate-mic-listening {
+  animation: mic-listen-pulse 1.1s ease-in-out infinite;
+  will-change: transform;
 }
 
 .animate-word-appear {

@@ -25,8 +25,8 @@ const colorMap = {
 // Get edge color based on handle IDs
 const getEdgeColor = (sourceHandle?: string | null, targetHandle?: string | null): string => {
   // Check target handle first (more specific)
-  if (targetHandle === 'referenceImage' || targetHandle === 'sourceImage') {
-    return colorMap.reference; // Orange for image inputs
+  if (targetHandle === 'referenceImage') {
+    return colorMap.reference;
   } else if (targetHandle === 'prompt') {
     return colorMap.prompt; // Cyan for prompt
   } else if (targetHandle === 'image') {

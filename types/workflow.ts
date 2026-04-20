@@ -5,8 +5,9 @@ export type NodeType =
   | 'sourceImage' 
   | 'prompt' 
   | 'generate' 
+  | 'videoGenerate'
   | 'output'
-  | 'import'; // Added for v2 compatibility
+  | 'import';
 
 export type ExecutionStatus = 'idle' | 'running' | 'paused' | 'complete' | 'error';
 export type NodeStatus = 'idle' | 'processing' | 'complete' | 'error';

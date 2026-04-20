@@ -12,6 +12,8 @@ import { useCredits } from '@/lib/contexts/CreditsContext';
 import { useWorkflow } from './WorkflowContext';
 import { getCreditCost } from '@/lib/credits/calculator';
 import { executeGeneration } from '@/lib/workflow/generateNode';
+import { executeVideoGeneration } from '@/lib/workflow/videoGenerateNode';
+import { collectReferenceImageUrls } from '@/lib/workflow/collectReferenceUrls';
 
 interface PropertiesPanelProps {
   selectedNode: any;
@@ -77,61 +79,115 @@ const RESOLUTIONS = [
   { id: '720p', name: '720p (1280x720)', emoji: '📷' },
 ];
 
+const VIDEO_MODELS = [
+  {
+    id: 'veo-3.1-generate-001',
+    name: 'Google Veo 3.1',
+    provider: 'Google AI',
+    icon: 'simple-icons:google',
+    iconType: 'icon' as const,
+    color: '#4285F4',
+  },
+  {
+    id: 'veo-2.0-generate-001',
+    name: 'Google Veo 2.0',
+    provider: 'Google AI',
+    icon: 'simple-icons:google',
+    iconType: 'icon' as const,
+    color: '#4285F4',
+  },
+  {
+    id: 'veo-1.0',
+    name: 'Google Veo 1.0',
+    provider: 'Google AI',
+    icon: 'simple-icons:google',
+    iconType: 'icon' as const,
+    color: '#4285F4',
+  },
+  {
+    id: 'runway-gen3',
+    name: 'Runway Gen-3 Alpha',
+    provider: 'Runway AI',
+    icon: 'ph:video-camera-fill',
+    iconType: 'icon' as const,
+    color: '#000000',
+  },
+];
+
+const VIDEO_ASPECT_RATIOS = [
+  { id: '16:9', name: '16:9 (Landscape)', emoji: '⬜' },
+  { id: '9:16', name: '9:16 (Portrait)', emoji: '📱' },
+  { id: '1:1', name: '1:1 (Square)', emoji: '🟦' },
+];
+
+const VIDEO_DURATIONS = [
+  { id: '4s', name: '4 Seconds' },
+  { id: '6s', name: '6 Seconds' },
+  { id: '8s', name: '8 Seconds' },
+];
+
+const VIDEO_RESOLUTIONS = [
+  { id: '720p', name: '720p HD', emoji: '📷' },
+  { id: '1080p', name: '1080p Full HD', emoji: '🎥' },
+  { id: '4K', name: '4K Ultra HD', emoji: '🎬' },
+];
+
+const VIDEO_CREDIT_COST = 120;
+
 export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps) {
   const router = useRouter();
   const { user } = useAuth();
   const { setNodes, getNodes, getEdges } = useReactFlow();
-  const { updateNodeData: contextUpdateNodeData, createTemplateAwareUpdater, currentTemplate, isGenerationRunning } = useWorkflow();
+  const { updateNodeData: contextUpdateNodeData, isGenerationRunning } = useWorkflow();
   const { credits, deductCredits, refreshCredits, addCredits } = useCredits();
   
-  // Initialize with node data or defaults
-  const [selectedModel, setSelectedModel] = useState(selectedNode?.data?.model || 'nano-banana-pro');
+  const isVideoNode = selectedNode?.type === 'videoGenerate';
+
+  const defaultModel = isVideoNode ? 'veo-2.0-generate-001' : 'nano-banana-pro';
+  const defaultResolution = isVideoNode ? '720p' : '1080p';
+
+  const [selectedModel, setSelectedModel] = useState(selectedNode?.data?.model || defaultModel);
   const [selectedAspect, setSelectedAspect] = useState(selectedNode?.data?.aspectRatio || '16:9');
-  const [selectedResolution, setSelectedResolution] = useState(selectedNode?.data?.resolution || '1080p');
+  const [selectedResolution, setSelectedResolution] = useState(selectedNode?.data?.resolution || defaultResolution);
+  const [selectedDuration, setSelectedDuration] = useState(selectedNode?.data?.duration || '5s');
   
   const [showModelMenu, setShowModelMenu] = useState(false);
   const [showAspectMenu, setShowAspectMenu] = useState(false);
   const [showResolutionMenu, setShowResolutionMenu] = useState(false);
+  const [showDurationMenu, setShowDurationMenu] = useState(false);
   
   const modelRef = useRef<HTMLDivElement>(null);
   const aspectRef = useRef<HTMLDivElement>(null);
   const resolutionRef = useRef<HTMLDivElement>(null);
+  const durationRef = useRef<HTMLDivElement>(null);
 
-  // Sync state when selected node changes
   useEffect(() => {
     if (selectedNode?.data) {
-      setSelectedModel(selectedNode.data.model || 'nano-banana-pro');
+      const isVideo = selectedNode.type === 'videoGenerate';
+      setSelectedModel(selectedNode.data.model || (isVideo ? 'veo-2.0-generate-001' : 'nano-banana-pro'));
       setSelectedAspect(selectedNode.data.aspectRatio || '16:9');
-      setSelectedResolution(selectedNode.data.resolution || '1080p');
+      setSelectedResolution(selectedNode.data.resolution || (isVideo ? '720p' : '1080p'));
+      setSelectedDuration(selectedNode.data.duration || '5s');
     }
-  }, [selectedNode?.id, selectedNode?.data?.model, selectedNode?.data?.aspectRatio, selectedNode?.data?.resolution]);
+  }, [selectedNode?.id, selectedNode?.type, selectedNode?.data?.model, selectedNode?.data?.aspectRatio, selectedNode?.data?.resolution, selectedNode?.data?.duration]);
 
-  const creditCost = getCreditCost(selectedModel, selectedResolution);
+  const creditCost = isVideoNode ? VIDEO_CREDIT_COST : getCreditCost(selectedModel, selectedResolution);
   const hasEnoughCredits = credits >= creditCost;
-  // Single source of truth: node status from flow (Canvas passes live node). No local running state.
   const isGenerating = selectedNode?.data?.status === 'processing';
   const runDisabled = !user ? false : (!hasEnoughCredits || isGenerationRunning);
 
-  // Close menus when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (modelRef.current && !modelRef.current.contains(event.target as Node)) {
-        setShowModelMenu(false);
-      }
-      if (aspectRef.current && !aspectRef.current.contains(event.target as Node)) {
-        setShowAspectMenu(false);
-      }
-      if (resolutionRef.current && !resolutionRef.current.contains(event.target as Node)) {
-        setShowResolutionMenu(false);
-      }
+      if (modelRef.current && !modelRef.current.contains(event.target as Node)) setShowModelMenu(false);
+      if (aspectRef.current && !aspectRef.current.contains(event.target as Node)) setShowAspectMenu(false);
+      if (resolutionRef.current && !resolutionRef.current.contains(event.target as Node)) setShowResolutionMenu(false);
+      if (durationRef.current && !durationRef.current.contains(event.target as Node)) setShowDurationMenu(false);
     };
-
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Only show for Generate nodes - AFTER all hooks
-  if (!selectedNode || selectedNode.type !== 'generate') {
+  if (!selectedNode || (selectedNode.type !== 'generate' && selectedNode.type !== 'videoGenerate')) {
     return null;
   }
 
@@ -142,12 +198,21 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
     }
   };
 
+  const activeModels = isVideoNode ? VIDEO_MODELS : AI_MODELS;
+
   const handleModelSelect = (modelId: string) => {
     setSelectedModel(modelId);
     updateNodeData('model', modelId);
     setShowModelMenu(false);
-    const modelData = AI_MODELS.find(m => m.id === modelId);
+    const modelData = activeModels.find(m => m.id === modelId);
     toast.success(`Model: ${modelData?.name}`);
+  };
+
+  const handleDurationSelect = (durationId: string) => {
+    setSelectedDuration(durationId);
+    updateNodeData('duration', durationId);
+    setShowDurationMenu(false);
+    toast.success(`Duration: ${durationId}`);
   };
 
   const handleAspectSelect = (aspectId: string) => {
@@ -174,57 +239,64 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
       return;
     }
 
-    // Read latest nodes/edges to get connected images/prompt (same as GenerateNode's Create button)
     const currentNodes = getNodes();
     const currentEdges = getEdges();
-    const connectedToThis = currentEdges.filter((e) => e.target === selectedNode.id);
+    const referenceImageUrls = collectReferenceImageUrls(currentEdges, currentNodes, selectedNode.id);
 
-    let actualReferenceUrl: string | null = null;
-    let actualSourceUrl: string | null = null;
     let actualPromptText: string | null = null;
-
-    connectedToThis.forEach((edge) => {
+    currentEdges.forEach((edge) => {
+      if (edge.target !== selectedNode.id || edge.targetHandle !== 'prompt') return;
       const sourceNode = currentNodes.find((n) => n.id === edge.source);
-      if (!sourceNode) return;
-      if (edge.targetHandle === 'referenceImage') {
-        // Check for supabaseUrl (Import node) or generatedImage (Generate node)
-        actualReferenceUrl = sourceNode.data?.supabaseUrl || sourceNode.data?.generatedImage || null;
-      } else if (edge.targetHandle === 'sourceImage') {
-        // Check for supabaseUrl (Import node) or generatedImage (Generate node)
-        actualSourceUrl = sourceNode.data?.supabaseUrl || sourceNode.data?.generatedImage || null;
-      } else if (edge.targetHandle === 'prompt') {
-        actualPromptText = sourceNode.data?.text ?? null;
+      if (sourceNode?.data && 'text' in sourceNode.data) {
+        actualPromptText = (sourceNode.data as { text?: string }).text ?? null;
       }
     });
 
-    // Capture the template at the time of click so results persist even if user switches templates
-    const templateUpdater = createTemplateAwareUpdater(currentTemplate);
-
     try {
-      await executeGeneration({
-        nodeId: selectedNode.id,
-        referenceImageUrl: actualReferenceUrl,
-        sourceImageUrl: actualSourceUrl,
-        promptText: actualPromptText,
-        model: selectedModel,
-        aspectRatio: selectedAspect,
-        resolution: selectedResolution,
-        updateNodeData: templateUpdater,
-        credits,
-        deductCredits,
-        addCredits,
-        refreshCredits,
-      });
-      toast.success('Amazing! Your image is ready', { id: `generate-${selectedNode.id}` });
+      if (isVideoNode) {
+        await executeVideoGeneration({
+          nodeId: selectedNode.id,
+          referenceImageUrls,
+          promptText: actualPromptText,
+          model: selectedModel,
+          aspectRatio: selectedAspect,
+          duration: selectedDuration,
+          resolution: selectedResolution,
+          updateNodeData: (nodeId, data) => contextUpdateNodeData(nodeId, data),
+          credits,
+          deductCredits,
+          addCredits,
+          refreshCredits,
+        });
+        toast.success('Video generated!', { id: `generate-${selectedNode.id}` });
+      } else {
+        await executeGeneration({
+          nodeId: selectedNode.id,
+          referenceImageUrls,
+          promptText: actualPromptText,
+          model: selectedModel,
+          aspectRatio: selectedAspect,
+          resolution: selectedResolution,
+          updateNodeData: (nodeId, data) => contextUpdateNodeData(nodeId, data),
+          credits,
+          deductCredits,
+          addCredits,
+          refreshCredits,
+        });
+        toast.success('Amazing! Your image is ready', { id: `generate-${selectedNode.id}` });
+      }
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Generation failed';
       toast.error(msg, { id: `generate-${selectedNode.id}` });
     }
   };
 
-  const currentModelData = AI_MODELS.find(m => m.id === selectedModel);
-  const currentAspectData = ASPECT_RATIOS.find(a => a.id === selectedAspect);
-  const currentResolutionData = RESOLUTIONS.find(r => r.id === selectedResolution);
+  const currentModelData = activeModels.find(m => m.id === selectedModel);
+  const activeAspectRatios = isVideoNode ? VIDEO_ASPECT_RATIOS : ASPECT_RATIOS;
+  const activeResolutions = isVideoNode ? VIDEO_RESOLUTIONS : RESOLUTIONS;
+  const currentAspectData = activeAspectRatios.find(a => a.id === selectedAspect);
+  const currentResolutionData = activeResolutions.find(r => r.id === selectedResolution);
+  const currentDurationData = VIDEO_DURATIONS.find(d => d.id === selectedDuration);
 
   return (
     <motion.div
@@ -262,7 +334,7 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
         {/* Node Type */}
         <div className="bg-white/5 rounded-lg p-3">
           <p className="text-xs text-gray-400 mb-1">Node Type</p>
-          <p className="text-white font-medium">Generate Node</p>
+          <p className="text-white font-medium">{isVideoNode ? 'Video Generate Node' : 'Generate Node'}</p>
         </div>
 
         {/* Model Dropdown */}
@@ -310,7 +382,7 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
                 exit={{ opacity: 0, y: -10 }}
                 className="absolute top-full left-0 right-0 mt-2 bg-[#1a1a1a] border border-white/10 rounded-lg overflow-hidden shadow-xl z-20"
               >
-                {AI_MODELS.map((model) => (
+                {activeModels.map((model) => (
                   <button
                     key={model.id}
                     onClick={() => handleModelSelect(model.id)}
@@ -377,7 +449,7 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
                 exit={{ opacity: 0, y: -10 }}
                 className="absolute top-full left-0 right-0 mt-2 bg-[#1a1a1a] border border-white/10 rounded-lg overflow-hidden shadow-xl z-20"
               >
-                {ASPECT_RATIOS.map((aspect) => (
+                {activeAspectRatios.map((aspect) => (
                   <button
                     key={aspect.id}
                     onClick={() => handleAspectSelect(aspect.id)}
@@ -416,7 +488,7 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
                 exit={{ opacity: 0, y: -10 }}
                 className="absolute top-full left-0 right-0 mt-2 bg-[#1a1a1a] border border-white/10 rounded-lg overflow-hidden shadow-xl z-20"
               >
-                {RESOLUTIONS.map((resolution) => (
+                {activeResolutions.map((resolution) => (
                   <button
                     key={resolution.id}
                     onClick={() => handleResolutionSelect(resolution.id)}
@@ -432,6 +504,47 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
             )}
           </AnimatePresence>
         </div>
+
+        {/* Duration Dropdown — video nodes only */}
+        {isVideoNode && (
+          <div ref={durationRef} className="relative">
+            <label className="text-sm text-gray-400 mb-2 block">Duration</label>
+            <button
+              onClick={() => setShowDurationMenu(!showDurationMenu)}
+              className="w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-4 py-3 flex items-center justify-between transition-colors"
+            >
+              <span className="text-white flex items-center gap-2">
+                <span>⏱</span>
+                <span>{currentDurationData?.name || selectedDuration}</span>
+              </span>
+              <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showDurationMenu ? 'rotate-180' : ''}`} />
+            </button>
+
+            <AnimatePresence>
+              {showDurationMenu && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="absolute top-full left-0 right-0 mt-2 bg-[#1a1a1a] border border-white/10 rounded-lg overflow-hidden shadow-xl z-20"
+                >
+                  {VIDEO_DURATIONS.map((dur) => (
+                    <button
+                      key={dur.id}
+                      onClick={() => handleDurationSelect(dur.id)}
+                      className={`w-full px-4 py-3 text-left hover:bg-white/10 transition-colors flex items-center gap-2 ${
+                        selectedDuration === dur.id ? 'bg-white/5 text-purple-400' : 'text-white'
+                      }`}
+                    >
+                      <span>⏱</span>
+                      <span>{dur.name}</span>
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
 
         {/* Spacer to push credit cost and button to bottom */}
         <div className="flex-1 min-h-[100px]" />

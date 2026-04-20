@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 interface GenerationFormProps {
   onGenerate: (prompt?: string, selectedModel?: string) => Promise<void>;
   disabled: boolean;
-  featureMode?: 'generate' | 'thumbnail' | 'upscale' | 'unblur' | 'edit' | 'img2vid' | 'vid2vid';
+  featureMode?: 'generate' | 'upscale' | 'unblur' | 'edit' | 'img2vid' | 'vid2vid';
   defaultPrompt?: string;
   onPromptChange?: (value: string) => void;
   generationProgress?: number;
@@ -256,9 +256,7 @@ export function GenerationForm({
         <Textarea
           id="prompt"
           placeholder={
-            featureMode === 'thumbnail'
-              ? 'E.g., Add bold text "AMAZING!", Make it vibrant, Focus on the main subject...'
-              : featureMode === 'edit' 
+            featureMode === 'edit' 
               ? 'E.g., Change background to sunset, Add text "Sale", Remove watermark...'
               : featureMode === 'upscale'
               ? 'E.g., Enhance details, Preserve quality...'
@@ -375,7 +373,6 @@ export function GenerationForm({
             {statusMessage ? statusMessage : (
               <>
                 {featureMode === 'generate' && 'Generating...'}
-                {featureMode === 'thumbnail' && 'Creating Thumbnail...'}
                 {featureMode === 'upscale' && 'Upscaling...'}
                 {featureMode === 'unblur' && 'Enhancing...'}
                 {featureMode === 'edit' && 'Editing...'}
@@ -388,7 +385,6 @@ export function GenerationForm({
           <>
             <Sparkles className="mr-2 h-5 w-5" />
             {featureMode === 'generate' && 'Generate Image'}
-            {featureMode === 'thumbnail' && 'Generate Thumbnail'}
             {featureMode === 'upscale' && 'Upscale Image'}
             {featureMode === 'unblur' && 'Unblur & Enhance'}
             {featureMode === 'edit' && 'Edit Image'}
@@ -400,8 +396,8 @@ export function GenerationForm({
 
       {disabled && !isGenerating && (
         <p className="text-[#c8b4a0]/60 text-sm text-center">
-          {(featureMode === 'generate' || featureMode === 'thumbnail')
-            ? 'Please upload a reference image and at least one source image'
+          {(featureMode === 'generate')
+            ? 'Please upload at least one reference image'
             : featureMode === 'vid2vid'
             ? 'Please upload a video to continue'
             : 'Please upload an image to continue'

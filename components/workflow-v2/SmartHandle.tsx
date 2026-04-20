@@ -6,7 +6,7 @@ import { Handle, Position, useReactFlow, HandleProps } from 'reactflow';
 interface SmartHandleProps extends Omit<HandleProps, 'type'> {
   nodeId: string;
   handleId: string;
-  handleType: 'reference' | 'source' | 'prompt' | 'output' | 'image';
+  handleType: 'reference' | 'prompt' | 'output' | 'image';
   position: Position;
   type: 'source' | 'target';
   style?: CSSProperties;
