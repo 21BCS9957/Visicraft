@@ -23,44 +23,12 @@ interface PropertiesPanelProps {
 // AI Models with proper logos
 const AI_MODELS = [
   {
-    id: 'gpt-image',
-    name: 'GPT-4o Image',
-    provider: 'OpenAI',
-    icon: 'simple-icons:openai',
-    iconType: 'icon',
-    color: '#10A37F',
-  },
-  {
     id: 'nano-banana-pro',
     name: 'Nano Banana Pro',
     provider: 'Gemini 3 Pro',
     icon: 'emojione:banana',
     iconType: 'icon',
     color: '#FFD700',
-  },
-  {
-    id: 'midjourney',
-    name: 'Midjourney',
-    provider: 'Midjourney AI',
-    icon: 'https://logo.clearbit.com/midjourney.com',
-    iconType: 'image',
-    color: '#34D399',
-  },
-  {
-    id: 'google-imagen',
-    name: 'Google Imagen 4',
-    provider: 'Google AI',
-    icon: 'simple-icons:google',
-    iconType: 'icon',
-    color: '#4285F4',
-  },
-  {
-    id: 'flux-2-max',
-    name: 'Flux 2 Max',
-    provider: 'FLUX Models',
-    icon: 'ph:lightning-fill',
-    iconType: 'icon',
-    color: '#8b7355',
   },
 ];
 
@@ -164,12 +132,20 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
   useEffect(() => {
     if (selectedNode?.data) {
       const isVideo = selectedNode.type === 'videoGenerate';
-      setSelectedModel(selectedNode.data.model || (isVideo ? 'veo-2.0-generate-001' : 'nano-banana-pro'));
+      const models = isVideo ? VIDEO_MODELS : AI_MODELS;
+      const fallbackModel = isVideo ? 'veo-2.0-generate-001' : 'nano-banana-pro';
+      const nextModel = models.some((model) => model.id === selectedNode.data.model)
+        ? selectedNode.data.model
+        : fallbackModel;
+      setSelectedModel(nextModel);
+      if (selectedNode.data.model && selectedNode.data.model !== nextModel) {
+        contextUpdateNodeData(selectedNode.id, { model: nextModel });
+      }
       setSelectedAspect(selectedNode.data.aspectRatio || '16:9');
       setSelectedResolution(selectedNode.data.resolution || (isVideo ? '720p' : '1080p'));
       setSelectedDuration(selectedNode.data.duration || '5s');
     }
-  }, [selectedNode?.id, selectedNode?.type, selectedNode?.data?.model, selectedNode?.data?.aspectRatio, selectedNode?.data?.resolution, selectedNode?.data?.duration]);
+  }, [selectedNode?.id, selectedNode?.type, selectedNode?.data?.model, selectedNode?.data?.aspectRatio, selectedNode?.data?.resolution, selectedNode?.data?.duration, contextUpdateNodeData]);
 
   const creditCost = isVideoNode ? VIDEO_CREDIT_COST : getCreditCost(selectedModel, selectedResolution);
   const hasEnoughCredits = credits >= creditCost;

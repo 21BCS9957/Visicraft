@@ -23,44 +23,12 @@ interface GenerationFormProps {
 
 const AI_MODELS = [
   {
-    id: 'gpt-image',
-    name: 'GPT-4o Image',
-    provider: 'OpenAI',
-    icon: 'simple-icons:openai',
-    iconType: 'icon',
-    color: '#10A37F',
-  },
-  {
     id: 'nano-banana-pro',
     name: 'Nano Banana Pro',
     provider: 'Gemini 3 Pro Image',
     icon: 'emojione:banana',
     iconType: 'icon',
     color: '#FFD700',
-  },
-  {
-    id: 'midjourney',
-    name: 'Midjourney',
-    provider: 'Midjourney AI',
-    icon: 'https://logo.clearbit.com/midjourney.com',
-    iconType: 'image',
-    color: '#34D399',
-  },
-  {
-    id: 'google-imagen',
-    name: 'Google Imagen 4',
-    provider: 'Google AI',
-    icon: 'simple-icons:google',
-    iconType: 'icon',
-    color: '#4285F4',
-  },
-  {
-    id: 'flux-2-max',
-    name: 'Flux 2 Max',
-    provider: 'FLUX Models',
-    icon: 'ph:lightning-fill',
-    iconType: 'icon',
-    color: '#8b7355',
   },
 ];
 

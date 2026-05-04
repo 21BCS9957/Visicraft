@@ -204,7 +204,7 @@ export default function GeneratePage() {
           sourceImages.map(async (img) => {
             const formData = new FormData();
             formData.append('file', img.file);
-            formData.append('bucket', 'reference-images');
+            formData.append('bucket', 'source-images');
             
             const response = await fetch('/api/upload', {
               method: 'POST',

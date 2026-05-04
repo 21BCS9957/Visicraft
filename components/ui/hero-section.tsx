@@ -69,11 +69,7 @@ const FeatureCard = memo(({ icon: Icon, title, desc, delay }: { icon: any, title
 FeatureCard.displayName = 'FeatureCard';
 
 const IMAGE_MODELS = [
-  { id: 'gpt-image', name: 'GPT-4o Image' },
   { id: 'nano-banana-pro', name: 'Nano Banana Pro' },
-  { id: 'midjourney', name: 'Midjourney' },
-  { id: 'google-imagen', name: 'Google Imagen 4' },
-  { id: 'flux-2-max', name: 'Flux 2 Max' },
 ];
 
 const VIDEO_MODELS = [

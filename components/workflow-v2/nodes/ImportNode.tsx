@@ -4,7 +4,6 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { Position, NodeProps, useReactFlow, NodeResizer } from 'reactflow';
 import { MoreVertical, Upload, Image as ImageIcon, Copy, Trash2, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { uploadImage } from '@/lib/supabase/storage';
 import toast from '@/lib/toast';
 import { SmartHandle } from '../SmartHandle';
 import { useWorkflow } from '../WorkflowContext';
@@ -43,21 +42,41 @@ export function ImportNode({ data, selected, id }: NodeProps) {
   }, [showMenu]);
 
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.currentTarget;
     const file = e.target.files?.[0];
     if (!file) return;
 
     setUploading(true);
 
     try {
-      // Create preview
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setImage(event.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+      const previewUrl = URL.createObjectURL(file);
+      setImage(previewUrl);
+      setImageLoading(true);
+      updateNodeData(id, {
+        imageUrl: null,
+        uploaded: false,
+        supabaseUrl: null,
+      });
+      const connectedReferenceEdges = getEdges().filter(
+        (edge) => edge.source === id && edge.targetHandle === 'referenceImage'
+      );
+      connectedReferenceEdges.forEach((edge) => {
+        updateNodeData(edge.target, { referenceImageUrl: null });
+      });
 
-      const bucket = 'reference-images';
-      const url = await uploadImage(file, bucket);
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('bucket', 'source-images');
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      const result = await response.json().catch(() => ({})) as { url?: string; error?: string };
+      if (!response.ok || !result.url) {
+        throw new Error(result.error || 'Upload failed');
+      }
+      const url = result.url;
 
       console.log('🔵 [ImportNode] Upload complete, updating via context:', {
         nodeId: id,
@@ -73,20 +92,23 @@ export function ImportNode({ data, selected, id }: NodeProps) {
       });
 
       // Update connected Generate nodes
-      const edges = getEdges();
-      const connectedEdges = edges.filter(edge => edge.source === id);
-
-      connectedEdges.forEach((edge) => {
-        if (edge.targetHandle === 'referenceImage') {
-          updateNodeData(edge.target, { referenceImageUrl: url });
-        }
+      connectedReferenceEdges.forEach((edge) => {
+        updateNodeData(edge.target, { referenceImageUrl: url });
       });
 
       toast.success('Image uploaded!');
     } catch (error) {
-      toast.error('Upload failed');
+      setImage(null);
+      setImageLoading(false);
+      updateNodeData(id, {
+        imageUrl: null,
+        uploaded: false,
+        supabaseUrl: null,
+      });
+      toast.error(error instanceof Error ? error.message : 'Upload failed');
       console.error(error);
     } finally {
+      input.value = '';
       setUploading(false);
     }
   }, [id, updateNodeData, getEdges]);
