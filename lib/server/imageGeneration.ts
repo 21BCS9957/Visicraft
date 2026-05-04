@@ -1,5 +1,5 @@
 import { generateThumbnail } from '@/lib/banana/api';
-import { uploadFromDataUrl } from '@/lib/supabase/storage';
+import { uploadDataUrlToBucket } from '@/lib/server/supabaseStorage';
 import { supabase } from '@/lib/supabase/client';
 
 export type ImageGenMode = 'generate' | 'thumbnail' | 'edit' | 'upscale' | 'unblur';
@@ -91,7 +91,7 @@ export async function runImageGeneration(options: RunImageGenerationOptions): Pr
   const dataUrls = await generateThumbnail(referenceImages, effectivePrompt, model, aspectRatio, resolution);
 
   const publicUrls = await Promise.all(
-    dataUrls.map((dataUrl) => uploadFromDataUrl(dataUrl, 'generated-thumbnails'))
+    dataUrls.map((dataUrl) => uploadDataUrlToBucket(dataUrl, 'generated-thumbnails'))
   );
 
   if (persistToGenerationsTable) {

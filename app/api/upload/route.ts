@@ -1,52 +1,55 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { uploadBufferToBucket } from '@/lib/server/supabaseStorage';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const BUCKET_RULES: Record<string, { mimeTypes: Set<string>; maxSize: number }> = {
+  'source-images': {
+    mimeTypes: new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']),
+    maxSize: 5 * 1024 * 1024,
+  },
+  'source-video': {
+    mimeTypes: new Set(['video/mp4', 'video/webm', 'video/quicktime']),
+    maxSize: 50 * 1024 * 1024,
+  },
+};
 
-const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false
-  }
-});
+function parseBucket(raw: FormDataEntryValue | null): string {
+  return typeof raw === 'string' && raw in BUCKET_RULES ? raw : 'source-images';
+}
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const bucket = formData.get('bucket') as string || 'source-images';
+    const file = formData.get('file');
+    const bucket = parseBucket(formData.get('bucket'));
+    const rules = BUCKET_RULES[bucket];
 
-    if (!file || !file.name) {
+    if (!(file instanceof File) || !file.name) {
       return NextResponse.json(
         { error: 'No file provided' },
         { status: 400 }
       );
     }
 
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
+    if (!rules.mimeTypes.has(file.type)) {
+      return NextResponse.json(
+        { error: 'Unsupported file type' },
+        { status: 400 }
+      );
+    }
+
+    if (file.size > rules.maxSize) {
+      return NextResponse.json(
+        { error: `File is too large. Maximum size is ${Math.round(rules.maxSize / 1024 / 1024)}MB` },
+        { status: 400 }
+      );
+    }
     
     // We convert the API stream file into an ArrayBuffer buffer array for the pure Node supabase admin client
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+    const url = await uploadBufferToBucket(buffer, bucket, file.type);
 
-    const { error } = await supabaseAdmin.storage
-      .from(bucket)
-      .upload(fileName, buffer, {
-        contentType: file.type || 'application/octet-stream',
-        upsert: false
-      });
-
-    if (error) {
-      throw new Error(`Upload failed: ${error.message}`);
-    }
-
-    const { data } = supabaseAdmin.storage
-      .from(bucket)
-      .getPublicUrl(fileName);
-
-    return NextResponse.json({ url: data.publicUrl });
+    return NextResponse.json({ url });
   } catch (error) {
     console.error('Upload error:', error);
     return NextResponse.json(
