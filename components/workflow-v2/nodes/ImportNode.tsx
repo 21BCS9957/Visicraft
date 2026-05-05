@@ -57,6 +57,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
         imageUrl: null,
         uploaded: false,
         supabaseUrl: null,
+        uploadStatus: 'uploading',
       });
       const connectedReferenceEdges = getEdges().filter(
         (edge) => edge.source === id && edge.targetHandle === 'referenceImage'
@@ -82,6 +83,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
         imageUrl: null,
         uploaded: true,
         supabaseUrl: url,
+        uploadStatus: 'complete',
       });
 
       // Update connected Generate nodes
@@ -101,6 +103,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
         imageUrl: null,
         uploaded: false,
         supabaseUrl: null,
+        uploadStatus: 'error',
       });
       toast.error(error instanceof Error ? error.message : 'Upload failed');
       console.error(error);
@@ -154,6 +157,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
               imageUrl: null,
               uploaded: false,
               supabaseUrl: null,
+              uploadStatus: 'idle',
             },
           }
           : node

@@ -15,7 +15,17 @@ export function collectReferenceImageUrls(
     const sourceNode = nodes.find((n) => n.id === edge.source);
     if (!sourceNode?.data) continue;
     const d = sourceNode.data as Record<string, unknown>;
-    const url = (d.supabaseUrl || d.generatedImage || d.imageUrl) as string | undefined;
+    if (sourceNode.type === 'import' || sourceNode.type === 'referenceImage' || sourceNode.type === 'sourceImage') {
+      if (d.uploadStatus === 'uploading') {
+        throw new Error('Reference image is still uploading. Please wait for upload to finish before generating.');
+      }
+      if (d.uploaded !== true || typeof d.supabaseUrl !== 'string' || d.supabaseUrl.length === 0) {
+        continue;
+      }
+      urls.push(d.supabaseUrl);
+      continue;
+    }
+    const url = (d.generatedImage || d.imageUrl) as string | undefined;
     if (typeof url === 'string' && url.length > 0) urls.push(url);
   }
   return urls;

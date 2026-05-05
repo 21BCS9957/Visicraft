@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, X, Play, Loader2, Sparkles, AlertCircle } from 'lucide-react';
 import { Icon } from '@iconify/react';
-import { useReactFlow } from 'reactflow';
 import { AnimatePresence, motion } from 'framer-motion';
 import toast from '@/lib/toast';
 import { useRouter } from 'next/navigation';
@@ -105,8 +104,12 @@ const VIDEO_CREDIT_COST = 120;
 export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps) {
   const router = useRouter();
   const { user } = useAuth();
-  const { setNodes, getNodes, getEdges } = useReactFlow();
-  const { updateNodeData: contextUpdateNodeData, isGenerationRunning } = useWorkflow();
+  const {
+    updateNodeData: contextUpdateNodeData,
+    getLatestNodes,
+    getLatestEdges,
+    isGenerationRunning,
+  } = useWorkflow();
   const { credits, deductCredits, refreshCredits, addCredits } = useCredits();
   
   const isVideoNode = selectedNode?.type === 'videoGenerate';
@@ -215,8 +218,8 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
       return;
     }
 
-    const currentNodes = getNodes();
-    const currentEdges = getEdges();
+    const currentNodes = getLatestNodes();
+    const currentEdges = getLatestEdges();
     const referenceImageUrls = collectReferenceImageUrls(currentEdges, currentNodes, selectedNode.id);
 
     let actualPromptText: string | null = null;
