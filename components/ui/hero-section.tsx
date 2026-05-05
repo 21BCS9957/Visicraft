@@ -9,6 +9,7 @@ import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { getCreditCost } from '@/lib/credits/calculator';
 import { cn } from '@/lib/utils';
+import { uploadFileWithSignedUrl } from '@/lib/supabase/storage';
 
 const IMAGE_CREDIT_COST = 65;
 const VIDEO_CREDIT_COST = 120;
@@ -297,15 +298,7 @@ export function HeroSection() {
       setProgress(10);
 
       const imageUrls = await Promise.all(
-        uploadedImages.map(async (img) => {
-          const formData = new FormData();
-          formData.append('file', img.file);
-          formData.append('bucket', 'source-images');
-          const res = await fetch('/api/upload', { method: 'POST', body: formData });
-          if (!res.ok) throw new Error('Failed to upload image');
-          const { url } = await res.json();
-          return url as string;
-        })
+        uploadedImages.map((img) => uploadFileWithSignedUrl(img.file, 'source-images'))
       );
 
       setProgress(30);

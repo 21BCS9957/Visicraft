@@ -15,6 +15,7 @@ import { Icon } from '@iconify/react';
 import { ChevronDown } from 'lucide-react';
 import toast from '@/lib/toast';
 import { useRouter } from 'next/navigation';
+import { uploadFileWithSignedUrl } from '@/lib/supabase/storage';
 
 type FeatureMode = 'generate' | 'upscale' | 'unblur' | 'edit' | 'img2vid' | 'vid2vid';
 
@@ -201,20 +202,7 @@ export default function GeneratePage() {
       if (selectedFeature.id === 'generate') {
         // Upload reference images (1-10)
         const referenceUrls = await Promise.all(
-          sourceImages.map(async (img) => {
-            const formData = new FormData();
-            formData.append('file', img.file);
-            formData.append('bucket', 'source-images');
-            
-            const response = await fetch('/api/upload', {
-              method: 'POST',
-              body: formData,
-            });
-            
-            if (!response.ok) throw new Error('Failed to upload reference image');
-            const { url } = await response.json();
-            return url;
-          })
+          sourceImages.map((img) => uploadFileWithSignedUrl(img.file, 'source-images'))
         );
 
         const generateResponse = await fetch('/api/generate', {
@@ -237,17 +225,10 @@ export default function GeneratePage() {
       } else if (selectedFeature.id === 'img2vid' || selectedFeature.id === 'vid2vid') {
         const isVid2vid = selectedFeature.id === 'vid2vid';
         const fileToUpload = isVid2vid ? sourceVideo!.file : singleImage!.file;
-        const formData = new FormData();
-        formData.append('file', fileToUpload);
-        formData.append('bucket', isVid2vid ? 'source-video' : 'source-images');
-        
-        const uploadResponse = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        });
-        
-        if (!uploadResponse.ok) throw new Error(`Failed to upload ${isVid2vid ? 'video' : 'image'}`);
-        const { url: fileUrl } = await uploadResponse.json();
+        const fileUrl = await uploadFileWithSignedUrl(
+          fileToUpload,
+          isVid2vid ? 'source-video' : 'source-images'
+        );
 
         const apiEndpoint = `/api/${selectedFeature.id}`;
         
@@ -332,17 +313,7 @@ export default function GeneratePage() {
         }
       } else {
         // Upload single image for other operations
-        const formData = new FormData();
-        formData.append('file', singleImage!.file);
-        formData.append('bucket', 'source-images');
-        
-        const uploadResponse = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        });
-        
-        if (!uploadResponse.ok) throw new Error('Failed to upload image');
-        const { url: imageUrl } = await uploadResponse.json();
+        const imageUrl = await uploadFileWithSignedUrl(singleImage!.file, 'source-images');
 
         const apiResponse = await fetch('/api/generate', {
           method: 'POST',

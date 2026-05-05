@@ -4,7 +4,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 let supabaseAdmin: SupabaseClient | null = null;
 
-const MIME_EXTENSIONS: Record<string, string> = {
+export const MIME_EXTENSIONS: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/jpg': 'jpg',
   'image/png': 'png',
@@ -34,9 +34,35 @@ function getSupabaseAdmin(): SupabaseClient {
   return supabaseAdmin;
 }
 
-function fileNameForMimeType(mimeType: string): string {
+export function fileNameForMimeType(mimeType: string): string {
   const ext = MIME_EXTENSIONS[mimeType] ?? 'bin';
   return `${crypto.randomUUID()}.${ext}`;
+}
+
+export async function createSignedUploadTarget(
+  bucket: string,
+  contentType: string
+): Promise<{ path: string; token: string; publicUrl: string }> {
+  const path = fileNameForMimeType(contentType);
+  const { data, error } = await getSupabaseAdmin()
+    .storage
+    .from(bucket)
+    .createSignedUploadUrl(path);
+
+  if (error || !data?.token) {
+    throw new Error(`Failed to prepare upload: ${error?.message || 'missing upload token'}`);
+  }
+
+  const { data: publicData } = getSupabaseAdmin().storage.from(bucket).getPublicUrl(path);
+  if (!publicData.publicUrl) {
+    throw new Error('Failed to prepare upload: public URL was not returned');
+  }
+
+  return {
+    path,
+    token: data.token,
+    publicUrl: publicData.publicUrl,
+  };
 }
 
 export async function uploadBufferToBucket(

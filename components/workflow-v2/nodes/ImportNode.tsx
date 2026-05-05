@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { Position, NodeProps, useReactFlow, NodeResizer } from 'reactflow';
 import { MoreVertical, Upload, Image as ImageIcon, Copy, Trash2, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { uploadFileWithSignedUrl } from '@/lib/supabase/storage';
 import toast from '@/lib/toast';
 import { SmartHandle } from '../SmartHandle';
 import { useWorkflow } from '../WorkflowContext';
@@ -64,19 +65,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
         updateNodeData(edge.target, { referenceImageUrl: null });
       });
 
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('bucket', 'source-images');
-
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
-      const result = await response.json().catch(() => ({})) as { url?: string; error?: string };
-      if (!response.ok || !result.url) {
-        throw new Error(result.error || 'Upload failed');
-      }
-      const url = result.url;
+      const url = await uploadFileWithSignedUrl(file, 'source-images');
 
       console.log('🔵 [ImportNode] Upload complete, updating via context:', {
         nodeId: id,

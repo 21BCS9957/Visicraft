@@ -1,5 +1,41 @@
 import { supabase } from './client';
 
+export async function uploadFileWithSignedUrl(file: File, bucket: string): Promise<string> {
+  const signResponse = await fetch('/api/upload/sign', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      bucket,
+      contentType: file.type,
+      size: file.size,
+    }),
+  });
+
+  const signResult = await signResponse.json().catch(() => ({})) as {
+    path?: string;
+    token?: string;
+    publicUrl?: string;
+    error?: string;
+  };
+
+  if (!signResponse.ok || !signResult.path || !signResult.token || !signResult.publicUrl) {
+    throw new Error(signResult.error || 'Failed to prepare upload');
+  }
+
+  const { error } = await supabase.storage
+    .from(bucket)
+    .uploadToSignedUrl(signResult.path, signResult.token, file, {
+      contentType: file.type,
+      upsert: false,
+    });
+
+  if (error) {
+    throw new Error(`Upload failed: ${error.message}`);
+  }
+
+  return signResult.publicUrl;
+}
+
 export async function uploadImage(file: File, bucket: string): Promise<string> {
   const fileExt = file.name.split('.').pop();
   const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
