@@ -33,7 +33,11 @@ function uniqueUrlsInOrder(urls: string[]): string[] {
   return out;
 }
 
-function resolveEffectivePrompt(mode: ImageGenMode, prompt: string | undefined): string {
+function resolveEffectivePrompt(
+  mode: ImageGenMode,
+  prompt: string | undefined,
+  referenceCount: number
+): string {
   const p = (prompt ?? '').trim();
   switch (mode) {
     case 'thumbnail':
@@ -49,6 +53,10 @@ function resolveEffectivePrompt(mode: ImageGenMode, prompt: string | undefined):
         ? `Sharpen and deblur this image. ${p}`
         : 'Sharpen and deblur this image. Remove blur, enhance details, improve clarity and focus. Make the image crystal clear.';
     default:
+      if (referenceCount > 1) {
+        const instruction = `Use all ${referenceCount} attached reference images. Treat each reference as important input, preserve the key subject/style/details from every reference where possible, and do not ignore any attached reference image.`;
+        return p ? `${instruction}\n\nUser request: ${p}` : instruction;
+      }
       return p;
   }
 }
@@ -86,7 +94,7 @@ export async function runImageGeneration(options: RunImageGenerationOptions): Pr
     throw new Error('Please provide a prompt to describe what you want to generate');
   }
 
-  const effectivePrompt = resolveEffectivePrompt(mode, prompt);
+  const effectivePrompt = resolveEffectivePrompt(mode, prompt, referenceImages.length);
 
   const dataUrls = await generateThumbnail(referenceImages, effectivePrompt, model, aspectRatio, resolution);
 

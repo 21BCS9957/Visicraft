@@ -62,7 +62,11 @@ export function ImportNode({ data, selected, id }: NodeProps) {
         (edge) => edge.source === id && edge.targetHandle === 'referenceImage'
       );
       connectedReferenceEdges.forEach((edge) => {
-        updateNodeData(edge.target, { referenceImageUrl: null });
+        updateNodeData(edge.target, {
+          referenceImageUrl: null,
+          generatedImage: null,
+          status: 'idle',
+        });
       });
 
       const url = await uploadFileWithSignedUrl(file, 'source-images');
@@ -82,7 +86,11 @@ export function ImportNode({ data, selected, id }: NodeProps) {
 
       // Update connected Generate nodes
       connectedReferenceEdges.forEach((edge) => {
-        updateNodeData(edge.target, { referenceImageUrl: url });
+        updateNodeData(edge.target, {
+          referenceImageUrl: url,
+          generatedImage: null,
+          status: 'idle',
+        });
       });
 
       toast.success('Image uploaded!');

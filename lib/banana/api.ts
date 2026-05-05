@@ -105,12 +105,13 @@ export async function generateThumbnail(
     const imageBase64List = await Promise.all(referenceImages.map((url) => urlToBase64(url)));
     const fullPrompt = prompt || '';
 
-    const parts: GeminiPart[] = [
-      { text: fullPrompt },
-      ...imageBase64List.map((data) => ({
-        inlineData: { mimeType: 'image/jpeg', data },
-      })),
-    ];
+    const parts: GeminiPart[] = [{ text: fullPrompt }];
+    imageBase64List.forEach((data, index) => {
+      parts.push(
+        { text: `Reference image ${index + 1} of ${imageBase64List.length}:` },
+        { inlineData: { mimeType: 'image/jpeg', data } }
+      );
+    });
 
     const requestData: GeminiRequest = {
       contents: [{

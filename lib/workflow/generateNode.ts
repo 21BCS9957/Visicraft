@@ -54,7 +54,11 @@ export async function executeGeneration(params: GenerateNodeParams): Promise<str
 
   validateGenerateNode(referenceImageUrls, promptText);
 
-  updateNodeData(nodeId, { status: 'processing' });
+  updateNodeData(nodeId, {
+    status: 'processing',
+    referenceImagesUsed: referenceImageUrls,
+    referenceImageCount: referenceImageUrls.length,
+  });
 
   if (deductCredits) {
     const ok = await deductCredits(creditCost);
@@ -94,7 +98,12 @@ export async function executeGeneration(params: GenerateNodeParams): Promise<str
       throw new Error('No image returned from API');
     }
 
-    updateNodeData(nodeId, { generatedImage: generatedImageUrl, status: 'complete' });
+    updateNodeData(nodeId, {
+      generatedImage: generatedImageUrl,
+      status: 'complete',
+      referenceImagesUsed: referenceImageUrls,
+      referenceImageCount: referenceImageUrls.length,
+    });
 
     if (refreshCredits) await refreshCredits();
 
