@@ -220,7 +220,19 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
 
     const currentNodes = getLatestNodes();
     const currentEdges = getLatestEdges();
-    const referenceImageUrls = collectReferenceImageUrls(currentEdges, currentNodes, selectedNode.id);
+    let referenceImageUrls: string[];
+    try {
+      referenceImageUrls = collectReferenceImageUrls(currentEdges, currentNodes, selectedNode.id);
+    } catch (collectErr) {
+      const msg = collectErr instanceof Error ? collectErr.message : 'Reference collection failed';
+      toast.error(msg, { id: `generate-${selectedNode.id}` });
+      return;
+    }
+
+    toast.success(
+      `Generating with ${referenceImageUrls.length} reference image(s)`,
+      { id: `generate-info-${selectedNode.id}` }
+    );
 
     let actualPromptText: string | null = null;
     currentEdges.forEach((edge) => {

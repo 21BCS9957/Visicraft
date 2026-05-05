@@ -205,6 +205,8 @@ export default function GeneratePage() {
           sourceImages.map((img) => uploadFileWithSignedUrl(img.file, 'source-images'))
         );
 
+        console.log(`📎 Sending ${referenceUrls.length} reference image(s) to model:`, referenceUrls);
+
         const generateResponse = await fetch('/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -337,6 +339,14 @@ export default function GeneratePage() {
       setGeneratedThumbnails(result.images || []);
       await refreshCredits();
       toast.success(`✨ ${selectedFeature.name} complete!`);
+
+      sourceImages.forEach((img) => URL.revokeObjectURL(img.preview));
+      if (singleImage) URL.revokeObjectURL(singleImage.preview);
+      setSourceImages([]);
+      setSingleImage(null);
+      setReferenceImage(null);
+      setReferenceVideo(null);
+      setSourceVideo(null);
     } catch (err) {
       await addCredits(amountToDeduct);
       await refreshCredits();

@@ -28,5 +28,13 @@ export function collectReferenceImageUrls(
     const url = (d.generatedImage || d.imageUrl) as string | undefined;
     if (typeof url === 'string' && url.length > 0) urls.push(url);
   }
+
+  if (typeof window !== 'undefined') {
+    console.log(
+      `📎 [collectReferenceImageUrls] Generate node ${generateNodeId} -> ${urls.length} reference URL(s):`,
+      urls
+    );
+  }
+
   return urls;
 }

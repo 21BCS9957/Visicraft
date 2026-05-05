@@ -301,6 +301,8 @@ export function HeroSection() {
         uploadedImages.map((img) => uploadFileWithSignedUrl(img.file, 'source-images'))
       );
 
+      console.log(`📎 Sending ${imageUrls.length} reference image(s) to model:`, imageUrls);
+
       setProgress(30);
 
       if (generationMode === 'image') {
@@ -393,6 +395,9 @@ export function HeroSection() {
       }
 
       await refreshCredits();
+
+      uploadedImages.forEach((img) => URL.revokeObjectURL(img.preview));
+      setUploadedImages([]);
 
       setTimeout(() => {
         resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });

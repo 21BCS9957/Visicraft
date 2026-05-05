@@ -182,7 +182,19 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
 
     const currentNodes = getLatestNodes();
     const currentEdges = getLatestEdges();
-    const referenceImageUrls = collectReferenceImageUrls(currentEdges, currentNodes, id);
+    let referenceImageUrls: string[];
+    try {
+      referenceImageUrls = collectReferenceImageUrls(currentEdges, currentNodes, id);
+    } catch (collectErr) {
+      const msg = collectErr instanceof Error ? collectErr.message : 'Reference collection failed';
+      toast.error(msg, { id: `generate-${id}` });
+      return;
+    }
+
+    toast.success(
+      `Generating with ${referenceImageUrls.length} reference image(s)`,
+      { id: `generate-info-${id}` }
+    );
 
     let actualPromptText: string | null = null;
     currentEdges.forEach((edge) => {
