@@ -15,6 +15,7 @@ import ReactFlow, {
   ReactFlowProvider,
   ConnectionLineType,
   useReactFlow,
+  EdgeChange,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -37,7 +38,6 @@ import toast from '@/lib/toast';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { useUndoRedo } from './useUndoRedo';
-import { motion } from 'framer-motion';
 import { MousePointer2, Lightbulb, Sparkles, Pencil, Combine } from 'lucide-react';
 import { NodeSelectorMenu } from './NodeSelectorMenu';
 
@@ -98,7 +98,6 @@ function FlowCanvas() {
     redo,
     canUndo,
     canRedo,
-    takeSnapshot,
     trackChanges,
     clearHistory
   } = useUndoRedo([], [], setNodes, setEdges);
@@ -108,7 +107,10 @@ function FlowCanvas() {
   }, [nodes, edges, trackChanges, canvasReady]);
 
   const isGenerationRunning = React.useMemo(
-    () => nodes.some((n) => (n.type === 'generate' || n.type === 'videoGenerate') && (n.data as any)?.status === 'processing'),
+    () => nodes.some((n) => {
+      const data = n.data as { status?: unknown };
+      return (n.type === 'generate' || n.type === 'videoGenerate') && data.status === 'processing';
+    }),
     [nodes]
   );
   const [showGrid, setShowGrid] = useState(true);
@@ -124,11 +126,16 @@ function FlowCanvas() {
   const nodesRef = useRef<Node[]>(nodes);
   const edgesRef = useRef<Edge[]>(edges);
 
-  nodesRef.current = nodes;
-  edgesRef.current = edges;
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+
+  useEffect(() => {
+    edgesRef.current = edges;
+  }, [edges]);
 
   // updateNodeData: updates React state and ref so latest is available before next render
-  const updateNodeData = useCallback((nodeId: string, newData: Record<string, any>) => {
+  const updateNodeData = useCallback((nodeId: string, newData: Record<string, unknown>) => {
     setNodes((nds) => {
       const next = nds.map((node) =>
         node.id === nodeId
@@ -155,9 +162,6 @@ function FlowCanvas() {
   useEffect(() => {
     isInitialLoadRef.current = true;
     clearHistory([], []);
-    setNodes([]);
-    setEdges([]);
-    setSelectedNode(null);
     const t = window.setTimeout(() => {
       isInitialLoadRef.current = false;
       clearHistory(nodesRef.current, edgesRef.current);
@@ -165,10 +169,10 @@ function FlowCanvas() {
       toast.success('Blank canvas ready!');
     }, 150);
     return () => window.clearTimeout(t);
-  }, [setNodes, setEdges, clearHistory]);
+  }, [clearHistory]);
 
   // Custom edge change handler to clear node data when edges are deleted
-  const onEdgesChange = useCallback((changes: any[]) => {
+  const onEdgesChange = useCallback((changes: EdgeChange[]) => {
     // Handle edge deletions
     changes.forEach(change => {
       if (change.type === 'remove') {
@@ -209,7 +213,7 @@ function FlowCanvas() {
         target: params.target!,
         type: 'custom',
         animated: false,
-        style: { strokeWidth: 2 },
+        style: { strokeWidth: 2.75 },
       };
       setEdges((eds) => addEdge(newEdge, eds));
 
@@ -332,13 +336,17 @@ function FlowCanvas() {
 
     try {
       toast.loading('Executing workflow...', { id: 'workflow' });
-      await executeWorkflow(latestNodes as any, latestEdges, {
-        updateNodeData: (nodeId, newData) => updateNodeData(nodeId, newData as Record<string, any>),
-        credits,
-        deductCredits,
-        addCredits,
-        refreshCredits,
-      });
+      await executeWorkflow(
+        latestNodes as Parameters<typeof executeWorkflow>[0],
+        latestEdges as Parameters<typeof executeWorkflow>[1],
+        {
+          updateNodeData,
+          credits,
+          deductCredits,
+          addCredits,
+          refreshCredits,
+        }
+      );
       toast.success('Workflow completed!', { id: 'workflow' });
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Workflow failed';
@@ -461,7 +469,7 @@ function FlowCanvas() {
               onPaneClick={(event) => {
                 const now = Date.now();
                 if (now - lastPaneClickTimeRef.current < 300) {
-                  onPaneDoubleClick(event as any);
+                  onPaneDoubleClick(event);
                 } else {
                   setMenuPosition(null);
                 }
@@ -487,7 +495,7 @@ function FlowCanvas() {
               onlyRenderVisibleElements={false}
               nodeOrigin={[0.5, 0.5]}
               elevateNodesOnSelect={false}
-              elevateEdgesOnSelect={true}
+              elevateEdgesOnSelect={false}
               connectionLineStyle={{
                 stroke: '#06b6d4',
                 strokeWidth: 3,
@@ -533,12 +541,7 @@ function FlowCanvas() {
             {/* Empty State Presets */}
             {nodes.length === 0 && canvasReady && !menuPosition && (
               <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center z-10 -mt-20">
-                <motion.div 
-                  initial={{ opacity: 0, y: 10, filter: 'blur(5px)' }}
-                  animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                  transition={{ delay: 0.1, duration: 0.4 }}
-                  className="flex flex-col items-center gap-6"
-                >
+                <div className="flex flex-col items-center gap-6">
                   <div className="flex items-center gap-2 text-gray-400 text-sm">
                     <MousePointer2 className="w-4 h-4" />
                     <span>Double click to add a new node, or select a preset...</span>
@@ -550,12 +553,9 @@ function FlowCanvas() {
                       { id: 'animate_image', icon: <Sparkles className="w-4 h-4" />, title: 'Animate Image', desc: 'Add motion to your image.' },
                       { id: 'edit_image', icon: <Pencil className="w-4 h-4" />, title: 'Edit Image', desc: 'Modify visual elements.' },
                       { id: 'merge_styles', icon: <Combine className="w-4 h-4" />, title: 'Merge Styles', desc: 'Combine two artistic styles.' },
-                    ].map((preset, i) => (
-                      <motion.button
+                    ].map((preset) => (
+                      <button
                         key={preset.id}
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: 0.2 + i * 0.05, duration: 0.3 }}
                         onClick={() => handleAddPreset(preset.id)}
                         className="flex flex-col gap-1 p-4 rounded-2xl bg-[#111111] border border-white/5 hover:border-white/20 hover:bg-[#1a1a1a] transition-colors w-[240px] text-left group"
                       >
@@ -566,10 +566,10 @@ function FlowCanvas() {
                         <div className="text-[11px] text-gray-500 font-normal mt-[2px] leading-snug">
                           {preset.desc}
                         </div>
-                      </motion.button>
+                      </button>
                     ))}
                   </div>
-                </motion.div>
+                </div>
               </div>
             )}
 
