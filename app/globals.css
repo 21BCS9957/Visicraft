@@ -394,6 +394,150 @@ a:hover {
   transition: all 0.2s ease;
 }
 
+.workflow-node-card {
+  --node-accent: #8b8f98;
+  --node-accent-soft: rgba(139, 143, 152, 0.14);
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.018) 42%, rgba(255, 255, 255, 0.01)),
+    #111111 !important;
+  border: 1px solid rgba(255, 255, 255, 0.105) !important;
+  border-radius: 10px !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.085),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.035),
+    0 18px 48px rgba(0, 0, 0, 0.34),
+    0 2px 8px rgba(0, 0, 0, 0.26) !important;
+}
+
+.workflow-node-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 22% 0%, var(--node-accent-soft), transparent 38%),
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.045), transparent);
+  opacity: 0.85;
+}
+
+.workflow-node-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.workflow-node-card > .px-4.py-3 {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.075) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0));
+}
+
+.workflow-node-card .w-10.h-10.rounded-xl {
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 8px !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--node-accent) 26%, transparent), rgba(255, 255, 255, 0.035)) !important;
+  border: 1px solid color-mix(in srgb, var(--node-accent) 45%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 10px 22px color-mix(in srgb, var(--node-accent) 16%, transparent) !important;
+}
+
+.workflow-node-card h3 {
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+}
+
+.workflow-node-card h3 + p {
+  color: rgba(255, 255, 255, 0.42) !important;
+  font-size: 11px !important;
+}
+
+.workflow-node-card textarea,
+.workflow-node-card [class*="border-dashed"] {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012)),
+    rgba(0, 0, 0, 0.2) !important;
+  border: 1px solid rgba(255, 255, 255, 0.105) !important;
+  border-radius: 8px !important;
+}
+
+.workflow-node-card textarea {
+  color: rgba(255, 255, 255, 0.92) !important;
+  line-height: 1.55;
+}
+
+.workflow-node-card textarea::placeholder {
+  color: rgba(255, 255, 255, 0.28) !important;
+}
+
+.workflow-node-card > .px-3.pb-3 button {
+  border: 1px solid color-mix(in srgb, var(--node-accent) 34%, transparent) !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--node-accent) 19%, transparent), color-mix(in srgb, var(--node-accent) 8%, transparent)) !important;
+  color: color-mix(in srgb, var(--node-accent) 78%, white) !important;
+  border-radius: 8px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.workflow-node-card > .px-3.pb-3 button:hover {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--node-accent) 25%, transparent), color-mix(in srgb, var(--node-accent) 12%, transparent)) !important;
+}
+
+.workflow-node-import {
+  --node-accent: #5b8dff;
+  --node-accent-soft: rgba(91, 141, 255, 0.16);
+}
+
+.workflow-node-prompt {
+  --node-accent: #b18cff;
+  --node-accent-soft: rgba(177, 140, 255, 0.14);
+}
+
+.workflow-node-generate {
+  --node-accent: #ff8b6a;
+  --node-accent-soft: rgba(255, 139, 106, 0.14);
+}
+
+.workflow-node-video {
+  --node-accent: #a78bfa;
+  --node-accent-soft: rgba(167, 139, 250, 0.14);
+}
+
+.workflow-node-output {
+  --node-accent: #56d8a4;
+  --node-accent-soft: rgba(86, 216, 164, 0.14);
+}
+
+.workflow-note-card {
+  border-radius: 9px !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 18px 42px rgba(0, 0, 0, 0.28) !important;
+}
+
+.workflow-preset-card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.018)),
+    #101010 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 16px 36px rgba(0, 0, 0, 0.22);
+}
+
+.workflow-preset-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.026)),
+    #131313 !important;
+}
+
 /* Source handles (output) */
 .react-flow__handle-right {
   right: -6px; /* Half of width for perfect flush positioning */

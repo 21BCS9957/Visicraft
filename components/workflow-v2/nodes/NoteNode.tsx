@@ -117,6 +117,7 @@ export function NoteNode({ data, selected, id }: NodeProps) {
       initial={{ scale: 0.95, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       className={`
+        workflow-note-card
         group
         rounded-xl
         shadow-xl

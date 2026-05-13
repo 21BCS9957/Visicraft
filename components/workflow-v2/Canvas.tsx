@@ -655,7 +655,7 @@ function FlowCanvas() {
                       <button
                         key={preset.id}
                         onClick={() => handleAddPreset(preset.id)}
-                        className="flex flex-col gap-1 p-4 rounded-2xl bg-[#111111] border border-white/5 hover:border-white/20 hover:bg-[#1a1a1a] transition-colors w-[240px] text-left group"
+                        className="workflow-preset-card flex flex-col gap-1 p-4 rounded-lg bg-[#111111] border border-white/5 hover:border-white/20 hover:bg-[#1a1a1a] transition-colors w-[240px] text-left group"
                       >
                         <div className="flex items-center gap-2 text-white font-medium text-[13px]">
                           <span className="text-gray-400 group-hover:text-white transition-colors">{preset.icon}</span>

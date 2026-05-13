@@ -168,6 +168,7 @@ export function VideoGenerateNode({ data, selected, id }: NodeProps) {
       initial={{ scale: 0.95, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       className={`
+        workflow-node-card workflow-node-video
         group bg-[#1a1a1a] border-2 border-[#2a2a2a] rounded-2xl shadow-xl
         w-full h-full min-w-[320px] min-h-[300px] flex flex-col overflow-hidden transition-all
         ${selected ? 'ring-2 ring-purple-500/50 border-purple-500/30' : ''}

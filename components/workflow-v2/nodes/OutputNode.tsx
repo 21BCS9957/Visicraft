@@ -111,6 +111,7 @@ export function OutputNode({ data, selected, id }: NodeProps) {
       initial={{ scale: 0.95, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       className={`
+        workflow-node-card workflow-node-output
         group
         bg-[#1a1a1a]
         border-2 border-[#2a2a2a]

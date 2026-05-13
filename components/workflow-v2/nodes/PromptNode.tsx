@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Position, NodeProps, useReactFlow, NodeResizer } from 'reactflow';
-import { MoreVertical, MessageSquare, Copy, Trash2, RefreshCw } from 'lucide-react';
+import { MoreVertical, Copy, Trash2, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from '@/lib/toast';
 import { SmartHandle } from '../SmartHandle';
@@ -14,12 +14,6 @@ export function PromptNode({ data, selected, id }: NodeProps) {
   const [prompt, setPrompt] = useState(data.text || '');
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-
-  // Sync when data.text changes from outside (e.g. restore from localStorage)
-  useEffect(() => {
-    const external = data.text || '';
-    if (external !== prompt) setPrompt(external);
-  }, [data.text]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -106,6 +100,7 @@ export function PromptNode({ data, selected, id }: NodeProps) {
       initial={{ scale: 0.95, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       className={`
+        workflow-node-card workflow-node-prompt
         group
         bg-[#1a1a1a]
         border-2 border-[#2a2a2a]
