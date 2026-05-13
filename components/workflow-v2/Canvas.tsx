@@ -40,6 +40,7 @@ import { useCredits } from '@/lib/contexts/CreditsContext';
 import { useUndoRedo } from './useUndoRedo';
 import { MousePointer2, Lightbulb, Sparkles, Pencil, Combine } from 'lucide-react';
 import { NodeSelectorMenu } from './NodeSelectorMenu';
+import { CanvasOnboarding } from './CanvasOnboarding';
 
 const nodeTypes = {
   import: ImportNode,
@@ -58,12 +59,30 @@ const defaultEdgeOptions = {
   type: 'custom',
   animated: false,
   style: {
-    strokeWidth: 2.5,
+    strokeWidth: 2.75,
     stroke: '#06b6d4',
   },
 };
 
 const proOptions = { hideAttribution: true };
+const ONBOARDING_STORAGE_KEY = 'visicraft-workflow-onboarding-dismissed';
+
+const createWorkflowEdge = (
+  id: string,
+  source: string,
+  target: string,
+  sourceHandle: string,
+  targetHandle: string
+): Edge => ({
+  id,
+  source,
+  target,
+  sourceHandle,
+  targetHandle,
+  type: 'custom',
+  animated: false,
+  style: { strokeWidth: 2.75 },
+});
 
 // Mobile detection hook
 function useIsMobile() {
@@ -92,6 +111,7 @@ function FlowCanvas() {
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [canvasReady, setCanvasReady] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   const {
     undo,
@@ -170,6 +190,14 @@ function FlowCanvas() {
     }, 150);
     return () => window.clearTimeout(t);
   }, [clearHistory]);
+
+  useEffect(() => {
+    if (!canvasReady || typeof window === 'undefined') return;
+    if (window.localStorage.getItem(ONBOARDING_STORAGE_KEY) === 'true') return;
+
+    const frame = window.requestAnimationFrame(() => setShowOnboarding(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, [canvasReady]);
 
   // Custom edge change handler to clear node data when edges are deleted
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
@@ -385,21 +413,69 @@ function FlowCanvas() {
       x: wrapper ? wrapper.clientWidth / 2 : 400,
       y: wrapper ? wrapper.clientHeight / 2 : 300,
     });
+    const presetId = `${presetType}-${Date.now()}`;
+    const fitPreset = () => window.setTimeout(() => {
+      reactFlowInstance.fitView({ padding: 0.25, duration: 400 });
+    }, 50);
 
     if (presetType === 'prompt_idea') {
       handleAddNode('prompt', { x: center.x - 125, y: center.y - 75 });
     } else if (presetType === 'animate_image') {
-      handleAddNode('import', { x: center.x - 300, y: center.y - 75 }, 'reference');
-      setTimeout(() => handleAddNode('videoGenerate', { x: center.x + 50, y: center.y - 75 }), 50);
+      const importId = `import-${presetId}`;
+      const promptId = `prompt-${presetId}`;
+      const videoId = `videoGenerate-${presetId}`;
+      const nextNodes: Node[] = [
+        { id: importId, type: 'import', position: { x: center.x - 420, y: center.y - 160 }, data: { nodeType: 'reference' } },
+        { id: promptId, type: 'prompt', position: { x: center.x - 420, y: center.y + 160 }, data: {} },
+        { id: videoId, type: 'videoGenerate', position: { x: center.x + 60, y: center.y }, data: {} },
+      ];
+      const nextEdges = [
+        createWorkflowEdge(`edge-${presetId}-reference`, importId, videoId, 'image', 'referenceImage'),
+        createWorkflowEdge(`edge-${presetId}-prompt`, promptId, videoId, 'prompt', 'prompt'),
+      ];
+      setNodes((nds) => [...nds, ...nextNodes]);
+      setEdges((eds) => [...eds, ...nextEdges]);
+      fitPreset();
+      toast.success('Animate image workflow added');
     } else if (presetType === 'edit_image') {
-      handleAddNode('import', { x: center.x - 300, y: center.y - 75 }, 'reference');
-      setTimeout(() => handleAddNode('generate', { x: center.x + 50, y: center.y - 75 }), 50);
+      const importId = `import-${presetId}`;
+      const promptId = `prompt-${presetId}`;
+      const generateId = `generate-${presetId}`;
+      const nextNodes: Node[] = [
+        { id: importId, type: 'import', position: { x: center.x - 420, y: center.y - 160 }, data: { nodeType: 'reference' } },
+        { id: promptId, type: 'prompt', position: { x: center.x - 420, y: center.y + 160 }, data: {} },
+        { id: generateId, type: 'generate', position: { x: center.x + 60, y: center.y }, data: {} },
+      ];
+      const nextEdges = [
+        createWorkflowEdge(`edge-${presetId}-reference`, importId, generateId, 'image', 'referenceImage'),
+        createWorkflowEdge(`edge-${presetId}-prompt`, promptId, generateId, 'prompt', 'prompt'),
+      ];
+      setNodes((nds) => [...nds, ...nextNodes]);
+      setEdges((eds) => [...eds, ...nextEdges]);
+      fitPreset();
+      toast.success('Edit image workflow added');
     } else if (presetType === 'merge_styles') {
-      handleAddNode('import', { x: center.x - 300, y: center.y - 150 }, 'reference');
-      setTimeout(() => handleAddNode('import', { x: center.x - 300, y: center.y + 50 }, 'style'), 50);
-      setTimeout(() => handleAddNode('generate', { x: center.x + 100, y: center.y - 50 }), 100);
+      const referenceId = `import-reference-${presetId}`;
+      const styleId = `import-style-${presetId}`;
+      const promptId = `prompt-${presetId}`;
+      const generateId = `generate-${presetId}`;
+      const nextNodes: Node[] = [
+        { id: referenceId, type: 'import', position: { x: center.x - 520, y: center.y - 220 }, data: { nodeType: 'reference' } },
+        { id: styleId, type: 'import', position: { x: center.x - 520, y: center.y + 20 }, data: { nodeType: 'style' } },
+        { id: promptId, type: 'prompt', position: { x: center.x - 140, y: center.y + 240 }, data: {} },
+        { id: generateId, type: 'generate', position: { x: center.x + 240, y: center.y - 80 }, data: {} },
+      ];
+      const nextEdges = [
+        createWorkflowEdge(`edge-${presetId}-reference`, referenceId, generateId, 'image', 'referenceImage'),
+        createWorkflowEdge(`edge-${presetId}-style`, styleId, generateId, 'image', 'referenceImage'),
+        createWorkflowEdge(`edge-${presetId}-prompt`, promptId, generateId, 'prompt', 'prompt'),
+      ];
+      setNodes((nds) => [...nds, ...nextNodes]);
+      setEdges((eds) => [...eds, ...nextEdges]);
+      fitPreset();
+      toast.success('Merge styles workflow added');
     }
-  }, [handleAddNode, reactFlowInstance]);
+  }, [handleAddNode, reactFlowInstance, setEdges, setNodes]);
 
   const handleNewBlankCanvas = useCallback(() => {
     clearHistory([], []);
@@ -408,6 +484,21 @@ function FlowCanvas() {
     setSelectedNode(null);
     toast.success('New blank canvas');
   }, [clearHistory, setNodes, setEdges]);
+
+  const closeOnboarding = useCallback(() => {
+    setShowOnboarding(false);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
+    }
+  }, []);
+
+  const handleCreateStarterFlow = useCallback(() => {
+    if (nodesRef.current.length > 0) {
+      handleNewBlankCanvas();
+    }
+    handleAddPreset('edit_image');
+    closeOnboarding();
+  }, [closeOnboarding, handleAddPreset, handleNewBlankCanvas]);
 
   const onPaneDoubleClick = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
@@ -433,6 +524,7 @@ function FlowCanvas() {
       <div className="w-full h-screen flex flex-col bg-black">
         <Topbar
           onNewWorkflow={handleNewBlankCanvas}
+          onOpenOnboarding={() => setShowOnboarding(true)}
           showGrid={showGrid}
           onToggleGrid={() => setShowGrid(!showGrid)}
           gridVariant={gridVariant}
@@ -538,8 +630,14 @@ function FlowCanvas() {
               )}
             </ReactFlow>
 
+            <CanvasOnboarding
+              isOpen={showOnboarding}
+              onClose={closeOnboarding}
+              onCreateExample={handleCreateStarterFlow}
+            />
+
             {/* Empty State Presets */}
-            {nodes.length === 0 && canvasReady && !menuPosition && (
+            {nodes.length === 0 && canvasReady && !menuPosition && !showOnboarding && (
               <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center z-10 -mt-20">
                 <div className="flex flex-col items-center gap-6">
                   <div className="flex items-center gap-2 text-gray-400 text-sm">

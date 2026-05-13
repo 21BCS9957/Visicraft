@@ -45,7 +45,7 @@ export function SmartHandle({
         width: '12px',
         height: '12px',
         border: '2px solid',
-        background: isConnected ? 'currentColor' : 'transparent',
+        background: isConnected ? 'currentColor' : '#1a1a1a',
         ...style,
       }}
     />

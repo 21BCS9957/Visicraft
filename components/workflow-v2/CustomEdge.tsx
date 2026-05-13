@@ -46,8 +46,12 @@ const getEdgeColor = (sourceHandle?: string | null, targetHandle?: string | null
 };
 
 const HANDLE_RADIUS = 6;
-const EDGE_DOCKING_GAP = 1.5;
-const DOCK_OFFSET = HANDLE_RADIUS + EDGE_DOCKING_GAP;
+const EDGE_STROKE_WIDTH = 2.75;
+const SELECTED_EDGE_STROKE_WIDTH = 3.25;
+const EDGE_OUTLINE_WIDTH = 5;
+const SELECTED_EDGE_OUTLINE_WIDTH = 6;
+const DOCK_OFFSET = HANDLE_RADIUS + EDGE_STROKE_WIDTH / 2;
+const SOCKET_MASK_RADIUS = HANDLE_RADIUS + 1.5;
 
 const getDockedPoint = (x: number, y: number, position: Position, outward = true) => {
   const direction = outward ? 1 : -1;
@@ -80,8 +84,8 @@ function CustomEdgeComponent({
   data,
 }: CustomEdgeProps) {
   const { setEdges } = useReactFlow();
-  const sourcePoint = getDockedPoint(sourceX, sourceY, sourcePosition, true);
-  const targetPoint = getDockedPoint(targetX, targetY, targetPosition, true);
+  const sourcePoint = getDockedPoint(sourceX, sourceY, sourcePosition);
+  const targetPoint = getDockedPoint(targetX, targetY, targetPosition);
   
   // Get edge style from data or default to bezier for smooth curves
   const edgeStyle = data?.edgeStyle || 'bezier';
@@ -190,7 +194,7 @@ function CustomEdgeComponent({
       <path
         d={edgePath}
         stroke="rgba(0, 0, 0, 0.75)"
-        strokeWidth={selected ? 6 : 5}
+        strokeWidth={selected ? SELECTED_EDGE_OUTLINE_WIDTH : EDGE_OUTLINE_WIDTH}
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="none"
@@ -207,7 +211,7 @@ function CustomEdgeComponent({
         className="react-flow__edge-path"
         d={edgePath}
         stroke={selected ? `url(#gradient-${id})` : color}
-        strokeWidth={selected ? 3.25 : 2.75}
+        strokeWidth={selected ? SELECTED_EDGE_STROKE_WIDTH : EDGE_STROKE_WIDTH}
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="none"
@@ -231,6 +235,32 @@ function CustomEdgeComponent({
         style={{ 
           pointerEvents: 'stroke',
           cursor: 'pointer',
+        }}
+      />
+
+      <circle
+        cx={sourceX}
+        cy={sourceY}
+        r={SOCKET_MASK_RADIUS}
+        fill="#1a1a1a"
+        stroke={color}
+        strokeWidth={2}
+        style={{
+          pointerEvents: 'none',
+          vectorEffect: 'non-scaling-stroke',
+        }}
+      />
+
+      <circle
+        cx={targetX}
+        cy={targetY}
+        r={SOCKET_MASK_RADIUS}
+        fill="#1a1a1a"
+        stroke={color}
+        strokeWidth={2}
+        style={{
+          pointerEvents: 'none',
+          vectorEffect: 'non-scaling-stroke',
         }}
       />
     </g>
