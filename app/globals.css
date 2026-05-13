@@ -714,6 +714,189 @@ a:hover {
   stroke-linejoin: round;
 }
 
+/* Premium workflow canvas system */
+.workflow-node-card {
+  --node-accent: #aeb4c0;
+  --node-accent-soft: rgba(174, 180, 192, 0.12);
+  position: relative;
+  isolation: isolate;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015) 36%, transparent 100%),
+    #0f1012 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 8px !important;
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.42),
+    0 8px 22px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+.workflow-node-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, var(--node-accent) 0 3px, transparent 3px),
+    linear-gradient(180deg, var(--node-accent-soft), transparent 46%);
+  opacity: 0.92;
+}
+
+.workflow-node-card::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: 0;
+  border-radius: 7px;
+  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.035);
+}
+
+.workflow-node-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.workflow-node-card > .px-4.py-3 {
+  padding: 12px 14px !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: rgba(255, 255, 255, 0.018) !important;
+}
+
+.workflow-node-card .w-10.h-10.rounded-xl {
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 7px !important;
+  background: rgba(255, 255, 255, 0.055) !important;
+  border: 1px solid color-mix(in srgb, var(--node-accent) 48%, rgba(255, 255, 255, 0.18)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 10px 18px rgba(0, 0, 0, 0.2) !important;
+}
+
+.workflow-node-card h3 {
+  font-size: 12.5px !important;
+  line-height: 1.2 !important;
+  font-weight: 650 !important;
+  letter-spacing: 0 !important;
+}
+
+.workflow-node-card h3 + p {
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.42) !important;
+  font-size: 10.5px !important;
+  line-height: 1.2 !important;
+}
+
+.workflow-node-card textarea,
+.workflow-node-card [class*="border-dashed"] {
+  background: #090a0b !important;
+  border: 1px solid rgba(255, 255, 255, 0.105) !important;
+  border-radius: 7px !important;
+  box-shadow: inset 0 1px 10px rgba(0, 0, 0, 0.22);
+}
+
+.workflow-node-card textarea:focus {
+  border-color: color-mix(in srgb, var(--node-accent) 46%, rgba(255, 255, 255, 0.16)) !important;
+  box-shadow:
+    inset 0 1px 10px rgba(0, 0, 0, 0.2),
+    0 0 0 2px color-mix(in srgb, var(--node-accent) 18%, transparent) !important;
+}
+
+.workflow-node-card textarea::placeholder {
+  color: rgba(255, 255, 255, 0.28) !important;
+}
+
+.workflow-node-card > .px-3.pb-3 button {
+  min-height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  background: #f4f1e8 !important;
+  color: #0d0d0c !important;
+  border-radius: 7px !important;
+  font-weight: 650 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    0 10px 22px rgba(0, 0, 0, 0.2);
+}
+
+.workflow-node-card > .px-3.pb-3 button:hover {
+  background: #ffffff !important;
+}
+
+.workflow-node-import {
+  --node-accent: #6c9cff;
+  --node-accent-soft: rgba(108, 156, 255, 0.105);
+}
+
+.workflow-node-prompt {
+  --node-accent: #c9a8ff;
+  --node-accent-soft: rgba(201, 168, 255, 0.1);
+}
+
+.workflow-node-generate {
+  --node-accent: #ff9c7b;
+  --node-accent-soft: rgba(255, 156, 123, 0.11);
+}
+
+.workflow-node-video {
+  --node-accent: #a99dff;
+  --node-accent-soft: rgba(169, 157, 255, 0.105);
+}
+
+.workflow-node-output {
+  --node-accent: #73e0b1;
+  --node-accent-soft: rgba(115, 224, 177, 0.1);
+}
+
+.workflow-preset-card {
+  border-radius: 8px !important;
+  background: #0f1012 !important;
+  border-color: rgba(255, 255, 255, 0.11) !important;
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+.workflow-preset-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.22) !important;
+  background: #141518 !important;
+}
+
+.react-flow__handle {
+  background: #0f1012 !important;
+  border-width: 2px !important;
+  box-shadow:
+    0 0 0 4px #0f1012,
+    0 0 0 5px rgba(255, 255, 255, 0.08) !important;
+}
+
+.react-flow__handle.connected {
+  background: currentColor !important;
+  box-shadow:
+    0 0 0 4px #0f1012,
+    0 0 0 6px currentColor,
+    0 0 18px color-mix(in srgb, currentColor 28%, transparent) !important;
+}
+
+.react-flow__handle:hover {
+  transform: scale(1.1);
+  box-shadow:
+    0 0 0 4px #0f1012,
+    0 0 0 6px rgba(255, 255, 255, 0.18) !important;
+}
+
+.react-flow__edge-path {
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.28));
+}
+
+.react-flow__connectionline path {
+  stroke: #f5f5f2 !important;
+  stroke-width: 2.5px !important;
+}
+
 
 /* ============================================
    Mobile Optimization - Senior Dev Approach

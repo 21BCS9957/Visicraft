@@ -25,7 +25,7 @@ import { GenerateNode } from './nodes/GenerateNode';
 import { VideoGenerateNode } from './nodes/VideoGenerateNode';
 import { OutputNode } from './nodes/OutputNode';
 import { NoteNode } from './nodes/NoteNode';
-import { CustomEdge } from './CustomEdge';
+import { CustomEdge, PremiumConnectionLine } from './CustomEdge';
 import { Sidebar } from './Sidebar';
 import { PropertiesPanel } from './PropertiesPanel';
 import { Topbar } from './Topbar';
@@ -589,11 +589,12 @@ function FlowCanvas() {
               elevateNodesOnSelect={false}
               elevateEdgesOnSelect={false}
               connectionLineStyle={{
-                stroke: '#06b6d4',
-                strokeWidth: 3,
+                stroke: '#f5f5f2',
+                strokeWidth: 2.5,
                 strokeLinecap: 'round',
                 strokeLinejoin: 'round',
               }}
+              connectionLineComponent={PremiumConnectionLine}
               connectionLineType={ConnectionLineType.Bezier}
               defaultViewport={{ x: 0, y: 0, zoom: isMobile ? 0.6 : 1 }}
             >

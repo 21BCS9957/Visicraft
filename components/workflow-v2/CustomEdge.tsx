@@ -1,7 +1,15 @@
 'use client';
 
 import React, { memo, useCallback } from 'react';
-import { EdgeProps, getSmoothStepPath, getBezierPath, getStraightPath, Position, useReactFlow } from 'reactflow';
+import {
+  ConnectionLineComponentProps,
+  EdgeProps,
+  getSmoothStepPath,
+  getBezierPath,
+  getStraightPath,
+  Position,
+  useReactFlow,
+} from 'reactflow';
 import toast from '@/lib/toast';
 
 // Extended EdgeProps to include handle properties
@@ -50,8 +58,8 @@ const EDGE_STROKE_WIDTH = 2.75;
 const SELECTED_EDGE_STROKE_WIDTH = 3.25;
 const EDGE_OUTLINE_WIDTH = 5;
 const SELECTED_EDGE_OUTLINE_WIDTH = 6;
-const DOCK_OFFSET = HANDLE_RADIUS + EDGE_STROKE_WIDTH / 2;
-const SOCKET_MASK_RADIUS = HANDLE_RADIUS + 1.5;
+const SOCKET_RING_WIDTH = 4.5;
+const DOCK_OFFSET = HANDLE_RADIUS + SOCKET_RING_WIDTH + EDGE_STROKE_WIDTH / 2;
 
 const getDockedPoint = (x: number, y: number, position: Position, outward = true) => {
   const direction = outward ? 1 : -1;
@@ -89,61 +97,15 @@ function CustomEdgeComponent({
   
   // Get edge style from data or default to bezier for smooth curves
   const edgeStyle = data?.edgeStyle || 'bezier';
-  
-  // Generate path based on edge style
-  let edgePath: string;
-  
-  switch (edgeStyle) {
-    case 'bezier':
-      // Bezier curve - very curvy, organic feel (DEFAULT)
-      [edgePath] = getBezierPath({
-        sourceX: sourcePoint.x,
-        sourceY: sourcePoint.y,
-        sourcePosition,
-        targetX: targetPoint.x,
-        targetY: targetPoint.y,
-        targetPosition,
-        curvature: 0.32, // Natural curvature for smooth, flowing lines
-      });
-      break;
-      
-    case 'straight':
-      // Straight line - minimal curviness
-      [edgePath] = getStraightPath({
-        sourceX: sourcePoint.x,
-        sourceY: sourcePoint.y,
-        targetX: targetPoint.x,
-        targetY: targetPoint.y,
-      });
-      break;
-      
-    case 'step':
-      // Step path - angular, right angles
-      [edgePath] = getSmoothStepPath({
-        sourceX: sourcePoint.x,
-        sourceY: sourcePoint.y,
-        sourcePosition,
-        targetX: targetPoint.x,
-        targetY: targetPoint.y,
-        targetPosition,
-        borderRadius: 8, // Small radius for sharper corners
-      });
-      break;
-      
-    case 'smooth':
-    default:
-      // Smooth step - balanced curviness (default)
-      [edgePath] = getSmoothStepPath({
-        sourceX: sourcePoint.x,
-        sourceY: sourcePoint.y,
-        sourcePosition,
-        targetX: targetPoint.x,
-        targetY: targetPoint.y,
-        targetPosition,
-        borderRadius: 30, // Large radius for smooth curves
-      });
-      break;
-  }
+  const edgePath = getDockedEdgePath({
+    sourceX: sourcePoint.x,
+    sourceY: sourcePoint.y,
+    sourcePosition,
+    targetX: targetPoint.x,
+    targetY: targetPoint.y,
+    targetPosition,
+    edgeStyle,
+  });
 
   const color = getEdgeColor(sourceHandle, targetHandle);
 
@@ -238,34 +200,109 @@ function CustomEdgeComponent({
         }}
       />
 
-      <circle
-        cx={sourceX}
-        cy={sourceY}
-        r={SOCKET_MASK_RADIUS}
-        fill="#1a1a1a"
-        stroke={color}
-        strokeWidth={2}
-        style={{
-          pointerEvents: 'none',
-          vectorEffect: 'non-scaling-stroke',
-        }}
-      />
-
-      <circle
-        cx={targetX}
-        cy={targetY}
-        r={SOCKET_MASK_RADIUS}
-        fill="#1a1a1a"
-        stroke={color}
-        strokeWidth={2}
-        style={{
-          pointerEvents: 'none',
-          vectorEffect: 'non-scaling-stroke',
-        }}
-      />
     </g>
   );
 }
 
 // Memoize the component to prevent unnecessary re-renders
 export const CustomEdge = memo(CustomEdgeComponent);
+
+type DockedPathOptions = {
+  sourceX: number;
+  sourceY: number;
+  sourcePosition: Position;
+  targetX: number;
+  targetY: number;
+  targetPosition: Position;
+  edgeStyle?: 'smooth' | 'bezier' | 'straight' | 'step';
+};
+
+function getDockedEdgePath({
+  sourceX,
+  sourceY,
+  sourcePosition,
+  targetX,
+  targetY,
+  targetPosition,
+  edgeStyle = 'bezier',
+}: DockedPathOptions) {
+  switch (edgeStyle) {
+    case 'straight':
+      return getStraightPath({ sourceX, sourceY, targetX, targetY })[0];
+    case 'step':
+      return getSmoothStepPath({
+        sourceX,
+        sourceY,
+        sourcePosition,
+        targetX,
+        targetY,
+        targetPosition,
+        borderRadius: 10,
+      })[0];
+    case 'smooth':
+      return getSmoothStepPath({
+        sourceX,
+        sourceY,
+        sourcePosition,
+        targetX,
+        targetY,
+        targetPosition,
+        borderRadius: 28,
+      })[0];
+    case 'bezier':
+    default:
+      return getBezierPath({
+        sourceX,
+        sourceY,
+        sourcePosition,
+        targetX,
+        targetY,
+        targetPosition,
+        curvature: 0.34,
+      })[0];
+  }
+}
+
+export function PremiumConnectionLine({
+  fromX,
+  fromY,
+  toX,
+  toY,
+  fromPosition,
+  toPosition,
+}: ConnectionLineComponentProps) {
+  const sourcePoint = getDockedPoint(fromX, fromY, fromPosition);
+  const targetPoint = getDockedPoint(toX, toY, toPosition);
+  const path = getDockedEdgePath({
+    sourceX: sourcePoint.x,
+    sourceY: sourcePoint.y,
+    sourcePosition: fromPosition,
+    targetX: targetPoint.x,
+    targetY: targetPoint.y,
+    targetPosition: toPosition,
+    edgeStyle: 'bezier',
+  });
+
+  return (
+    <g>
+      <path
+        d={path}
+        fill="none"
+        stroke="rgba(0, 0, 0, 0.76)"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={5.5}
+        style={{ pointerEvents: 'none', vectorEffect: 'non-scaling-stroke' }}
+      />
+      <path
+        d={path}
+        fill="none"
+        stroke="#f5f5f2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2.5}
+        style={{ pointerEvents: 'none', vectorEffect: 'non-scaling-stroke' }}
+      />
+    </g>
+  );
+}
