@@ -203,7 +203,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
       {/* Node Resizer */}
       <NodeResizer
         color="#3b82f6"
-        isVisible={selected}
+        isVisible={false}
         minWidth={320}
         minHeight={250}
         handleStyle={{
@@ -226,10 +226,15 @@ export function ImportNode({ data, selected, id }: NodeProps) {
               <p className="text-gray-500 text-xs">Reference image</p>
             </div>
           </div>
-          <div className="relative" ref={menuRef}>
+          <div className="relative nodrag nopan" ref={menuRef}>
             <button
-              onClick={() => setShowMenu(!showMenu)}
-              className="text-[#666666] hover:text-white transition-colors"
+              onPointerDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowMenu(!showMenu);
+              }}
+              className="workflow-node-menu-button nodrag nopan text-[#666666] hover:text-white transition-colors"
             >
               <MoreVertical className="w-4 h-4" />
             </button>
@@ -241,8 +246,11 @@ export function ImportNode({ data, selected, id }: NodeProps) {
                   initial={{ opacity: 0, scale: 0.95, y: -10 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
                   transition={{ duration: 0.1 }}
-                  className="absolute right-0 top-full mt-1 w-48 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl z-50 overflow-hidden"
+                  className="workflow-node-menu nodrag nopan absolute right-0 top-full mt-1 w-48 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl z-50 overflow-hidden"
                 >
                   <button
                     onClick={handleDuplicate}
