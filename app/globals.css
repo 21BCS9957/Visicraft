@@ -389,6 +389,7 @@ a:hover {
   background: transparent !important;
   border: 2px solid currentColor;
   border-radius: 50%;
+  z-index: 20;
   transition: all 0.2s ease;
 }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { useAuth } from './AuthContext';
 import { supabase } from '@/lib/supabase/client';
 
@@ -23,23 +23,32 @@ const CreditsContext = createContext<CreditsContextType>({
 export function CreditsProvider({ children }: { children: React.ReactNode }) {
   const [credits, setCredits] = useState(0);
   const [loading, setLoading] = useState(true);
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const userId = user?.id ?? null;
 
-  const refreshCredits = async () => {
-    if (!user) {
-      setCredits(0);
+  const refreshCredits = useCallback(async () => {
+    if (!userId) {
+      if (!authLoading) {
+        setCredits(0);
+        setLoading(false);
+      }
+      return;
+    }
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      console.log('⚠️ Skipping credits refresh while offline');
       setLoading(false);
       return;
     }
 
     try {
-      console.log('🔄 Fetching credits for user:', user.id);
+      console.log('🔄 Fetching credits for user:', userId);
       
       // Fetch user credits from database
       const { data, error } = await supabase
         .from('user_credits')
         .select('credits')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .single();
 
       if (error) {
@@ -52,7 +61,7 @@ export function CreditsProvider({ children }: { children: React.ReactNode }) {
           const { data: newData, error: insertError } = await supabase
             .from('user_credits')
             .insert({
-              user_id: user.id,
+              user_id: userId,
               credits: 100,
             })
             .select()
@@ -60,14 +69,12 @@ export function CreditsProvider({ children }: { children: React.ReactNode }) {
 
           if (insertError) {
             console.error('❌ Failed to create credits:', insertError);
-            setCredits(0);
           } else if (newData) {
             console.log('✅ Credits created successfully:', newData.credits);
             setCredits(newData.credits);
           }
         } else {
           console.error('❌ Unexpected error fetching credits:', error);
-          setCredits(0);
         }
       } else if (data) {
         console.log('✅ Credits fetched successfully:', data.credits);
@@ -75,11 +82,10 @@ export function CreditsProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error) {
       console.error('❌ Error in refreshCredits:', error);
-      setCredits(0);
     } finally {
       setLoading(false);
     }
-  };
+  }, [authLoading, userId]);
 
   const deductCredits = async (amount: number): Promise<boolean> => {
     if (!user) {
@@ -166,10 +172,16 @@ export function CreditsProvider({ children }: { children: React.ReactNode }) {
 
   // Only refetch when user ID changes, not on every auth state change (e.g. TOKEN_REFRESHED)
   // which would cause repeated "Fetching credits" logs during long operations like image gen
-  const userId = user?.id ?? null;
   useEffect(() => {
     refreshCredits();
-  }, [userId]);
+  }, [refreshCredits]);
+
+  useEffect(() => {
+    if (!userId || typeof window === 'undefined') return;
+
+    window.addEventListener('online', refreshCredits);
+    return () => window.removeEventListener('online', refreshCredits);
+  }, [refreshCredits, userId]);
 
   return (
     <CreditsContext.Provider value={{ credits, loading, refreshCredits, deductCredits, addCredits }}>

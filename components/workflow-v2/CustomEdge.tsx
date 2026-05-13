@@ -1,7 +1,7 @@
 'use client';
 
 import React, { memo, useCallback } from 'react';
-import { EdgeProps, getSmoothStepPath, getBezierPath, getStraightPath, useReactFlow } from 'reactflow';
+import { EdgeProps, getSmoothStepPath, getBezierPath, getStraightPath, Position, useReactFlow } from 'reactflow';
 import toast from '@/lib/toast';
 
 // Extended EdgeProps to include handle properties
@@ -45,6 +45,27 @@ const getEdgeColor = (sourceHandle?: string | null, targetHandle?: string | null
   return colorMap.output; // Default green
 };
 
+const HANDLE_RADIUS = 6;
+const EDGE_DOCKING_GAP = 1.5;
+const DOCK_OFFSET = HANDLE_RADIUS + EDGE_DOCKING_GAP;
+
+const getDockedPoint = (x: number, y: number, position: Position, outward = true) => {
+  const direction = outward ? 1 : -1;
+
+  switch (position) {
+    case Position.Left:
+      return { x: x - DOCK_OFFSET * direction, y };
+    case Position.Right:
+      return { x: x + DOCK_OFFSET * direction, y };
+    case Position.Top:
+      return { x, y: y - DOCK_OFFSET * direction };
+    case Position.Bottom:
+      return { x, y: y + DOCK_OFFSET * direction };
+    default:
+      return { x, y };
+  }
+};
+
 function CustomEdgeComponent({
   id,
   sourceX,
@@ -59,6 +80,8 @@ function CustomEdgeComponent({
   data,
 }: CustomEdgeProps) {
   const { setEdges } = useReactFlow();
+  const sourcePoint = getDockedPoint(sourceX, sourceY, sourcePosition, true);
+  const targetPoint = getDockedPoint(targetX, targetY, targetPosition, true);
   
   // Get edge style from data or default to bezier for smooth curves
   const edgeStyle = data?.edgeStyle || 'bezier';
@@ -70,34 +93,34 @@ function CustomEdgeComponent({
     case 'bezier':
       // Bezier curve - very curvy, organic feel (DEFAULT)
       [edgePath] = getBezierPath({
-        sourceX,
-        sourceY,
+        sourceX: sourcePoint.x,
+        sourceY: sourcePoint.y,
         sourcePosition,
-        targetX,
-        targetY,
+        targetX: targetPoint.x,
+        targetY: targetPoint.y,
         targetPosition,
-        curvature: 0.25, // Natural curvature for smooth, flowing lines
+        curvature: 0.32, // Natural curvature for smooth, flowing lines
       });
       break;
       
     case 'straight':
       // Straight line - minimal curviness
       [edgePath] = getStraightPath({
-        sourceX,
-        sourceY,
-        targetX,
-        targetY,
+        sourceX: sourcePoint.x,
+        sourceY: sourcePoint.y,
+        targetX: targetPoint.x,
+        targetY: targetPoint.y,
       });
       break;
       
     case 'step':
       // Step path - angular, right angles
       [edgePath] = getSmoothStepPath({
-        sourceX,
-        sourceY,
+        sourceX: sourcePoint.x,
+        sourceY: sourcePoint.y,
         sourcePosition,
-        targetX,
-        targetY,
+        targetX: targetPoint.x,
+        targetY: targetPoint.y,
         targetPosition,
         borderRadius: 8, // Small radius for sharper corners
       });
@@ -107,11 +130,11 @@ function CustomEdgeComponent({
     default:
       // Smooth step - balanced curviness (default)
       [edgePath] = getSmoothStepPath({
-        sourceX,
-        sourceY,
+        sourceX: sourcePoint.x,
+        sourceY: sourcePoint.y,
         sourcePosition,
-        targetX,
-        targetY,
+        targetX: targetPoint.x,
+        targetY: targetPoint.y,
         targetPosition,
         borderRadius: 30, // Large radius for smooth curves
       });
@@ -163,13 +186,28 @@ function CustomEdgeComponent({
         />
       )}
 
+      {/* Dark outline keeps the connection readable without bleeding through handles. */}
+      <path
+        d={edgePath}
+        stroke="rgba(0, 0, 0, 0.75)"
+        strokeWidth={selected ? 6 : 5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+        style={{
+          pointerEvents: 'none',
+          vectorEffect: 'non-scaling-stroke',
+          shapeRendering: 'geometricPrecision',
+        }}
+      />
+
       {/* Main edge path with high quality rendering */}
       <path
         id={id}
         className="react-flow__edge-path"
         d={edgePath}
         stroke={selected ? `url(#gradient-${id})` : color}
-        strokeWidth={selected ? 3 : 2.5}
+        strokeWidth={selected ? 3.25 : 2.75}
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="none"

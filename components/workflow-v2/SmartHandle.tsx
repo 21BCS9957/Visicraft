@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, CSSProperties } from 'react';
-import { Handle, Position, useReactFlow, HandleProps } from 'reactflow';
+import { CSSProperties } from 'react';
+import { Handle, Position, HandleProps, useStore } from 'reactflow';
 
 interface SmartHandleProps extends Omit<HandleProps, 'type'> {
   nodeId: string;
@@ -21,20 +21,14 @@ export function SmartHandle({
   style,
   ...props
 }: SmartHandleProps) {
-  const { getEdges } = useReactFlow();
-  const [isConnected, setIsConnected] = useState(false);
-
-  useEffect(() => {
-    const edges = getEdges();
-    const connected = edges.some((edge) => {
+  const isConnected = useStore((store) =>
+    store.edges.some((edge) => {
       if (type === 'source') {
         return edge.source === nodeId && edge.sourceHandle === handleId;
-      } else {
-        return edge.target === nodeId && edge.targetHandle === handleId;
       }
-    });
-    setIsConnected(connected);
-  }, [getEdges, nodeId, handleId, type]);
+      return edge.target === nodeId && edge.targetHandle === handleId;
+    })
+  );
 
   return (
     <Handle
