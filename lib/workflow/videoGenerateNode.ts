@@ -1,4 +1,23 @@
+import {
+  getDefaultSeedanceMode,
+  getSeedanceCreditCost,
+  isSeedanceModel,
+  isVideoUrl,
+  SEEDANCE_MAX_INPUT_VIDEO_SECONDS,
+} from './seedance';
+
 const VIDEO_CREDIT_COST = 120;
+
+export function getVideoGenerationCreditCost(
+  model: string,
+  resolution: string,
+  duration: string | number | undefined,
+  inputVideoSeconds = 0
+): number {
+  return isSeedanceModel(model)
+    ? getSeedanceCreditCost(model, resolution, duration, inputVideoSeconds)
+    : VIDEO_CREDIT_COST;
+}
 
 export function validateVideoGenerateNode(
   referenceImageUrls: string[],
@@ -20,7 +39,8 @@ export interface VideoGenerateNodeParams {
   aspectRatio: string;
   duration: string;
   resolution: string;
-  updateNodeData: (nodeId: string, data: Record<string, any>) => void;
+  mode?: string;
+  updateNodeData: (nodeId: string, data: Record<string, unknown>) => void;
   credits?: number;
   deductCredits?: (amount: number) => Promise<boolean>;
   addCredits?: (amount: number) => Promise<boolean>;
@@ -41,6 +61,7 @@ export async function executeVideoGeneration(params: VideoGenerateNodeParams): P
     aspectRatio,
     duration,
     resolution,
+    mode,
     updateNodeData,
     credits,
     deductCredits,
@@ -48,13 +69,30 @@ export async function executeVideoGeneration(params: VideoGenerateNodeParams): P
     refreshCredits,
   } = params;
 
-  const creditCost = deductCredits ? VIDEO_CREDIT_COST : 0;
+  const seedanceMode = isSeedanceModel(model)
+    ? (mode || getDefaultSeedanceMode(referenceImageUrls))
+    : undefined;
+  const hasSeedanceVideoReference = isSeedanceModel(model) && referenceImageUrls.some(isVideoUrl);
+  const creditCost = deductCredits
+    ? isSeedanceModel(model)
+      ? getVideoGenerationCreditCost(
+        model,
+        resolution,
+        duration,
+        hasSeedanceVideoReference ? SEEDANCE_MAX_INPUT_VIDEO_SECONDS : 0
+      )
+      : getVideoGenerationCreditCost(model, resolution, duration)
+    : 0;
 
   if (deductCredits && credits !== undefined && credits < creditCost) {
     throw new Error(`Insufficient credits! Need ${creditCost}, have ${credits}`);
   }
 
-  validateVideoGenerateNode(referenceImageUrls, promptText);
+  if (isSeedanceModel(model)) {
+    validateSeedanceVideoNode(referenceImageUrls, promptText, seedanceMode);
+  } else {
+    validateVideoGenerateNode(referenceImageUrls, promptText);
+  }
 
   updateNodeData(nodeId, { status: 'processing', videoProgress: 0 });
 
@@ -67,20 +105,30 @@ export async function executeVideoGeneration(params: VideoGenerateNodeParams): P
   }
 
   try {
-    const response = await fetch('/api/img2vid', {
+    const response = await fetch(isSeedanceModel(model) ? '/api/seedance-video' : '/api/img2vid', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        imageUrl: referenceImageUrls[0],
-        prompt: promptText || '',
-        model,
-        aspectRatio,
-        duration,
-        resolution,
-      }),
+      body: JSON.stringify(isSeedanceModel(model)
+        ? {
+          referenceUrls: referenceImageUrls,
+          prompt: promptText || '',
+          model,
+          mode: seedanceMode,
+          aspectRatio,
+          duration,
+          resolution,
+        }
+        : {
+          imageUrl: referenceImageUrls[0],
+          prompt: promptText || '',
+          model,
+          aspectRatio,
+          duration,
+          resolution,
+        }),
     });
 
-    let result: { error?: string; operationId?: string; images?: string[] };
+    let result: { error?: string; operationId?: string; taskId?: string; images?: string[]; videoUrl?: string };
     try {
       result = await response.json();
     } catch {
@@ -93,7 +141,39 @@ export async function executeVideoGeneration(params: VideoGenerateNodeParams): P
 
     let videoUrl: string | undefined;
 
-    if (result.operationId) {
+    if (result.videoUrl) {
+      videoUrl = result.videoUrl;
+    } else if (result.taskId) {
+      updateNodeData(nodeId, { videoProgress: 5 });
+
+      let isDone = false;
+
+      while (!isDone) {
+        await new Promise((r) => setTimeout(r, 5000));
+
+        const statusRes = await fetch('/api/seedance-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskId: result.taskId }),
+        });
+
+        if (!statusRes.ok) continue;
+
+        const statusData = await statusRes.json();
+
+        if (statusData.error) {
+          throw new Error(statusData.error);
+        }
+
+        if (statusData.done) {
+          isDone = true;
+          videoUrl = statusData.url || undefined;
+          updateNodeData(nodeId, { videoProgress: 100 });
+        } else {
+          updateNodeData(nodeId, { videoProgress: statusData.progress || 25 });
+        }
+      }
+    } else if (result.operationId) {
       updateNodeData(nodeId, { videoProgress: 5 });
 
       let isDone = false;
@@ -148,5 +228,36 @@ export async function executeVideoGeneration(params: VideoGenerateNodeParams): P
 
     updateNodeData(nodeId, { status: 'error', videoProgress: 0 });
     throw error;
+  }
+}
+
+function validateSeedanceVideoNode(
+  referenceUrls: string[],
+  promptText: string | null,
+  mode?: string
+): void {
+  if (!promptText || !String(promptText).trim()) {
+    throw new Error('A prompt is required for Seedance video generation');
+  }
+
+  if (mode === 'text_to_video') {
+    if (referenceUrls.length > 0) {
+      throw new Error('Seedance text-to-video does not accept references. Use Omni Reference or remove connected references.');
+    }
+    return;
+  }
+
+  if (mode === 'first_last_frames') {
+    if (referenceUrls.length < 1 || referenceUrls.length > 2) {
+      throw new Error('Seedance first/last frames requires 1-2 connected image references.');
+    }
+    if (referenceUrls.some(isVideoUrl)) {
+      throw new Error('Seedance first/last frames only accepts image references.');
+    }
+    return;
+  }
+
+  if (referenceUrls.length < 1 || referenceUrls.length > 12) {
+    throw new Error('Seedance omni reference requires 1-12 connected references.');
   }
 }

@@ -2,15 +2,20 @@ import { WorkflowNode, WorkflowEdge } from '@/types/workflow';
 import { useWorkflowStore } from '@/lib/stores/workflowStore';
 import { getCreditCost } from '@/lib/credits/calculator';
 import { executeGeneration } from './generateNode';
-import { executeVideoGeneration } from './videoGenerateNode';
+import { executeVideoGeneration, getVideoGenerationCreditCost } from './videoGenerateNode';
+import { isSeedanceModel } from './seedance';
 
 type InputValue = string | string[] | null;
+type NodeOutputValue = string | string[] | Record<string, unknown> | null | undefined;
+type WorkflowNodeData = Record<string, unknown> & {
+  settings?: Record<string, unknown>;
+};
 
 interface DependencyGraph {
   [nodeId: string]: {
     node: WorkflowNode;
     inputs: { [handleId: string]: InputValue };
-    outputs: { [handleId: string]: any };
+    outputs: { [handleId: string]: NodeOutputValue };
   };
 }
 
@@ -38,21 +43,24 @@ export async function executeWorkflow(
     throw new Error('Workflow must have at least one Generate or Video Generate node');
   }
 
-  const VIDEO_CREDIT_COST = 120;
   let totalCreditCost = 0;
   for (const n of nodes) {
-    const d = n.data as any;
+    const d = toWorkflowNodeData(n.data);
     if (n.type === 'generate') {
-      totalCreditCost += getCreditCost(d?.model ?? 'nano-banana-pro', d?.resolution ?? '2K');
+      totalCreditCost += getCreditCost(getStringValue(d.model, 'nano-banana-pro'), getStringValue(d.resolution, '2K'));
     } else if (n.type === 'videoGenerate') {
-      totalCreditCost += VIDEO_CREDIT_COST;
+      totalCreditCost += getVideoGenerationCreditCost(
+        getStringValue(d.model, 'veo-2.0-generate-001'),
+        getStringValue(d.resolution, '720p'),
+        getStringValue(d.duration, '5s')
+      );
     }
   }
   if (options?.deductCredits && options?.credits !== undefined && options.credits < totalCreditCost) {
     throw new Error(`Insufficient credits! Need ${totalCreditCost}, have ${options.credits}`);
   }
 
-  const executionOrder = topologicalSort(graph, edges);
+  const executionOrder = topologicalSort(graph);
 
   for (const nodeId of executionOrder) {
     const nodeData = graph[nodeId];
@@ -73,10 +81,10 @@ function buildDependencyGraph(nodes: WorkflowNode[], edges: WorkflowEdge[]): Dep
     const targetHandle = edge.targetHandle as string;
     if (!source || !target || !targetHandle) return;
 
-    if (targetHandle === 'referenceImage') {
-      const prev = graph[target].inputs['referenceImage'];
+    if (targetHandle === 'referenceImage' || targetHandle === 'prompt') {
+      const prev = graph[target].inputs[targetHandle];
       const next: string[] = Array.isArray(prev) ? [...prev, source] : prev ? [prev as string, source] : [source];
-      graph[target].inputs['referenceImage'] = next;
+      graph[target].inputs[targetHandle] = next;
     } else {
       graph[target].inputs[targetHandle] = source;
     }
@@ -85,7 +93,7 @@ function buildDependencyGraph(nodes: WorkflowNode[], edges: WorkflowEdge[]): Dep
   return graph;
 }
 
-function topologicalSort(graph: DependencyGraph, edges: WorkflowEdge[]): string[] {
+function topologicalSort(graph: DependencyGraph): string[] {
   const visited = new Set<string>();
   const order: string[] = [];
 
@@ -125,16 +133,18 @@ async function executeNode(
       case 'referenceImage':
       case 'sourceImage':
       case 'import': {
-        const imageData = node.data as any;
+        const imageData = toWorkflowNodeData(node.data);
         if (imageData.uploaded && imageData.supabaseUrl) {
-          graph[node.id].outputs['image'] = imageData.supabaseUrl;
+          const url = getStringValue(imageData.supabaseUrl);
+          graph[node.id].outputs['image'] = url;
+          graph[node.id].outputs['referenceImage'] = url;
         }
         break;
       }
 
       case 'prompt': {
-        const promptData = node.data as any;
-        graph[node.id].outputs['prompt'] = promptData.text;
+        const promptData = toWorkflowNodeData(node.data);
+        graph[node.id].outputs['prompt'] = getStringValue(promptData.text);
         break;
       }
 
@@ -165,24 +175,19 @@ async function executeGenerateNode(
   options?: ExecuteWorkflowOptions
 ) {
   const nodeData = graph[node.id];
-  const refInput = nodeData.inputs['referenceImage'];
-  const refNodeIds: string[] = Array.isArray(refInput)
-    ? refInput
-    : refInput
-      ? [refInput as string]
-      : [];
-  const promptNodeId = nodeData.inputs['prompt'] as string | null;
+  const refNodeIds = getInputNodeIds(nodeData.inputs['referenceImage']);
+  const promptNodeIds = getInputNodeIds(nodeData.inputs['prompt']);
 
-  const referenceImageUrls = refNodeIds
-    .map(id => graph[id]?.outputs['image'])
-    .filter((u): u is string => typeof u === 'string' && u.length > 0);
+  const referenceImageUrls = uniqueStrings(
+    refNodeIds.flatMap(id => resolveReferenceOutputUrls(graph, id))
+  );
 
-  const prompt = promptNodeId ? graph[promptNodeId].outputs['prompt'] : null;
+  const prompt = collectPromptOutputs(graph, promptNodeIds) || getStringValue(toWorkflowNodeData(node.data).promptText, '');
 
-  const d = node.data as any;
-  const model = d?.model ?? d?.settings?.model ?? 'nano-banana-pro';
-  const resolution = d?.resolution ?? d?.settings?.resolution ?? '2K';
-  const aspectRatio = d?.aspectRatio ?? d?.settings?.aspectRatio ?? '16:9';
+  const d = toWorkflowNodeData(node.data);
+  const model = getNodeSetting(d, 'model', 'nano-banana-pro');
+  const resolution = getNodeSetting(d, 'resolution', '2K');
+  const aspectRatio = getNodeSetting(d, 'aspectRatio', '16:9');
 
   const generatedImageUrl = await executeGeneration({
     nodeId: node.id,
@@ -210,25 +215,21 @@ async function executeVideoGenerateNode(
   options?: ExecuteWorkflowOptions
 ) {
   const nodeData = graph[node.id];
-  const refInput = nodeData.inputs['referenceImage'];
-  const refNodeIds: string[] = Array.isArray(refInput)
-    ? refInput
-    : refInput
-      ? [refInput as string]
-      : [];
-  const promptNodeId = nodeData.inputs['prompt'] as string | null;
+  const refNodeIds = getInputNodeIds(nodeData.inputs['referenceImage']);
+  const promptNodeIds = getInputNodeIds(nodeData.inputs['prompt']);
 
-  const referenceImageUrls = refNodeIds
-    .map(id => graph[id]?.outputs['image'])
-    .filter((u): u is string => typeof u === 'string' && u.length > 0);
+  const prompt = collectPromptOutputs(graph, promptNodeIds) || getStringValue(toWorkflowNodeData(node.data).promptText, '');
 
-  const prompt = promptNodeId ? graph[promptNodeId].outputs['prompt'] : null;
-
-  const d = node.data as any;
-  const model = d?.model ?? 'veo-2.0-generate-001';
-  const aspectRatio = d?.aspectRatio ?? '16:9';
-  const duration = d?.duration ?? '5s';
-  const resolution = d?.resolution ?? '720p';
+  const d = toWorkflowNodeData(node.data);
+  const model = getNodeSetting(d, 'model', 'veo-2.0-generate-001');
+  const aspectRatio = getNodeSetting(d, 'aspectRatio', '16:9');
+  const duration = getNodeSetting(d, 'duration', '5s');
+  const resolution = getNodeSetting(d, 'resolution', '720p');
+  const mode = getStringValue(d.mode);
+  const shouldResolveReferences = !(isSeedanceModel(model) && mode === 'text_to_video');
+  const referenceImageUrls = shouldResolveReferences
+    ? uniqueStrings(refNodeIds.flatMap(id => resolveReferenceOutputUrls(graph, id)))
+    : [];
 
   const videoUrl = await executeVideoGeneration({
     nodeId: node.id,
@@ -238,6 +239,7 @@ async function executeVideoGenerateNode(
     aspectRatio,
     duration,
     resolution,
+    mode,
     updateNodeData,
     credits: options?.credits,
     deductCredits: options?.deductCredits,
@@ -247,6 +249,7 @@ async function executeVideoGenerateNode(
 
   graph[node.id].outputs['generatedVideo'] = videoUrl;
   graph[node.id].outputs['image'] = videoUrl;
+  graph[node.id].outputs['video'] = videoUrl;
 }
 
 function executeOutputNode(
@@ -259,7 +262,12 @@ function executeOutputNode(
   if (!sourceNodeId) {
     throw new Error('Output node has no input connected');
   }
-  const imageUrl = graph[sourceNodeId].outputs['generatedImage'] || graph[sourceNodeId].outputs['generatedVideo'];
+  const imageUrl = getFirstString([
+    graph[sourceNodeId].outputs['generatedImage'],
+    graph[sourceNodeId].outputs['generatedVideo'],
+    graph[sourceNodeId].outputs['image'],
+    graph[sourceNodeId].outputs['video'],
+  ]);
   if (!imageUrl) {
     throw new Error('No generated image or video available');
   }
@@ -268,4 +276,59 @@ function executeOutputNode(
     metadata: graph[sourceNodeId].outputs['metadata'] || {},
     status: 'complete',
   });
+}
+
+function getInputNodeIds(value: InputValue): string[] {
+  if (!value) return [];
+  return Array.isArray(value) ? value.filter(Boolean) : [value];
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return values.filter((value, index) => value.length > 0 && values.indexOf(value) === index);
+}
+
+function resolveReferenceOutputUrls(graph: DependencyGraph, nodeId: string): string[] {
+  const outputs = graph[nodeId]?.outputs;
+  if (!outputs) return [];
+
+  const urls = [
+    outputs['image'],
+    outputs['referenceImage'],
+    outputs['generatedImage'],
+    outputs['generatedVideo'],
+    outputs['video'],
+  ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+
+  if (urls.length === 0) {
+    throw new Error('A connected reference node did not produce an image or video asset.');
+  }
+
+  return urls;
+}
+
+function collectPromptOutputs(graph: DependencyGraph, nodeIds: string[]): string | null {
+  const prompts = nodeIds
+    .map(id => graph[id]?.outputs['prompt'])
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+
+  return prompts.length > 0 ? prompts.join('\n\n') : null;
+}
+
+function getStringValue(value: unknown, fallback = ''): string {
+  return typeof value === 'string' && value.length > 0 ? value : fallback;
+}
+
+function toWorkflowNodeData(data: unknown): WorkflowNodeData {
+  return data && typeof data === 'object' ? (data as WorkflowNodeData) : {};
+}
+
+function getNodeSetting(data: WorkflowNodeData, key: string, fallback: string): string {
+  return getStringValue(data[key], getStringValue(data.settings?.[key], fallback));
+}
+
+function getFirstString(values: NodeOutputValue[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.length > 0) return value;
+  }
+  return null;
 }

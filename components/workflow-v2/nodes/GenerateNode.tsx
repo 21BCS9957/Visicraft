@@ -10,9 +10,10 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { executeGeneration } from '@/lib/workflow/generateNode';
-import { collectReferenceImageUrls } from '@/lib/workflow/collectReferenceUrls';
+import { collectGenerationInputs } from '@/lib/workflow/collectReferenceUrls';
 import { SmartHandle } from '../SmartHandle';
 import { useWorkflow } from '../WorkflowContext';
+import { ImageActionToolbar } from '../ImageActionToolbar';
 
 export function GenerateNode({ data, selected, id }: NodeProps) {
   const router = useRouter();
@@ -22,6 +23,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
   const { credits, deductCredits, refreshCredits, addCredits } = useCredits();
   const [showMenu, setShowMenu] = useState(false);
   const [showFullscreen, setShowFullscreen] = useState(false);
+  const [showImageActions, setShowImageActions] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const status = data.status || 'idle';
@@ -183,8 +185,11 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
     const currentNodes = getLatestNodes();
     const currentEdges = getLatestEdges();
     let referenceImageUrls: string[];
+    let actualPromptText: string | null;
     try {
-      referenceImageUrls = collectReferenceImageUrls(currentEdges, currentNodes, id);
+      const inputs = collectGenerationInputs(currentEdges, currentNodes, id);
+      referenceImageUrls = inputs.referenceImageUrls;
+      actualPromptText = inputs.promptText ?? (typeof data.promptText === 'string' ? data.promptText : null);
     } catch (collectErr) {
       const msg = collectErr instanceof Error ? collectErr.message : 'Reference collection failed';
       toast.error(msg, { id: `generate-${id}` });
@@ -195,15 +200,6 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
       `Generating with ${referenceImageUrls.length} reference image(s)`,
       { id: `generate-info-${id}` }
     );
-
-    let actualPromptText: string | null = null;
-    currentEdges.forEach((edge) => {
-      if (edge.target !== id || edge.targetHandle !== 'prompt') return;
-      const sourceNode = currentNodes.find((n) => n.id === edge.source);
-      if (sourceNode?.data && 'text' in sourceNode.data) {
-        actualPromptText = (sourceNode.data as { text?: string }).text ?? null;
-      }
-    });
 
     try {
       await executeGeneration({
@@ -244,6 +240,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
         flex flex-col
         overflow-hidden
         transition-all
+        ${showImageActions ? 'workflow-actions-open' : ''}
         ${selected ? 'ring-2 ring-cyan-500/50 border-cyan-500/30' : ''}
       `}
       style={{ cursor: 'default' }}
@@ -342,6 +339,16 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
         </div>
       </div>
 
+      {result && (
+        <ImageActionToolbar
+          nodeId={id}
+          sourceHandle="generatedImage"
+          imageUrl={result}
+          onDownload={handleDownload}
+          onFullscreen={() => setShowFullscreen(true)}
+        />
+      )}
+
       {/* Preview */}
       <div className="p-3 relative flex-1 min-h-0 flex flex-col overflow-hidden">
         {result ? (
@@ -354,7 +361,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
               decoding="async"
               onClick={(e) => {
                 e.stopPropagation();
-                setShowFullscreen(true);
+                setShowImageActions(true);
               }}
             />
             {/* Fullscreen button overlay */}

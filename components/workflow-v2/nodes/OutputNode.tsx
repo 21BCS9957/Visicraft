@@ -6,6 +6,7 @@ import { MoreVertical, MonitorPlay, Download, Copy, Trash2, RefreshCw } from 'lu
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from '@/lib/toast';
 import { SmartHandle } from '../SmartHandle';
+import { ImageActionToolbar } from '../ImageActionToolbar';
 
 export function OutputNode({ data, selected, id }: NodeProps) {
   const { setNodes, getNodes, setEdges, getEdges } = useReactFlow();
@@ -220,6 +221,15 @@ export function OutputNode({ data, selected, id }: NodeProps) {
         </div>
       </div>
 
+      {images[0] && (
+        <ImageActionToolbar
+          nodeId={id}
+          sourceHandle="image"
+          imageUrl={images[0]}
+          onDownload={handleDownloadAll}
+        />
+      )}
+
       {/* Output Display */}
       <div className="p-4 flex-1 min-h-0 flex flex-col">
         {images.length === 0 ? (
@@ -255,6 +265,14 @@ export function OutputNode({ data, selected, id }: NodeProps) {
         handleType="output"
         type="target"
         position={Position.Left}
+        style={{ top: '50%' }}
+      />
+      <SmartHandle
+        nodeId={id}
+        handleId="image"
+        handleType="output"
+        type="source"
+        position={Position.Right}
         style={{ top: '50%' }}
       />
     </motion.div>

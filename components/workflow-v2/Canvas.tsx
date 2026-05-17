@@ -25,6 +25,7 @@ import { GenerateNode } from './nodes/GenerateNode';
 import { VideoGenerateNode } from './nodes/VideoGenerateNode';
 import { OutputNode } from './nodes/OutputNode';
 import { NoteNode } from './nodes/NoteNode';
+import { CropNode } from './nodes/CropNode';
 import { CustomEdge, PremiumConnectionLine } from './CustomEdge';
 import { Sidebar } from './Sidebar';
 import { PropertiesPanel } from './PropertiesPanel';
@@ -49,6 +50,7 @@ const nodeTypes = {
   videoGenerate: VideoGenerateNode,
   output: OutputNode,
   note: NoteNode,
+  crop: CropNode,
 };
 
 const edgeTypes = {
@@ -59,8 +61,8 @@ const defaultEdgeOptions = {
   type: 'custom',
   animated: false,
   style: {
-    strokeWidth: 2.75,
-    stroke: '#06b6d4',
+    strokeWidth: 3.25,
+    stroke: '#38bdf8',
   },
 };
 
@@ -241,7 +243,7 @@ function FlowCanvas() {
         target: params.target!,
         type: 'custom',
         animated: false,
-        style: { strokeWidth: 2.75 },
+        style: { strokeWidth: 3.25 },
       };
       setEdges((eds) => addEdge(newEdge, eds));
 
@@ -259,7 +261,11 @@ function FlowCanvas() {
           if (updatedNode.type === 'generate' || updatedNode.type === 'videoGenerate') {
             const handleId = params.targetHandle;
 
-            const sourceImageUrl = sourceNode.data.supabaseUrl || sourceNode.data.imageUrl || sourceNode.data.generatedImage;
+            const sourceImageUrl =
+              sourceNode.data.supabaseUrl ||
+              sourceNode.data.imageUrl ||
+              sourceNode.data.generatedImage ||
+              sourceNode.data.generatedVideo;
 
             if (handleId === 'referenceImage' && sourceImageUrl) {
               updatedNode.data.referenceImageUrl = sourceImageUrl;
@@ -589,8 +595,8 @@ function FlowCanvas() {
               elevateNodesOnSelect={false}
               elevateEdgesOnSelect={false}
               connectionLineStyle={{
-                stroke: '#f5f5f2',
-                strokeWidth: 2.5,
+                stroke: '#38bdf8',
+                strokeWidth: 3.15,
                 strokeLinecap: 'round',
                 strokeLinejoin: 'round',
               }}

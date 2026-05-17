@@ -11,8 +11,18 @@ import { useCredits } from '@/lib/contexts/CreditsContext';
 import { useWorkflow } from './WorkflowContext';
 import { getCreditCost } from '@/lib/credits/calculator';
 import { executeGeneration } from '@/lib/workflow/generateNode';
-import { executeVideoGeneration } from '@/lib/workflow/videoGenerateNode';
-import { collectReferenceImageUrls } from '@/lib/workflow/collectReferenceUrls';
+import { executeVideoGeneration, getVideoGenerationCreditCost } from '@/lib/workflow/videoGenerateNode';
+import { collectGenerationInputs, collectPromptText } from '@/lib/workflow/collectReferenceUrls';
+import {
+  isSeedanceModel,
+  SEEDANCE_ASPECT_RATIOS,
+  SEEDANCE_DURATIONS,
+  SEEDANCE_FAST_RESOLUTIONS,
+  SEEDANCE_FIRST_LAST_ASPECT_RATIOS,
+  SEEDANCE_MODELS,
+  SEEDANCE_MODES,
+  SEEDANCE_RESOLUTIONS,
+} from '@/lib/workflow/seedance';
 
 interface PropertiesPanelProps {
   selectedNode: any;
@@ -47,6 +57,7 @@ const RESOLUTIONS = [
 ];
 
 const VIDEO_MODELS = [
+  ...SEEDANCE_MODELS,
   {
     id: 'veo-3.1-generate-001',
     name: 'Google Veo 3.1',
@@ -87,11 +98,28 @@ const VIDEO_ASPECT_RATIOS = [
   { id: '1:1', name: '1:1 (Square)', emoji: '🟦' },
 ];
 
+const VIDEO_SEEDANCE_ASPECT_RATIOS = SEEDANCE_ASPECT_RATIOS.map((aspect) => ({
+  id: aspect.id,
+  name: aspect.name,
+  emoji: aspect.emoji,
+}));
+
+const VIDEO_SEEDANCE_FIRST_LAST_ASPECT_RATIOS = SEEDANCE_FIRST_LAST_ASPECT_RATIOS.map((aspect) => ({
+  id: aspect.id,
+  name: aspect.name,
+  emoji: aspect.emoji,
+}));
+
 const VIDEO_DURATIONS = [
   { id: '4s', name: '4 Seconds' },
   { id: '6s', name: '6 Seconds' },
   { id: '8s', name: '8 Seconds' },
 ];
+
+const VIDEO_SEEDANCE_DURATIONS = SEEDANCE_DURATIONS.map((duration) => ({
+  id: duration.id,
+  name: duration.name,
+}));
 
 const VIDEO_RESOLUTIONS = [
   { id: '720p', name: '720p HD', emoji: '📷' },
@@ -99,7 +127,17 @@ const VIDEO_RESOLUTIONS = [
   { id: '4K', name: '4K Ultra HD', emoji: '🎬' },
 ];
 
-const VIDEO_CREDIT_COST = 120;
+const VIDEO_SEEDANCE_RESOLUTIONS = SEEDANCE_RESOLUTIONS.map((resolution) => ({
+  id: resolution.id,
+  name: resolution.name,
+  emoji: resolution.emoji,
+}));
+
+const VIDEO_SEEDANCE_FAST_RESOLUTIONS = SEEDANCE_FAST_RESOLUTIONS.map((resolution) => ({
+  id: resolution.id,
+  name: resolution.name,
+  emoji: resolution.emoji,
+}));
 
 export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps) {
   const router = useRouter();
@@ -121,16 +159,19 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
   const [selectedAspect, setSelectedAspect] = useState(selectedNode?.data?.aspectRatio || '16:9');
   const [selectedResolution, setSelectedResolution] = useState(selectedNode?.data?.resolution || defaultResolution);
   const [selectedDuration, setSelectedDuration] = useState(selectedNode?.data?.duration || '5s');
+  const [selectedVideoMode, setSelectedVideoMode] = useState(selectedNode?.data?.mode || 'omni_reference');
   
   const [showModelMenu, setShowModelMenu] = useState(false);
   const [showAspectMenu, setShowAspectMenu] = useState(false);
   const [showResolutionMenu, setShowResolutionMenu] = useState(false);
   const [showDurationMenu, setShowDurationMenu] = useState(false);
+  const [showVideoModeMenu, setShowVideoModeMenu] = useState(false);
   
   const modelRef = useRef<HTMLDivElement>(null);
   const aspectRef = useRef<HTMLDivElement>(null);
   const resolutionRef = useRef<HTMLDivElement>(null);
   const durationRef = useRef<HTMLDivElement>(null);
+  const videoModeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (selectedNode?.data) {
@@ -147,10 +188,14 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
       setSelectedAspect(selectedNode.data.aspectRatio || '16:9');
       setSelectedResolution(selectedNode.data.resolution || (isVideo ? '720p' : '1080p'));
       setSelectedDuration(selectedNode.data.duration || '5s');
+      setSelectedVideoMode(selectedNode.data.mode || 'omni_reference');
     }
-  }, [selectedNode?.id, selectedNode?.type, selectedNode?.data?.model, selectedNode?.data?.aspectRatio, selectedNode?.data?.resolution, selectedNode?.data?.duration, contextUpdateNodeData]);
+  }, [selectedNode?.id, selectedNode?.type, selectedNode?.data?.model, selectedNode?.data?.aspectRatio, selectedNode?.data?.resolution, selectedNode?.data?.duration, selectedNode?.data?.mode, contextUpdateNodeData]);
 
-  const creditCost = isVideoNode ? VIDEO_CREDIT_COST : getCreditCost(selectedModel, selectedResolution);
+  const seedanceSelected = isVideoNode && isSeedanceModel(selectedModel);
+  const creditCost = isVideoNode
+    ? getVideoGenerationCreditCost(selectedModel, selectedResolution, selectedDuration)
+    : getCreditCost(selectedModel, selectedResolution);
   const hasEnoughCredits = credits >= creditCost;
   const isGenerating = selectedNode?.data?.status === 'processing';
   const runDisabled = !user ? false : (!hasEnoughCredits || isGenerationRunning);
@@ -161,6 +206,7 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
       if (aspectRef.current && !aspectRef.current.contains(event.target as Node)) setShowAspectMenu(false);
       if (resolutionRef.current && !resolutionRef.current.contains(event.target as Node)) setShowResolutionMenu(false);
       if (durationRef.current && !durationRef.current.contains(event.target as Node)) setShowDurationMenu(false);
+      if (videoModeRef.current && !videoModeRef.current.contains(event.target as Node)) setShowVideoModeMenu(false);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -182,6 +228,14 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
   const handleModelSelect = (modelId: string) => {
     setSelectedModel(modelId);
     updateNodeData('model', modelId);
+    if (modelId === 'seedance-2-fast' && selectedResolution === '1080p') {
+      setSelectedResolution('720p');
+      updateNodeData('resolution', '720p');
+    }
+    if (isSeedanceModel(modelId) && !selectedNode?.data?.mode) {
+      setSelectedVideoMode('omni_reference');
+      updateNodeData('mode', 'omni_reference');
+    }
     setShowModelMenu(false);
     const modelData = activeModels.find(m => m.id === modelId);
     toast.success(`Model: ${modelData?.name}`);
@@ -192,6 +246,18 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
     updateNodeData('duration', durationId);
     setShowDurationMenu(false);
     toast.success(`Duration: ${durationId}`);
+  };
+
+  const handleVideoModeSelect = (modeId: string) => {
+    setSelectedVideoMode(modeId);
+    updateNodeData('mode', modeId);
+    if (modeId !== 'first_last_frames' && selectedAspect === 'auto') {
+      setSelectedAspect('16:9');
+      updateNodeData('aspectRatio', '16:9');
+    }
+    setShowVideoModeMenu(false);
+    const modeData = SEEDANCE_MODES.find(m => m.id === modeId);
+    toast.success(`Mode: ${modeData?.name}`);
   };
 
   const handleAspectSelect = (aspectId: string) => {
@@ -221,8 +287,19 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
     const currentNodes = getLatestNodes();
     const currentEdges = getLatestEdges();
     let referenceImageUrls: string[];
+    let actualPromptText: string | null;
     try {
-      referenceImageUrls = collectReferenceImageUrls(currentEdges, currentNodes, selectedNode.id);
+      const seedanceTextToVideo = isVideoNode && isSeedanceModel(selectedModel) && selectedVideoMode === 'text_to_video';
+      if (seedanceTextToVideo) {
+        referenceImageUrls = [];
+        actualPromptText = collectPromptText(currentEdges, currentNodes, selectedNode.id)
+          ?? (typeof selectedNode.data.promptText === 'string' ? selectedNode.data.promptText : null);
+      } else {
+        const inputs = collectGenerationInputs(currentEdges, currentNodes, selectedNode.id);
+        referenceImageUrls = inputs.referenceImageUrls;
+        actualPromptText = inputs.promptText
+          ?? (typeof selectedNode.data.promptText === 'string' ? selectedNode.data.promptText : null);
+      }
     } catch (collectErr) {
       const msg = collectErr instanceof Error ? collectErr.message : 'Reference collection failed';
       toast.error(msg, { id: `generate-${selectedNode.id}` });
@@ -234,15 +311,6 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
       { id: `generate-info-${selectedNode.id}` }
     );
 
-    let actualPromptText: string | null = null;
-    currentEdges.forEach((edge) => {
-      if (edge.target !== selectedNode.id || edge.targetHandle !== 'prompt') return;
-      const sourceNode = currentNodes.find((n) => n.id === edge.source);
-      if (sourceNode?.data && 'text' in sourceNode.data) {
-        actualPromptText = (sourceNode.data as { text?: string }).text ?? null;
-      }
-    });
-
     try {
       if (isVideoNode) {
         await executeVideoGeneration({
@@ -253,6 +321,7 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
           aspectRatio: selectedAspect,
           duration: selectedDuration,
           resolution: selectedResolution,
+          mode: selectedVideoMode,
           updateNodeData: (nodeId, data) => contextUpdateNodeData(nodeId, data),
           credits,
           deductCredits,
@@ -283,11 +352,25 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
   };
 
   const currentModelData = activeModels.find(m => m.id === selectedModel);
-  const activeAspectRatios = isVideoNode ? VIDEO_ASPECT_RATIOS : ASPECT_RATIOS;
-  const activeResolutions = isVideoNode ? VIDEO_RESOLUTIONS : RESOLUTIONS;
+  const activeAspectRatios = isVideoNode
+    ? seedanceSelected
+      ? selectedVideoMode === 'first_last_frames'
+        ? VIDEO_SEEDANCE_FIRST_LAST_ASPECT_RATIOS
+        : VIDEO_SEEDANCE_ASPECT_RATIOS
+      : VIDEO_ASPECT_RATIOS
+    : ASPECT_RATIOS;
+  const activeResolutions = isVideoNode
+    ? seedanceSelected
+      ? selectedModel === 'seedance-2-fast'
+        ? VIDEO_SEEDANCE_FAST_RESOLUTIONS
+        : VIDEO_SEEDANCE_RESOLUTIONS
+      : VIDEO_RESOLUTIONS
+    : RESOLUTIONS;
+  const activeDurations = seedanceSelected ? VIDEO_SEEDANCE_DURATIONS : VIDEO_DURATIONS;
   const currentAspectData = activeAspectRatios.find(a => a.id === selectedAspect);
   const currentResolutionData = activeResolutions.find(r => r.id === selectedResolution);
-  const currentDurationData = VIDEO_DURATIONS.find(d => d.id === selectedDuration);
+  const currentDurationData = activeDurations.find(d => d.id === selectedDuration);
+  const currentVideoModeData = SEEDANCE_MODES.find(mode => mode.id === selectedVideoMode);
 
   return (
     <motion.div
@@ -418,6 +501,47 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
           </AnimatePresence>
         </div>
 
+        {/* Seedance Mode Dropdown */}
+        {seedanceSelected && (
+          <div ref={videoModeRef} className="relative">
+            <label className="text-sm text-gray-400 mb-2 block">Seedance Mode</label>
+            <button
+              onClick={() => setShowVideoModeMenu(!showVideoModeMenu)}
+              className="w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-4 py-3 flex items-center justify-between transition-colors"
+            >
+              <div className="text-left">
+                <div className="text-white text-sm">{currentVideoModeData?.name}</div>
+                <div className="text-gray-400 text-xs">{currentVideoModeData?.description}</div>
+              </div>
+              <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showVideoModeMenu ? 'rotate-180' : ''}`} />
+            </button>
+
+            <AnimatePresence>
+              {showVideoModeMenu && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="absolute top-full left-0 right-0 mt-2 bg-[#1a1a1a] border border-white/10 rounded-lg overflow-hidden shadow-xl z-20"
+                >
+                  {SEEDANCE_MODES.map((mode) => (
+                    <button
+                      key={mode.id}
+                      onClick={() => handleVideoModeSelect(mode.id)}
+                      className={`w-full px-4 py-3 text-left hover:bg-white/10 transition-colors border-b border-white/5 last:border-b-0 ${
+                        selectedVideoMode === mode.id ? 'bg-white/5 text-purple-400' : 'text-white'
+                      }`}
+                    >
+                      <div className="text-sm">{mode.name}</div>
+                      <div className="text-xs text-gray-400">{mode.description}</div>
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+
         {/* Aspect Ratio Dropdown */}
         <div ref={aspectRef} className="relative">
           <label className="text-sm text-gray-400 mb-2 block">Aspect Ratio</label>
@@ -519,7 +643,7 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
                   exit={{ opacity: 0, y: -10 }}
                   className="absolute top-full left-0 right-0 mt-2 bg-[#1a1a1a] border border-white/10 rounded-lg overflow-hidden shadow-xl z-20"
                 >
-                  {VIDEO_DURATIONS.map((dur) => (
+                  {activeDurations.map((dur) => (
                     <button
                       key={dur.id}
                       onClick={() => handleDurationSelect(dur.id)}
@@ -576,6 +700,11 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
                     {credits} credits
                   </span>
                 </div>
+                {seedanceSelected && (
+                  <p className="mt-2 text-[11px] leading-relaxed text-gray-500">
+                    Seedance cost follows PiAPI per-second pricing. Video references reserve extra input-video budget at run time.
+                  </p>
+                )}
               </div>
             </div>
 

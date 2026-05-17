@@ -21,44 +21,16 @@ interface CustomEdgeProps extends EdgeProps {
   };
 }
 
-// Color map for different handle types - matching SmartHandle colors
-const colorMap = {
-  reference: '#f97316', // Orange
-  source: '#eab308',    // Yellow
-  prompt: '#06b6d4',    // Cyan
-  output: '#10b981',    // Green
-  image: '#3b82f6',     // Blue
-};
-
-// Get edge color based on handle IDs
-const getEdgeColor = (sourceHandle?: string | null, targetHandle?: string | null): string => {
-  // Check target handle first (more specific)
-  if (targetHandle === 'referenceImage') {
-    return colorMap.reference;
-  } else if (targetHandle === 'prompt') {
-    return colorMap.prompt; // Cyan for prompt
-  } else if (targetHandle === 'image') {
-    return colorMap.output; // Green for output
-  }
-  
-  // Check source handle
-  if (sourceHandle === 'image') {
-    return colorMap.image; // Blue for import node output
-  } else if (sourceHandle === 'prompt') {
-    return colorMap.prompt; // Cyan for prompt output
-  } else if (sourceHandle === 'generatedImage') {
-    return colorMap.output; // Green for generated output
-  }
-  
-  return colorMap.output; // Default green
-};
+const WIRE_CORE = '#f4f0e8';
+const WIRE_WARM = '#d8d2c6';
+const WIRE_HIGHLIGHT = '#ffffff';
 
 const HANDLE_RADIUS = 6;
-const EDGE_STROKE_WIDTH = 2.75;
-const SELECTED_EDGE_STROKE_WIDTH = 3.25;
-const EDGE_OUTLINE_WIDTH = 5;
-const SELECTED_EDGE_OUTLINE_WIDTH = 6;
-const SOCKET_RING_WIDTH = 4.5;
+const EDGE_STROKE_WIDTH = 2.85;
+const SELECTED_EDGE_STROKE_WIDTH = 3.35;
+const EDGE_OUTLINE_WIDTH = 6.9;
+const SELECTED_EDGE_OUTLINE_WIDTH = 7.6;
+const SOCKET_RING_WIDTH = 1.2;
 const DOCK_OFFSET = HANDLE_RADIUS + SOCKET_RING_WIDTH + EDGE_STROKE_WIDTH / 2;
 
 const getDockedPoint = (x: number, y: number, position: Position, outward = true) => {
@@ -86,8 +58,6 @@ function CustomEdgeComponent({
   targetY,
   sourcePosition,
   targetPosition,
-  sourceHandle,
-  targetHandle,
   selected,
   data,
 }: CustomEdgeProps) {
@@ -106,9 +76,6 @@ function CustomEdgeComponent({
     targetPosition,
     edgeStyle,
   });
-
-  const color = getEdgeColor(sourceHandle, targetHandle);
-
   const handleClick = useCallback((event: React.MouseEvent) => {
     event.stopPropagation();
     setEdges((edges) => edges.filter((edge) => edge.id !== id));
@@ -118,44 +85,31 @@ function CustomEdgeComponent({
   return (
     <g className="react-flow__edge">
       <defs>
-        {/* Enhanced glow filter for better visual quality */}
-        <filter id={`glow-${id}`} x="-100%" y="-100%" width="300%" height="300%">
-          <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+        <filter id={`wireGlow-${id}`} x="-70%" y="-70%" width="240%" height="240%">
+          <feGaussianBlur stdDeviation="2.6" result="softGlow"/>
           <feMerge>
-            <feMergeNode in="coloredBlur"/>
+            <feMergeNode in="softGlow"/>
             <feMergeNode in="SourceGraphic"/>
           </feMerge>
         </filter>
-        
-        {/* Gradient for selected state */}
-        <linearGradient id={`gradient-${id}`} x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor={color} stopOpacity="0.8"/>
-          <stop offset="50%" stopColor={color} stopOpacity="1"/>
-          <stop offset="100%" stopColor={color} stopOpacity="0.8"/>
+
+        <linearGradient id={`wireGradient-${id}`} gradientUnits="userSpaceOnUse" x1={sourcePoint.x} y1={sourcePoint.y} x2={targetPoint.x} y2={targetPoint.y}>
+          <stop offset="0%" stopColor={WIRE_WARM} stopOpacity="0.76"/>
+          <stop offset="16%" stopColor={WIRE_CORE} stopOpacity="0.98"/>
+          <stop offset="52%" stopColor={WIRE_HIGHLIGHT} stopOpacity="1"/>
+          <stop offset="84%" stopColor={WIRE_CORE} stopOpacity="0.98"/>
+          <stop offset="100%" stopColor={WIRE_WARM} stopOpacity="0.78"/>
         </linearGradient>
+
+        <filter id={`wireTexture-${id}`} x="-10%" y="-10%" width="120%" height="120%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.92" numOctaves="2" seed="7" result="noise"/>
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale="0.22" xChannelSelector="R" yChannelSelector="G"/>
+        </filter>
       </defs>
 
-      {/* Outer glow when selected */}
-      {selected && (
-        <path
-          d={edgePath}
-          stroke={color}
-          strokeWidth={8}
-          fill="none"
-          opacity={0.2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={{ 
-            pointerEvents: 'none',
-            filter: `url(#glow-${id})`,
-          }}
-        />
-      )}
-
-      {/* Dark outline keeps the connection readable without bleeding through handles. */}
       <path
         d={edgePath}
-        stroke="rgba(0, 0, 0, 0.75)"
+        stroke="rgba(0, 0, 0, 0.82)"
         strokeWidth={selected ? SELECTED_EDGE_OUTLINE_WIDTH : EDGE_OUTLINE_WIDTH}
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -167,12 +121,26 @@ function CustomEdgeComponent({
         }}
       />
 
-      {/* Main edge path with high quality rendering */}
+      <path
+        d={edgePath}
+        stroke="rgba(255, 250, 239, 0.52)"
+        strokeWidth={selected ? 5.8 : 5.15}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+        opacity={selected ? 0.34 : 0.22}
+        style={{
+          pointerEvents: 'none',
+          filter: `url(#wireGlow-${id})`,
+          vectorEffect: 'non-scaling-stroke',
+        }}
+      />
+
       <path
         id={id}
-        className="react-flow__edge-path"
+        className="workflow-edge-cable"
         d={edgePath}
-        stroke={selected ? `url(#gradient-${id})` : color}
+        stroke={`url(#wireGradient-${id})`}
         strokeWidth={selected ? SELECTED_EDGE_STROKE_WIDTH : EDGE_STROKE_WIDTH}
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -182,6 +150,22 @@ function CustomEdgeComponent({
           cursor: 'pointer',
           vectorEffect: 'non-scaling-stroke', // Maintain stroke width on zoom
           shapeRendering: 'geometricPrecision', // High quality rendering
+          filter: `url(#wireTexture-${id})`,
+        }}
+      />
+
+      <path
+        d={edgePath}
+        stroke="rgba(255, 255, 255, 0.68)"
+        strokeWidth={0.82}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+        opacity={selected ? 0.44 : 0.32}
+        style={{
+          pointerEvents: 'none',
+          vectorEffect: 'non-scaling-stroke',
+          mixBlendMode: 'screen',
         }}
       />
       
@@ -258,7 +242,7 @@ function getDockedEdgePath({
         targetX,
         targetY,
         targetPosition,
-        curvature: 0.34,
+        curvature: 0.42,
       })[0];
   }
 }
@@ -285,22 +269,50 @@ export function PremiumConnectionLine({
 
   return (
     <g>
+      <defs>
+        <filter id="workflow-connection-preview-glow" x="-70%" y="-70%" width="240%" height="240%">
+          <feGaussianBlur stdDeviation="2.6" result="coloredBlur"/>
+          <feMerge>
+            <feMergeNode in="coloredBlur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+        <linearGradient id="workflow-connection-preview-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor={WIRE_WARM} stopOpacity="0.75"/>
+          <stop offset="50%" stopColor={WIRE_HIGHLIGHT} stopOpacity="1"/>
+          <stop offset="100%" stopColor={WIRE_CORE} stopOpacity="0.92"/>
+        </linearGradient>
+      </defs>
       <path
         d={path}
         fill="none"
-        stroke="rgba(0, 0, 0, 0.76)"
+        stroke="rgba(0, 0, 0, 0.82)"
         strokeLinecap="round"
         strokeLinejoin="round"
-        strokeWidth={5.5}
+        strokeWidth={7}
         style={{ pointerEvents: 'none', vectorEffect: 'non-scaling-stroke' }}
       />
       <path
         d={path}
         fill="none"
-        stroke="#f5f5f2"
+        stroke="rgba(255, 250, 239, 0.46)"
+        opacity={0.3}
         strokeLinecap="round"
         strokeLinejoin="round"
-        strokeWidth={2.5}
+        strokeWidth={5}
+        style={{
+          pointerEvents: 'none',
+          filter: 'url(#workflow-connection-preview-glow)',
+          vectorEffect: 'non-scaling-stroke',
+        }}
+      />
+      <path
+        d={path}
+        fill="none"
+        stroke="url(#workflow-connection-preview-gradient)"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2.85}
         style={{ pointerEvents: 'none', vectorEffect: 'non-scaling-stroke' }}
       />
     </g>

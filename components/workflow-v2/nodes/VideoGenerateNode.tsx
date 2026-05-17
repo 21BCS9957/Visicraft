@@ -10,7 +10,8 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { executeVideoGeneration } from '@/lib/workflow/videoGenerateNode';
-import { collectReferenceImageUrls } from '@/lib/workflow/collectReferenceUrls';
+import { collectGenerationInputs, collectPromptText } from '@/lib/workflow/collectReferenceUrls';
+import { isSeedanceModel } from '@/lib/workflow/seedance';
 import { SmartHandle } from '../SmartHandle';
 import { useWorkflow } from '../WorkflowContext';
 
@@ -130,16 +131,23 @@ export function VideoGenerateNode({ data, selected, id }: NodeProps) {
 
     const currentNodes = getLatestNodes();
     const currentEdges = getLatestEdges();
-    const referenceImageUrls = collectReferenceImageUrls(currentEdges, currentNodes, id);
-
-    let actualPromptText: string | null = null;
-    currentEdges.forEach((edge) => {
-      if (edge.target !== id || edge.targetHandle !== 'prompt') return;
-      const sourceNode = currentNodes.find((n) => n.id === edge.source);
-      if (sourceNode?.data && 'text' in sourceNode.data) {
-        actualPromptText = (sourceNode.data as { text?: string }).text ?? null;
+    let referenceImageUrls: string[];
+    let actualPromptText: string | null;
+    try {
+      const seedanceTextToVideo = isSeedanceModel(data.model || '') && data.mode === 'text_to_video';
+      if (seedanceTextToVideo) {
+        referenceImageUrls = [];
+        actualPromptText = collectPromptText(currentEdges, currentNodes, id) ?? (typeof data.promptText === 'string' ? data.promptText : null);
+      } else {
+        const inputs = collectGenerationInputs(currentEdges, currentNodes, id);
+        referenceImageUrls = inputs.referenceImageUrls;
+        actualPromptText = inputs.promptText ?? (typeof data.promptText === 'string' ? data.promptText : null);
       }
-    });
+    } catch (collectErr) {
+      const msg = collectErr instanceof Error ? collectErr.message : 'Reference collection failed';
+      toast.error(msg, { id: `videogen-${id}` });
+      return;
+    }
 
     try {
       await executeVideoGeneration({
@@ -150,6 +158,7 @@ export function VideoGenerateNode({ data, selected, id }: NodeProps) {
         aspectRatio: data.aspectRatio || '16:9',
         duration: data.duration || '5s',
         resolution: data.resolution || '720p',
+        mode: data.mode,
         updateNodeData,
         credits,
         deductCredits,

@@ -1574,3 +1574,536 @@ body {
     }
   }
 }
+
+/* ImaginArt-style final canvas polish: tactile dark nodes, title straps, white cables. */
+.workflow-node-card {
+  overflow: visible !important;
+  isolation: isolate;
+  filter: drop-shadow(0 18px 34px rgba(0, 0, 0, 0.28));
+}
+
+.workflow-node-card > .px-4.py-3 {
+  padding: 0 1px 8px 1px !important;
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.workflow-node-card > .px-4.py-3 > .flex {
+  min-height: 22px !important;
+  gap: 8px !important;
+}
+
+.workflow-node-card > .px-4.py-3 .flex.items-center.gap-3 {
+  gap: 5px !important;
+}
+
+.workflow-node-card .w-10.h-10.rounded-xl {
+  width: 14px !important;
+  height: 14px !important;
+  opacity: 0.82;
+}
+
+.workflow-node-card .w-10.h-10.rounded-xl svg,
+.workflow-node-card .w-10.h-10.rounded-xl .lucide {
+  width: 11px !important;
+  height: 11px !important;
+}
+
+.workflow-node-card h3 {
+  display: inline-flex !important;
+  align-items: center !important;
+  min-height: 19px;
+  max-width: 210px;
+  padding: 3px 9px !important;
+  border-radius: 6px !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015)),
+    #050505 !important;
+  border: 1px solid rgba(255, 255, 255, 0.075) !important;
+  color: rgba(255, 255, 255, 0.88) !important;
+  font-size: 11px !important;
+  line-height: 1 !important;
+  font-weight: 500 !important;
+  box-shadow:
+    0 6px 14px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055) !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-node-menu-button {
+  width: 22px !important;
+  height: 22px !important;
+  margin-right: 0 !important;
+  border-radius: 6px !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.018)),
+    #050505 !important;
+  border: 1px solid rgba(255, 255, 255, 0.075) !important;
+  color: rgba(255, 255, 255, 0.74) !important;
+}
+
+.workflow-node-menu-button .lucide {
+  width: 13px !important;
+  height: 13px !important;
+}
+
+.workflow-node-card > .p-4,
+.workflow-node-card > .p-3.relative {
+  position: relative !important;
+  border-radius: 11px !important;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.055), transparent 28%),
+    radial-gradient(circle at 100% 100%, rgba(255, 255, 255, 0.028), transparent 32%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.032), rgba(255, 255, 255, 0.012)),
+    #202020 !important;
+  border: 1px solid rgba(255, 255, 255, 0.072) !important;
+  box-shadow:
+    0 20px 38px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.052),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.4) !important;
+}
+
+.workflow-node-card > .p-4::after,
+.workflow-node-card > .p-3.relative::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background-image:
+    radial-gradient(rgba(255, 255, 255, 0.055) 0.65px, transparent 0.65px);
+  background-size: 7px 7px;
+  opacity: 0.12;
+  mix-blend-mode: overlay;
+}
+
+.workflow-node-card textarea {
+  border-radius: 11px !important;
+  color: rgba(255, 255, 255, 0.74) !important;
+  font-size: 13px !important;
+  line-height: 1.38 !important;
+  padding: 16px 16px 28px 16px !important;
+}
+
+.workflow-node-card [class*="border-dashed"] {
+  border-radius: 10px !important;
+  background: rgba(0, 0, 0, 0.1) !important;
+  border: 1px dashed rgba(255, 255, 255, 0.11) !important;
+}
+
+.workflow-node-card > .px-3.pb-3 {
+  padding-top: 8px !important;
+}
+
+.workflow-node-card > .px-3.pb-3 button {
+  min-height: 28px !important;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.075) !important;
+  color: rgba(255, 255, 255, 0.76) !important;
+  font-size: 10px !important;
+}
+
+.workflow-note-card {
+  border-radius: 6px !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.045)),
+    #cfe977 !important;
+  border: 1px solid rgba(246, 255, 186, 0.48) !important;
+  box-shadow:
+    0 22px 44px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28) !important;
+}
+
+.workflow-note-card > .px-4.py-3 {
+  background: #050505 !important;
+  border-bottom: 0 !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.react-flow__edge {
+  filter: none !important;
+}
+
+.workflow-edge-cable {
+  filter: drop-shadow(0 0 6px rgba(255, 246, 226, 0.1));
+}
+
+.react-flow__connectionline path {
+  stroke: #f4f0e8 !important;
+  stroke-width: 2.85px !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+}
+
+.react-flow__handle {
+  width: 10px !important;
+  height: 10px !important;
+  border-width: 2px !important;
+  background: #050505 !important;
+  box-shadow:
+    0 0 0 2.5px #050505,
+    0 8px 16px rgba(0, 0, 0, 0.24) !important;
+  opacity: 1 !important;
+}
+
+.react-flow__handle-left {
+  left: -5px !important;
+}
+
+.react-flow__handle-right {
+  right: -5px !important;
+}
+
+.react-flow__handle.connected {
+  background: #050505 !important;
+  box-shadow:
+    0 0 0 2.5px #050505,
+    0 0 0 4px currentColor,
+    0 0 14px color-mix(in srgb, currentColor 22%, transparent) !important;
+}
+
+.react-flow__handle:hover,
+.react-flow__handle-connecting {
+  transform: scale(1.08) !important;
+  background: #050505 !important;
+  box-shadow:
+    0 0 0 2.5px #050505,
+    0 0 0 4px rgba(255, 255, 255, 0.72),
+    0 0 16px rgba(255, 255, 255, 0.18) !important;
+}
+
+.react-flow__handle.handle-reference,
+.react-flow__handle.handle-image,
+.react-flow__handle.handle-output {
+  color: #c89631 !important;
+  border-color: #c89631 !important;
+}
+
+.react-flow__handle.handle-prompt {
+  color: #2a8fbd !important;
+  border-color: #2a8fbd !important;
+}
+
+.workflow-handle-label {
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: rgba(5, 5, 5, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  font-size: 10.5px !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+}
+
+.workflow-handle-label-prompt {
+  color: #4bb6df !important;
+}
+
+.workflow-handle-label-reference,
+.workflow-handle-label-image,
+.workflow-handle-label-output {
+  color: #d4a64a !important;
+}
+
+/* Keep the new white wires/sockets, but restore the previous clean node treatment. */
+.workflow-node-card {
+  overflow: visible !important;
+  isolation: isolate;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+.workflow-node-card > .px-4.py-3 {
+  padding: 0 2px 9px 2px !important;
+  border: 0 !important;
+  background: transparent !important;
+  overflow: visible !important;
+}
+
+.workflow-node-card > .px-4.py-3 > .flex {
+  min-height: 24px !important;
+  align-items: center;
+}
+
+.workflow-node-card > .px-4.py-3 .flex.items-center.gap-3 {
+  gap: 6px !important;
+}
+
+.workflow-node-card .w-10.h-10.rounded-xl {
+  width: 18px !important;
+  height: 18px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: rgba(255, 255, 255, 0.92) !important;
+  opacity: 1;
+}
+
+.workflow-node-card .w-10.h-10.rounded-xl svg,
+.workflow-node-card .w-10.h-10.rounded-xl .lucide {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+.workflow-node-card h3 {
+  display: inline-flex !important;
+  align-items: center !important;
+  min-height: 21px;
+  max-width: 220px;
+  padding: 4px 9px !important;
+  border-radius: 6px !important;
+  background: #050505 !important;
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  color: rgba(255, 255, 255, 0.94) !important;
+  font-size: 12px !important;
+  line-height: 1 !important;
+  font-weight: 500 !important;
+  letter-spacing: 0 !important;
+  box-shadow: none !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-node-card h3 + p {
+  display: none !important;
+}
+
+.workflow-node-card > .p-4,
+.workflow-node-card > .p-3.relative {
+  position: relative !important;
+  padding: 0 !important;
+  border-radius: 20px !important;
+  background: #171717 !important;
+  border: 1px solid rgba(255, 255, 255, 0.065) !important;
+  box-shadow:
+    0 22px 46px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035) !important;
+  overflow: hidden !important;
+}
+
+.workflow-node-card > .p-4::after,
+.workflow-node-card > .p-3.relative::after {
+  display: none !important;
+}
+
+.workflow-node-card textarea {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 20px !important;
+  padding: 18px 20px !important;
+  color: rgba(255, 255, 255, 0.72) !important;
+  font-size: 15px !important;
+  line-height: 1.35 !important;
+  box-shadow: none !important;
+}
+
+.workflow-node-card [class*="border-dashed"] {
+  min-height: 190px;
+  background: #171717 !important;
+  border: 1px dashed rgba(255, 255, 255, 0.12) !important;
+  border-radius: 20px !important;
+}
+
+.workflow-node-card > .px-3.pb-3 {
+  padding: 10px 0 0 0 !important;
+}
+
+.workflow-node-card > .px-3.pb-3 button {
+  min-height: 34px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: rgba(255, 255, 255, 0.82) !important;
+  font-size: 12px !important;
+  box-shadow: none !important;
+}
+
+.workflow-node-menu-button {
+  width: 28px !important;
+  height: 28px !important;
+  margin-right: -4px !important;
+  border-radius: 8px !important;
+  opacity: 0.7;
+  color: rgba(255, 255, 255, 0.78) !important;
+  background: rgba(255, 255, 255, 0.035) !important;
+  border: 0 !important;
+}
+
+.workflow-node-menu-button .lucide {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+.workflow-image-toolbar {
+  position: absolute;
+  top: -54px;
+  left: 50%;
+  z-index: 180;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 48px;
+  padding: 0 18px;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.018)),
+    #141414;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  box-shadow:
+    0 22px 48px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transform: translateX(-50%) translateY(4px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.react-flow__node:hover .workflow-image-toolbar,
+.react-flow__node:focus-within .workflow-image-toolbar,
+.react-flow__node:has(.workflow-actions-open) .workflow-image-toolbar {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
+
+.workflow-image-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 9px !important;
+  background: transparent !important;
+  color: rgba(255, 255, 255, 0.86) !important;
+  transition: background 120ms ease, color 120ms ease, transform 120ms ease;
+}
+
+.workflow-image-toolbar button:hover {
+  background: rgba(255, 255, 255, 0.11) !important;
+  color: #ffffff !important;
+  transform: translateY(-1px);
+}
+
+.workflow-image-toolbar svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.9;
+}
+
+.workflow-image-toolbar-separator {
+  width: 1px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.085);
+}
+
+.workflow-node-crop .workflow-crop-preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  max-height: 280px;
+  min-height: 150px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #0b0b0b;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.workflow-node-crop .workflow-crop-preview::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.11) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.11) 1px, transparent 1px);
+  background-size: 33.333% 33.333%;
+  opacity: 0.45;
+}
+
+.workflow-node-crop .workflow-crop-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.workflow-node-crop .workflow-crop-preview span {
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 12px;
+}
+
+.workflow-crop-presets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.workflow-crop-presets button,
+.workflow-crop-apply,
+.workflow-crop-download {
+  min-height: 30px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.075);
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 11px;
+}
+
+.workflow-crop-presets button.active {
+  background: rgba(200, 150, 49, 0.22);
+  border-color: rgba(200, 150, 49, 0.42);
+  color: #ffd27a;
+}
+
+.workflow-crop-dimensions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.workflow-crop-dimensions label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.075);
+}
+
+.workflow-crop-dimensions span {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 11px;
+}
+
+.workflow-crop-dimensions input {
+  min-width: 0;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 12px;
+}
+
+.workflow-crop-apply,
+.workflow-crop-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  text-decoration: none;
+}
+
+.workflow-crop-apply {
+  color: #ffd27a;
+}
