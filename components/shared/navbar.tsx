@@ -62,11 +62,12 @@ export function Navbar() {
   ];
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-[#08080a]/90 backdrop-blur-2xl">
-      <div className="mx-auto w-full max-w-[1840px] px-5 sm:px-8">
-        <div className="relative flex h-20 items-center justify-between">
+    <nav className="fixed left-0 right-0 top-0 z-50 px-3 pt-3 sm:px-6 sm:pt-4">
+      <div className="mx-auto w-full max-w-[1840px]">
+        <div className="relative flex h-16 items-center justify-between rounded-full border border-white/12 bg-[#101014]/52 px-4 shadow-[0_18px_70px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.10)] backdrop-blur-2xl backdrop-saturate-150 sm:h-[72px] sm:px-6">
+          <div className="pointer-events-none absolute inset-0 rounded-full bg-[linear-gradient(115deg,rgba(255,255,255,0.12),rgba(255,255,255,0.025)_42%,rgba(255,240,90,0.055))]" />
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 group">
+          <Link href="/" className="group relative z-10 flex items-center gap-2">
             {/* Logo Image */}
             <div className="relative">
               <img 
@@ -82,7 +83,7 @@ export function Navbar() {
           </Link>
 
           {/* Navigation Links */}
-          <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-8 md:flex lg:gap-12">
+          <div className="absolute left-1/2 z-10 hidden -translate-x-1/2 items-center gap-2 rounded-full border border-white/8 bg-white/[0.035] px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] md:flex">
             {links.map((item) => {
               const isActive = pathname === item.href;
               
@@ -91,10 +92,10 @@ export function Navbar() {
                   key={item.href}
                   href={item.href}
                   className={`
-                    text-base font-light transition-colors duration-200
+                    rounded-full px-4 py-2 text-sm font-light transition-all duration-200 lg:px-5
                     ${isActive 
-                      ? 'text-white' 
-                      : 'text-[#a6a6ad] hover:text-white'
+                      ? 'bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]' 
+                      : 'text-[#b9b9c0] hover:bg-white/7 hover:text-white'
                     }
                   `}
                 >
@@ -105,7 +106,7 @@ export function Navbar() {
           </div>
 
           {/* User Profile / Auth */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="relative z-10 flex items-center gap-2 sm:gap-3">
             {user ? (
               <>
                 {/* Credits Display */}
@@ -140,7 +141,7 @@ export function Navbar() {
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: -10 }}
                         transition={{ duration: 0.15 }}
-                        className="absolute right-0 top-full mt-2 w-64 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-2xl overflow-hidden"
+                        className="absolute right-0 top-full mt-3 w-64 overflow-hidden rounded-2xl border border-white/12 bg-[#151519]/88 shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-2xl"
                       >
                         {/* User Info */}
                         <div className="p-4 border-b border-white/10">
@@ -208,7 +209,7 @@ export function Navbar() {
                 </Link>
                 <Link
                   href="/login"
-                  className="rounded-full bg-[#f4f4f5] px-5 py-2 text-sm font-light text-black transition-colors hover:bg-white sm:px-6 sm:text-base"
+                  className="rounded-full bg-[#f4f4f5] px-5 py-2 text-sm font-light text-black shadow-[0_10px_34px_rgba(255,255,255,0.08)] transition-colors hover:bg-white sm:px-6 sm:text-base"
                 >
                   Get started
                 </Link>

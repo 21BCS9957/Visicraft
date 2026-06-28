@@ -150,11 +150,12 @@ const pricingTiers = [
         'On-premise deployment option',
         '24/7 phone support',
         'Custom billing cycles',
+        'Direct support at support@visicraft.in',
       ],
       excluded: [],
     },
     popular: false,
-    cta: 'Contact Sales',
+    cta: 'Email Sales',
   },
 ];
 
@@ -163,6 +164,8 @@ const billingOptions = {
   quarterly: { label: 'Quarterly', discount: '-15%' },
   yearly: { label: 'Yearly', discount: '-20%' },
 };
+
+const SUPPORT_EMAIL = 'support@visicraft.in';
 
 export default function PricingPage() {
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
@@ -173,17 +176,21 @@ export default function PricingPage() {
   const router = useRouter();
 
   const handlePayment = async (tier: typeof pricingTiers[0]) => {
+    // Enterprise should be reachable without forcing a login first.
+    if (tier.id === 'enterprise') {
+      const subject = encodeURIComponent('Enterprise plan inquiry');
+      const body = encodeURIComponent(
+        'Hi Visicraft team,\n\nI am interested in a custom Enterprise plan. Please share details for team pricing, usage, and onboarding.\n\nThanks,'
+      );
+      window.location.href = `mailto:${SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
+      toast.success('Opening email for enterprise sales...');
+      return;
+    }
+
     // Check if user is logged in
     if (!user) {
       toast.error('Please sign in to purchase a plan');
       router.push('/login?redirectTo=/pricing');
-      return;
-    }
-
-    // Handle enterprise plan
-    if (tier.id === 'enterprise') {
-      toast.success('Redirecting to contact sales...');
-      // You can add a contact form or email link here
       return;
     }
 
@@ -324,199 +331,235 @@ export default function PricingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white relative overflow-hidden">
-      {/* Subtle Grid Background */}
-      <div className="absolute inset-0 opacity-[0.02]">
-        <div className="absolute inset-0" style={{
-          backgroundImage: 'linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)',
-          backgroundSize: '50px 50px'
-        }} />
-      </div>
+    <div className="relative min-h-screen overflow-hidden bg-[#08080a] text-white">
+      <div
+        className="absolute inset-0 opacity-[0.028]"
+        style={{
+          backgroundImage: `
+            linear-gradient(to right, #ffffff 1px, transparent 1px),
+            linear-gradient(to bottom, #ffffff 1px, transparent 1px)
+          `,
+          backgroundSize: '4rem 4rem',
+        }}
+      />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.08),transparent_36%),linear-gradient(to_bottom,transparent,#08080a_74%)]" />
 
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 py-12 sm:py-16 lg:py-20">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-8 sm:mb-10 lg:mb-12"
-        >
-          <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-7xl font-light text-white tracking-wider mb-3 sm:mb-4 px-4">
-            CHOOSE YOUR<br className="sm:hidden"/>
-            <span className="sm:inline"> </span>CREATIVE POWER
-          </h1>
-          <p className="text-sm sm:text-base lg:text-lg text-gray-400 font-light max-w-2xl mx-auto px-4">
-            Generate stunning visuals for YouTube, Amazon, and social media with AI
-          </p>
-        </motion.div>
+      <div className="relative z-10 mx-auto w-full max-w-[1840px] px-5 pb-16 pt-28 sm:px-8 sm:pb-24 sm:pt-32">
+        <div className="mx-auto flex max-w-[1760px] flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <motion.div
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="max-w-3xl"
+          >
+            <p className="text-xs font-light uppercase tracking-[0.28em] text-white/36 sm:text-sm">
+              Pricing built for creative volume
+            </p>
+            <h1 className="mt-3 text-[clamp(2.35rem,5vw,5.2rem)] font-light leading-[0.98] tracking-normal text-[#f4f4f5]">
+              Plans that scale with your campaigns.
+            </h1>
+            <p className="mt-4 max-w-2xl text-sm font-light leading-relaxed text-[#a6a6ad] sm:text-base">
+              Pick credits, generate product visuals, and upgrade when your creative volume grows.
+            </p>
+          </motion.div>
 
-        {/* Billing Toggle */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="flex justify-center mb-8 sm:mb-12 lg:mb-16 px-4"
-        >
-          <div className="inline-flex bg-[#1a1a1a] p-1 sm:p-1.5 rounded-lg border border-white/10 w-full sm:w-auto max-w-md">
-            {(Object.keys(billingOptions) as BillingCycle[]).map((cycle) => (
-              <button
-                key={cycle}
-                onClick={() => setBillingCycle(cycle)}
-                className={`
-                  relative px-3 sm:px-4 lg:px-6 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-light tracking-wide transition-all flex-1 sm:flex-initial
-                  ${billingCycle === cycle
-                    ? 'text-white'
-                    : 'text-gray-400 hover:text-gray-300'
-                  }
-                `}
-              >
-                {billingCycle === cycle && (
-                  <motion.div
-                    layoutId="billing-bg"
-                    className="absolute inset-0 bg-white/10 rounded-lg"
-                    transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-                  />
-                )}
-                <span className="relative z-10">
-                  {billingOptions[cycle].label}
-                </span>
-                {billingOptions[cycle].discount && (
-                  <span className="ml-1 sm:ml-2 text-[10px] sm:text-xs bg-[#8b7355]/20 text-[#c8b4a0] px-1.5 sm:px-2 py-0.5 rounded-full">
-                    {billingOptions[cycle].discount}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        </motion.div>
-
-        {/* Pricing Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 lg:gap-6">
-          {pricingTiers.map((tier, index) => (
-            <motion.div
-              key={tier.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 + 0.2 }}
-              onMouseEnter={() => setHoveredTier(tier.id)}
-              onMouseLeave={() => setHoveredTier(null)}
-              className={`
-                relative rounded-lg overflow-hidden
-                ${tier.popular ? 'md:scale-105' : ''}
-              `}
-            >
-              {/* Popular Badge */}
-              {tier.badge && (
-                <div className="absolute top-3 sm:top-4 right-3 sm:right-4 z-20 px-2 sm:px-3 py-0.5 sm:py-1 rounded-lg text-[10px] sm:text-xs font-light tracking-wide bg-gradient-to-r from-[#8b7355] to-[#6b5545] text-white">
-                  {tier.badge}
-                </div>
-              )}
-
-              {/* Card Content */}
-              <div
-                className="relative bg-[#1a1a1a] border rounded-lg p-4 sm:p-5 lg:p-6 h-full flex flex-col transition-all duration-300"
-                style={{
-                  borderColor: hoveredTier === tier.id ? 'rgba(139, 115, 85, 0.3)' : 'rgba(255,255,255,0.1)',
-                }}
-              >
-                {/* Icon & Name */}
-                <div className="mb-3 sm:mb-4">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-gradient-to-br from-[#8b7355]/20 to-[#6b5545]/20 flex items-center justify-center mb-2 sm:mb-3 border border-[#8b7355]/30">
-                    <Icon icon={tier.icon} width={20} height={20} className="text-[#c8b4a0] sm:w-6 sm:h-6" />
-                  </div>
-                  <h3 className="text-xl sm:text-2xl font-light text-white mb-1">{tier.name}</h3>
-                  <p className="text-xs sm:text-sm text-gray-400 font-light">{tier.description}</p>
-                </div>
-
-                {/* Price */}
-                <div className="mb-4 sm:mb-5 lg:mb-6">
-                  {tier.monthly !== null ? (
-                    <>
-                      <div className="flex items-baseline gap-1.5 sm:gap-2">
-                        <span className="text-2xl sm:text-3xl lg:text-4xl font-light text-white">
-                          ₹{tier[billingCycle]?.toLocaleString('en-IN')}
-                        </span>
-                        <span className="text-xs sm:text-sm text-gray-400 font-light">/month</span>
-                      </div>
-                      {billingCycle !== 'monthly' && (
-                        <p className="text-[10px] sm:text-xs text-gray-500 mt-1 font-light">
-                          Billed {billingCycle === 'quarterly' ? 'quarterly' : 'annually'}
-                        </p>
-                      )}
-                    </>
-                  ) : (
-                    <div className="text-2xl sm:text-3xl font-light text-white">Custom</div>
-                  )}
-                </div>
-
-                {/* Credits */}
-                <div className="mb-4 sm:mb-5 lg:mb-6 p-2.5 sm:p-3 rounded-lg bg-[#8b7355]/10 border border-[#8b7355]/20">
-                  <div className="flex items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1">
-                    <Icon icon="ph:sparkle-fill" width={14} height={14} className="text-[#c8b4a0] sm:w-4 sm:h-4" />
-                    <span className="font-light text-white text-xs sm:text-sm">
-                      {typeof tier.credits === 'number'
-                        ? `${tier.credits.toLocaleString()} credits/month`
-                        : tier.credits
-                      }
-                    </span>
-                  </div>
-                  {typeof tier.creditCost === 'number' && (
-                    <p className="text-[10px] sm:text-xs text-gray-400 ml-5 sm:ml-6 font-light">
-                      ₹{tier.creditCost.toFixed(2)} per credit
-                    </p>
-                  )}
-                </div>
-
-                {/* CTA Button */}
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => handlePayment(tier)}
-                  disabled={processingPayment === tier.id}
-                  className={`
-                    w-full py-2.5 sm:py-3 rounded-lg font-light tracking-wide mb-4 sm:mb-5 lg:mb-6 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base
-                    ${tier.popular 
-                      ? 'bg-gradient-to-r from-[#8b7355] to-[#6b5545] text-white hover:shadow-lg hover:shadow-[#8b7355]/20' 
-                      : 'bg-white/5 border border-white/10 text-white hover:bg-white/10'
-                    }
-                  `}
+          <motion.div
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.08 }}
+            className="w-full max-w-xl lg:max-w-[520px]"
+          >
+            <div className="grid w-full grid-cols-3 rounded-full border border-white/12 bg-[#151519]/64 p-1.5 shadow-[0_18px_70px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl">
+              {(Object.keys(billingOptions) as BillingCycle[]).map((cycle) => (
+                <button
+                  key={cycle}
+                  type="button"
+                  onClick={() => setBillingCycle(cycle)}
+                  className={`relative min-h-11 rounded-full px-3 text-sm font-light transition-colors ${
+                    billingCycle === cycle ? 'text-black' : 'text-white/58 hover:text-white'
+                  }`}
                 >
-                  {processingPayment === tier.id ? 'Processing...' : tier.cta}
-                </motion.button>
-
-                {/* Features */}
-                <div className="flex-1">
-                  <div className="space-y-2 sm:space-y-2.5 lg:space-y-3">
-                    {tier.features.included.map((feature, idx) => (
-                      <div key={idx} className="flex items-start gap-1.5 sm:gap-2 text-xs sm:text-sm">
-                        <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 mt-0.5 flex-shrink-0 text-[#c8b4a0]" />
-                        <span className="text-gray-300 font-light">{feature}</span>
-                      </div>
-                    ))}
-                    {tier.features.excluded.map((feature, idx) => (
-                      <div key={idx} className="flex items-start gap-1.5 sm:gap-2 text-xs sm:text-sm opacity-40">
-                        <X className="w-3.5 h-3.5 sm:w-4 sm:h-4 mt-0.5 flex-shrink-0 text-gray-600" />
-                        <span className="text-gray-500 font-light">{feature}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          ))}
+                  {billingCycle === cycle && (
+                    <motion.div
+                      layoutId="billing-bg"
+                      className="absolute inset-0 rounded-full bg-[#f4f4f5] shadow-[0_10px_34px_rgba(255,255,255,0.12)]"
+                      transition={{ type: 'spring', bounce: 0.18, duration: 0.55 }}
+                    />
+                  )}
+                  <span className="relative z-10 inline-flex items-center justify-center gap-1.5">
+                    {billingOptions[cycle].label}
+                    {billingOptions[cycle].discount && (
+                      <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${
+                        billingCycle === cycle ? 'bg-black/10 text-black/70' : 'bg-[#fff05a]/12 text-[#fff05a]'
+                      }`}>
+                        {billingOptions[cycle].discount}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </motion.div>
         </div>
 
-        {/* Footer Info */}
+        <div className="mt-7 grid grid-cols-1 gap-4 sm:mt-9 sm:grid-cols-2 lg:grid-cols-4">
+          {pricingTiers.map((tier, index) => {
+            const isEnterprise = tier.id === 'enterprise';
+            const isHovered = hoveredTier === tier.id;
+
+            return (
+              <motion.div
+                key={tier.id}
+                initial={{ opacity: 0, y: 22 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.08 + 0.16 }}
+                onMouseEnter={() => setHoveredTier(tier.id)}
+                onMouseLeave={() => setHoveredTier(null)}
+                className={`relative flex ${tier.popular ? 'lg:-translate-y-4' : ''}`}
+              >
+                {tier.badge && (
+                  <div className="absolute left-5 top-5 z-20 rounded-full bg-[#fff05a] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-black">
+                    {tier.badge}
+                  </div>
+                )}
+
+                <div
+                  className={`relative flex min-h-[720px] w-full flex-col overflow-hidden rounded-[28px] border p-5 transition-all duration-300 sm:p-6 ${
+                    tier.popular
+                      ? 'border-[#fff05a]/40 bg-[#181816]/78 shadow-[0_34px_110px_rgba(255,240,90,0.10)]'
+                      : 'border-white/10 bg-[#151519]/72 shadow-[0_28px_90px_rgba(0,0,0,0.34)]'
+                  }`}
+                  style={{
+                    borderColor: isHovered
+                      ? tier.popular
+                        ? 'rgba(255, 240, 90, 0.58)'
+                        : 'rgba(255,255,255,0.22)'
+                      : undefined,
+                  }}
+                >
+                  <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.055),transparent_38%),radial-gradient(circle_at_80%_10%,rgba(255,240,90,0.10),transparent_24%)]" />
+
+                  <div className="relative z-10">
+                    <div className="mb-6 flex items-start justify-between gap-4 pt-8">
+                      <div>
+                        <h3 className="text-3xl font-light leading-none text-white">{tier.name}</h3>
+                        <p className="mt-3 min-h-[42px] text-sm font-light leading-relaxed text-white/50">
+                          {tier.description}
+                        </p>
+                      </div>
+                      <div className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border ${
+                        tier.popular ? 'border-[#fff05a]/28 bg-[#fff05a]/14' : 'border-white/10 bg-white/6'
+                      }`}>
+                        <Icon icon={tier.icon} width={22} height={22} className={tier.popular ? 'text-[#fff05a]' : 'text-white/74'} />
+                      </div>
+                    </div>
+
+                    <div className="mb-6">
+                      {tier.monthly !== null ? (
+                        <>
+                          <div className="flex items-end gap-2">
+                            <span className="text-[clamp(2.35rem,3vw,3.35rem)] font-light leading-none text-white">
+                              ₹{tier[billingCycle]?.toLocaleString('en-IN')}
+                            </span>
+                            <span className="pb-1.5 text-sm font-light text-white/44">/mo</span>
+                          </div>
+                          <p className="mt-2 text-xs font-light text-white/38">
+                            {billingCycle === 'monthly'
+                              ? 'Billed monthly'
+                              : `Billed ${billingCycle === 'quarterly' ? 'quarterly' : 'annually'}`
+                            }
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-[clamp(2.35rem,3vw,3.35rem)] font-light leading-none text-white">
+                            Custom
+                          </div>
+                          <a
+                            href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Enterprise plan inquiry')}`}
+                            className="mt-2 inline-flex break-all text-sm font-light text-[#fff05a] transition-colors hover:text-white"
+                          >
+                            {SUPPORT_EMAIL}
+                          </a>
+                        </>
+                      )}
+                    </div>
+
+                    <div className="mb-6 rounded-[18px] border border-white/10 bg-black/22 p-4">
+                      <div className="flex items-center gap-2">
+                        <Icon icon="ph:sparkle-fill" width={16} height={16} className="text-[#fff05a]" />
+                        <span className="text-sm font-light text-white">
+                          {typeof tier.credits === 'number'
+                            ? `${tier.credits.toLocaleString()} credits/month`
+                            : `${tier.credits} usage`
+                          }
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs font-light text-white/42">
+                        {typeof tier.creditCost === 'number'
+                          ? `₹${tier.creditCost.toFixed(2)} per credit`
+                          : 'Volume pricing and custom billing available'
+                        }
+                      </p>
+                    </div>
+
+                    <motion.button
+                      whileHover={{ scale: 1.015 }}
+                      whileTap={{ scale: 0.985 }}
+                      type="button"
+                      onClick={() => handlePayment(tier)}
+                      disabled={processingPayment === tier.id}
+                      className={`mb-7 inline-flex h-12 w-full items-center justify-center rounded-full text-sm font-medium transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+                        tier.popular
+                          ? 'bg-[#fff05a] text-black shadow-[0_18px_48px_rgba(255,240,90,0.16)] hover:bg-white'
+                          : isEnterprise
+                            ? 'border border-[#fff05a]/28 bg-[#fff05a]/10 text-[#fff05a] hover:bg-[#fff05a] hover:text-black'
+                            : 'border border-white/12 bg-white/6 text-white hover:border-white/28 hover:bg-white/10'
+                      }`}
+                    >
+                      {processingPayment === tier.id ? 'Processing...' : tier.cta}
+                    </motion.button>
+                  </div>
+
+                  <div className="relative z-10 flex-1">
+                    <div className="space-y-2.5">
+                      {tier.features.included.map((feature, idx) => (
+                        <div key={idx} className="flex items-start gap-2.5 text-sm">
+                          <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#fff05a]" />
+                          <span className="font-light leading-relaxed text-white/72">{feature}</span>
+                        </div>
+                      ))}
+                      {tier.features.excluded.map((feature, idx) => (
+                        <div key={idx} className="flex items-start gap-2.5 text-sm opacity-42">
+                          <X className="mt-0.5 h-4 w-4 flex-shrink-0 text-white/24" />
+                          <span className="font-light leading-relaxed text-white/34">{feature}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6 }}
-          className="mt-12 sm:mt-16 lg:mt-20 text-center px-4"
+          transition={{ delay: 0.55 }}
+          className="mx-auto mt-12 flex max-w-4xl flex-col items-center gap-4 rounded-[28px] border border-white/10 bg-white/[0.035] p-5 text-center shadow-[0_24px_90px_rgba(0,0,0,0.32)] backdrop-blur-xl sm:mt-16 sm:flex-row sm:justify-between sm:p-6 sm:text-left"
         >
-          <p className="text-gray-400 text-xs sm:text-sm font-light">
-            All plans include watermark-free exports •
-            Cancel anytime •
-            14-day money-back guarantee
-          </p>
+          <div>
+            <p className="text-base font-light text-white">Need help choosing?</p>
+            <p className="mt-1 text-sm font-light text-white/48">
+              All plans include watermark-free exports, secure payments, and creator-ready outputs.
+            </p>
+          </div>
+          <a
+            href={`mailto:${SUPPORT_EMAIL}`}
+            className="inline-flex h-11 flex-shrink-0 items-center justify-center rounded-full border border-white/12 bg-white px-5 text-sm font-medium text-black transition-colors hover:bg-[#fff05a]"
+          >
+            Email support
+          </a>
         </motion.div>
       </div>
     </div>

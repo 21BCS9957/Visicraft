@@ -115,7 +115,7 @@ const ShowcaseCard = memo(({ card, index }: { card: (typeof showcaseCategories)[
   const activeVideoIndex = card.videos.length ? cycleIndex % card.videos.length : 0;
   const activeVideo = card.videos[activeVideoIndex];
   const nextVideo = card.videos.length ? card.videos[(activeVideoIndex + 1) % card.videos.length] : undefined;
-  const showPoster = !hasLoadedVideo || !activeVideo || failedVideos.has(activeVideo);
+  const showPoster = !hasLoadedVideo;
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -159,6 +159,7 @@ const ShowcaseCard = memo(({ card, index }: { card: (typeof showcaseCategories)[
           }}
           onError={() => {
             setFailedVideos((current) => new Set(current).add(activeVideo));
+            setCycleIndex((current) => current + 1);
           }}
         />
       )}
@@ -1226,6 +1227,201 @@ export function HeroSection() {
             </div>
           </section>
 
+          <section id="workflow" className="w-full pt-20 sm:pt-28">
+            <div className="mx-auto mb-10 max-w-5xl text-center sm:mb-14">
+              <p className="text-xs font-light uppercase tracking-[0.28em] text-white/36 sm:text-sm">
+                From link to launch system
+              </p>
+              <h2 className="mt-4 text-4xl font-light leading-tight text-[#f4f4f5] sm:text-6xl">
+                See how one prompt becomes a premium product video.
+              </h2>
+              <p className="mx-auto mt-5 max-w-3xl text-base font-light leading-relaxed text-[#a6a6ad] sm:text-xl">
+                Visicraft reads the store page, captures the strongest product references, then renders a polished creative your team can use across ads, landing pages, and social launches.
+              </p>
+            </div>
+
+            <div className="workflow-showcase mx-auto grid max-w-[1760px] gap-5 lg:grid-cols-[minmax(0,1.03fr)_minmax(430px,0.97fr)]">
+              <div className="workflow-image-stage group relative min-h-[520px] overflow-hidden rounded-[30px] bg-[#151519] shadow-[0_34px_120px_rgba(0,0,0,0.46)] sm:min-h-[650px] lg:min-h-[760px]">
+                <video
+                  className="h-full w-full object-cover transition-transform duration-[1600ms] ease-out group-hover:scale-[1.035]"
+                  src="/showcase-videos/product-stories/01.mp4"
+                  muted
+                  autoPlay
+                  loop
+                  playsInline
+                  preload="auto"
+                  aria-label="Generated product video preview"
+                />
+                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.02),rgba(0,0,0,0.38)),radial-gradient(circle_at_18%_12%,rgba(255,240,90,0.20),transparent_34%)]" />
+                <div className="absolute left-5 top-5 flex flex-wrap items-center gap-2 sm:left-7 sm:top-7">
+                  <span className="rounded-full bg-white/92 px-3.5 py-2 text-xs font-medium text-black shadow-[0_12px_38px_rgba(0,0,0,0.24)]">
+                    Generated video
+                  </span>
+                  <span className="rounded-full border border-white/14 bg-black/32 px-3.5 py-2 text-xs font-light text-white/76 backdrop-blur-xl">
+                    Ready to publish
+                  </span>
+                </div>
+                <div className="absolute right-5 top-5 flex items-center gap-2 rounded-full border border-white/12 bg-black/36 px-3.5 py-2 text-xs font-light text-white/78 backdrop-blur-xl sm:right-7 sm:top-7">
+                  <span className="h-2 w-2 rounded-full bg-[#fff05a] shadow-[0_0_18px_rgba(255,240,90,0.7)]" />
+                  5s loop
+                </div>
+                <div className="absolute bottom-5 left-5 right-5 rounded-[24px] border border-white/10 bg-black/34 p-4 backdrop-blur-2xl sm:bottom-7 sm:left-7 sm:right-7 sm:p-5">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <p className="text-sm font-light uppercase tracking-[0.22em] text-white/46">Final render</p>
+                      <h3 className="mt-2 max-w-xl text-3xl font-light leading-none text-white sm:text-5xl">
+                        The video takes over the stage.
+                      </h3>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5 sm:w-48">
+                      {[
+                        '/Youtube%20Template/Youtube%20_Source.png',
+                        '/Youtube%20Template/youtube_Reference.png',
+                        '/Youtube%20Template/Youtube_Generated.png',
+                        '/new-section/logo1.png',
+                      ].map((image, index) => (
+                        <div
+                          key={`main-output-${image}`}
+                          className="workflow-mini-output aspect-square overflow-hidden rounded-xl border border-white/10 bg-white/6"
+                          style={{ animationDelay: `${index * 180}ms` }}
+                        >
+                          <img src={image} alt="" className="h-full w-full object-cover" aria-hidden />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="workflow-console relative min-h-[620px] overflow-hidden rounded-[30px] border border-white/8 bg-[#1b1b1f] p-4 shadow-[0_34px_120px_rgba(0,0,0,0.42)] sm:p-6 lg:min-h-[760px]">
+                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_78%_12%,rgba(255,240,90,0.16),transparent_26%),linear-gradient(180deg,rgba(255,255,255,0.04),transparent_34%)]" />
+                <div className="relative z-10 flex h-full min-h-[588px] flex-col gap-4 lg:min-h-[712px]">
+                  <div className="workflow-reference-strip grid grid-cols-4 overflow-hidden rounded-[22px] border border-white/8 bg-black/24">
+                    {[
+                      '/Youtube%20Template/Youtube%20_Source.png',
+                      '/Youtube%20Template/youtube_Reference.png',
+                      '/Youtube%20Template/Youtube_Generated.png',
+                      '/new-section/logo1.png',
+                    ].map((image, index) => (
+                      <div key={`workflow-ref-${image}`} className="relative aspect-[4/3] overflow-hidden">
+                        <img
+                          src={image}
+                          alt=""
+                          className="h-full w-full object-cover opacity-85"
+                          aria-hidden
+                        />
+                        <span
+                          className="workflow-scan-line absolute inset-y-0 w-10 bg-gradient-to-r from-transparent via-white/38 to-transparent"
+                          style={{ animationDelay: `${index * 420}ms` }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="workflow-prompt-card ml-auto w-full max-w-[600px] rounded-[22px] bg-[#37373c] p-3.5 shadow-[0_18px_60px_rgba(0,0,0,0.32)] sm:p-4">
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                      <span className="flex h-8 w-8 overflow-hidden rounded-full border border-white/12 bg-white/10">
+                        <img src="/Youtube%20Template/Youtube%20_Source.png" alt="" className="h-full w-full object-cover" aria-hidden />
+                      </span>
+                      <span className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-white px-2.5 text-xs font-medium text-black">
+                        <ImageIcon className="h-3.5 w-3.5" />
+                        Product
+                      </span>
+                      <span className="inline-flex h-8 items-center rounded-lg bg-white/88 px-2.5 text-xs font-medium text-black">
+                        Model
+                      </span>
+                      <span className="workflow-active-chip inline-flex h-8 items-center gap-1.5 rounded-full bg-[#fff05a] px-3 text-xs font-semibold text-black">
+                        <Clapperboard className="h-3.5 w-3.5" />
+                        Video render
+                      </span>
+                    </div>
+                    <p className="workflow-type-line text-sm font-light leading-relaxed text-white/82 sm:text-base">
+                      Create a cinematic 5-second product video: premium lighting, slow camera movement, natural product detail, and a clean ad-ready finish.
+                    </p>
+                  </div>
+
+                  <div className="workflow-process relative flex flex-1 gap-4">
+                    <div className="hidden w-[42%] min-w-[220px] overflow-hidden rounded-[22px] bg-[#343439] lg:block">
+                      <div className="workflow-build-panel h-full w-full">
+                        <div className="workflow-video-render relative mx-auto mt-6 aspect-[9/14] w-[72%] overflow-hidden rounded-[20px] border border-white/10 bg-black/30 shadow-[0_24px_64px_rgba(0,0,0,0.36)]">
+                          <video
+                            className="h-full w-full object-cover opacity-82"
+                            src="/showcase-videos/product-stories/01.mp4"
+                            muted
+                            autoPlay
+                            loop
+                            playsInline
+                            preload="auto"
+                            aria-hidden
+                          />
+                          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.10),rgba(0,0,0,0.32))]" />
+                          <div className="workflow-render-scan absolute inset-x-0 h-14 bg-gradient-to-b from-transparent via-[#fff05a]/26 to-transparent" />
+                          <span className="absolute left-3 top-3 rounded-full bg-black/48 px-2.5 py-1 text-[11px] font-light text-white/78 backdrop-blur-xl">
+                            Rendering
+                          </span>
+                        </div>
+                        <div className="absolute bottom-8 left-8 right-8">
+                          <div className="mb-2 flex items-center justify-between text-[11px] font-light uppercase tracking-[0.18em] text-white/42">
+                            <span>Scene pass</span>
+                            <span>82%</span>
+                          </div>
+                          <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                            <span className="workflow-render-progress block h-full rounded-full bg-[#fff05a]" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="workflow-outputs grid flex-1 grid-cols-2 gap-3">
+                      {[
+                        { label: 'Hero cut', src: '/showcase-videos/product-stories/01.mp4' },
+                        { label: 'Social crop', src: '/showcase-videos/product-stories/02.mp4' },
+                        { label: 'Ad motion', src: '/showcase-videos/product-stories/03.mp4' },
+                        { label: 'Launch loop', src: '/showcase-videos/fashion/01.mp4' },
+                      ].map((item, index) => (
+                        <div
+                          key={item.label}
+                          className="workflow-output-tile relative min-h-[150px] overflow-hidden rounded-[22px] border border-white/8 bg-white/6 sm:min-h-[190px]"
+                          style={{ animationDelay: `${index * 360 + 260}ms` }}
+                        >
+                          <video
+                            src={item.src}
+                            className="h-full w-full object-cover"
+                            muted
+                            autoPlay
+                            loop
+                            playsInline
+                            preload="metadata"
+                            aria-hidden
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/48 via-transparent to-transparent" />
+                          <span className="absolute bottom-3 left-3 rounded-full bg-black/46 px-2.5 py-1 text-xs font-light text-white/76 backdrop-blur-xl">
+                            {item.label}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="workflow-beam pointer-events-none absolute left-[31%] top-0 hidden h-full w-px bg-gradient-to-b from-transparent via-[#fff05a] to-transparent lg:block" />
+                  </div>
+
+                  <div className="workflow-command-bar mt-auto flex items-center gap-3 rounded-[22px] bg-[#444449] p-3 shadow-[0_16px_54px_rgba(0,0,0,0.24)]">
+                    <div className="min-w-0 flex-1 px-2 text-sm font-light text-white/42 sm:text-base">
+                      Paste Shopify URL, describe the campaign...
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleTrustCtaClick}
+                      className="premium-engine-button flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-[#fff05a] text-black transition-transform hover:scale-105"
+                      aria-label="Try with your product"
+                    >
+                      <ArrowUp className="relative z-10 h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
           <section className="relative -mx-4 mt-16 overflow-hidden py-10 sm:-mx-6 sm:mt-24 sm:py-16 lg:-mx-8">
             <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-24 bg-gradient-to-r from-[#0b0b0d] to-transparent sm:w-48" />
             <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-24 bg-gradient-to-l from-[#0b0b0d] to-transparent sm:w-48" />
@@ -1328,6 +1524,7 @@ export function HeroSection() {
                       <a href="#showcase" className="transition-colors hover:text-[#fff05a]">Customers</a>
                       <a href="/pricing" className="transition-colors hover:text-[#fff05a]">Plans</a>
                       <a href="/login" className="transition-colors hover:text-[#fff05a]">Account</a>
+                      <a href="mailto:support@visicraft.in" className="break-all transition-colors hover:text-[#fff05a]">support@visicraft.in</a>
                     </div>
                   </div>
                   <div>
@@ -1396,6 +1593,262 @@ export function HeroSection() {
         @keyframes showcaseProgress {
           from { width: 0%; }
           to { width: 100%; }
+        }
+        .workflow-showcase {
+          perspective: 1400px;
+        }
+        .workflow-image-stage {
+          transform: translateZ(0);
+        }
+        .workflow-image-stage::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(115deg, transparent 18%, rgba(255,255,255,0.10) 42%, transparent 58%);
+          opacity: 0;
+          transform: translateX(-120%);
+          animation: workflowStageShine 8s ease-in-out infinite;
+          pointer-events: none;
+        }
+        .workflow-console {
+          transform: translateZ(0);
+        }
+        .workflow-scan-line {
+          left: -20%;
+          animation: workflowScan 4.8s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+        }
+        .workflow-prompt-card {
+          animation: workflowCardLift 7s ease-in-out infinite;
+        }
+        .workflow-active-chip {
+          animation: workflowChipPulse 2.8s ease-in-out infinite;
+        }
+        .workflow-type-line {
+          position: relative;
+        }
+        .workflow-type-line::after {
+          content: '';
+          display: inline-block;
+          height: 1em;
+          width: 1px;
+          margin-left: 5px;
+          background: rgba(255, 240, 90, 0.82);
+          vertical-align: -0.12em;
+          animation: workflowCursor 900ms steps(2, end) infinite;
+        }
+        .workflow-build-panel {
+          position: relative;
+          overflow: hidden;
+          background:
+            radial-gradient(circle at 50% 28%, rgba(255,255,255,0.13), transparent 24%),
+            linear-gradient(180deg, rgba(255,255,255,0.045), transparent);
+        }
+        .workflow-build-panel::before {
+          content: '';
+          position: absolute;
+          inset: -35% 0;
+          background: linear-gradient(180deg, transparent, rgba(255,240,90,0.12), transparent);
+          transform: translateY(-45%);
+          animation: workflowBuildScan 3.9s ease-in-out infinite;
+        }
+        .workflow-build-panel::after {
+          content: '';
+          position: absolute;
+          left: 50%;
+          top: 31%;
+          height: 130px;
+          width: 130px;
+          border: 1px solid rgba(255, 240, 90, 0.22);
+          border-radius: 999px;
+          transform: translate(-50%, -50%);
+          animation: workflowOrbit 3.5s linear infinite;
+          box-shadow: 0 0 32px rgba(255, 240, 90, 0.08);
+        }
+        .workflow-video-render {
+          animation: workflowVideoRenderLift 6s ease-in-out infinite;
+        }
+        .workflow-render-scan {
+          top: -20%;
+          animation: workflowRenderScan 2.8s ease-in-out infinite;
+        }
+        .workflow-render-progress {
+          width: 82%;
+          animation: workflowRenderProgress 5s ease-in-out infinite;
+        }
+        .workflow-output-tile {
+          opacity: 0;
+          transform: translateY(18px) scale(0.97);
+          animation: workflowOutputReveal 8s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+        }
+        .workflow-output-tile img,
+        .workflow-output-tile video {
+          animation: workflowImageBreath 8s ease-in-out infinite;
+        }
+        .workflow-mini-output {
+          animation: workflowMiniPop 4.6s ease-in-out infinite;
+        }
+        .workflow-beam {
+          opacity: 0.18;
+          animation: workflowBeam 2.8s ease-in-out infinite;
+          filter: drop-shadow(0 0 18px rgba(255,240,90,0.46));
+        }
+        .workflow-command-bar {
+          animation: workflowCommandGlow 6s ease-in-out infinite;
+        }
+        @keyframes workflowStageShine {
+          0%, 64% {
+            opacity: 0;
+            transform: translateX(-120%);
+          }
+          74% {
+            opacity: 1;
+          }
+          92%, 100% {
+            opacity: 0;
+            transform: translateX(120%);
+          }
+        }
+        @keyframes workflowScan {
+          0% {
+            transform: translateX(0);
+            opacity: 0;
+          }
+          24% {
+            opacity: 0.9;
+          }
+          58%, 100% {
+            transform: translateX(460%);
+            opacity: 0;
+          }
+        }
+        @keyframes workflowCardLift {
+          0%, 100% {
+            transform: translateY(0);
+            box-shadow: 0 18px 60px rgba(0,0,0,0.32);
+          }
+          48% {
+            transform: translateY(-6px);
+            box-shadow: 0 28px 76px rgba(0,0,0,0.38);
+          }
+        }
+        @keyframes workflowChipPulse {
+          0%, 100% {
+            box-shadow: 0 0 0 rgba(255, 240, 90, 0);
+          }
+          50% {
+            box-shadow: 0 0 28px rgba(255, 240, 90, 0.24);
+          }
+        }
+        @keyframes workflowCursor {
+          0%, 42% { opacity: 1; }
+          43%, 100% { opacity: 0; }
+        }
+        @keyframes workflowBuildScan {
+          0%, 100% {
+            transform: translateY(-45%);
+            opacity: 0;
+          }
+          45%, 58% {
+            opacity: 1;
+          }
+          82% {
+            transform: translateY(45%);
+            opacity: 0;
+          }
+        }
+        @keyframes workflowOrbit {
+          from {
+            transform: translate(-50%, -50%) rotate(0deg) scale(0.96);
+          }
+          to {
+            transform: translate(-50%, -50%) rotate(360deg) scale(0.96);
+          }
+        }
+        @keyframes workflowVideoRenderLift {
+          0%, 100% {
+            transform: translateY(0);
+            box-shadow: 0 24px 64px rgba(0,0,0,0.36);
+          }
+          48% {
+            transform: translateY(-5px);
+            box-shadow: 0 34px 78px rgba(0,0,0,0.44), 0 0 42px rgba(255,240,90,0.08);
+          }
+        }
+        @keyframes workflowRenderScan {
+          0%, 100% {
+            transform: translateY(0);
+            opacity: 0;
+          }
+          18% {
+            opacity: 1;
+          }
+          72% {
+            transform: translateY(520%);
+            opacity: 0.9;
+          }
+        }
+        @keyframes workflowRenderProgress {
+          0%, 100% {
+            width: 36%;
+            opacity: 0.72;
+          }
+          48% {
+            width: 82%;
+            opacity: 1;
+          }
+          74% {
+            width: 96%;
+            opacity: 0.92;
+          }
+        }
+        @keyframes workflowOutputReveal {
+          0%, 12% {
+            opacity: 0;
+            transform: translateY(18px) scale(0.97);
+            filter: saturate(0.8) brightness(0.86);
+          }
+          24%, 82% {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            filter: saturate(1) brightness(1);
+          }
+          100% {
+            opacity: 0;
+            transform: translateY(-8px) scale(0.99);
+            filter: saturate(0.9) brightness(0.9);
+          }
+        }
+        @keyframes workflowImageBreath {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.035); }
+        }
+        @keyframes workflowMiniPop {
+          0%, 100% {
+            transform: translateY(0);
+            opacity: 0.74;
+          }
+          48% {
+            transform: translateY(-3px);
+            opacity: 1;
+          }
+        }
+        @keyframes workflowBeam {
+          0%, 100% {
+            transform: scaleY(0.4);
+            opacity: 0.1;
+          }
+          46% {
+            transform: scaleY(1);
+            opacity: 0.42;
+          }
+        }
+        @keyframes workflowCommandGlow {
+          0%, 100% {
+            box-shadow: 0 16px 54px rgba(0,0,0,0.24);
+          }
+          50% {
+            box-shadow: 0 18px 64px rgba(255,240,90,0.08), 0 16px 54px rgba(0,0,0,0.24);
+          }
         }
         .footer-wordmark {
           position: relative;
@@ -1564,6 +2017,30 @@ export function HeroSection() {
         .premium-engine-button:focus-visible::after {
           opacity: 1;
           animation: enginePulse 900ms ease-out;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .workflow-image-stage::after,
+          .workflow-scan-line,
+          .workflow-prompt-card,
+          .workflow-active-chip,
+          .workflow-type-line::after,
+          .workflow-build-panel::before,
+          .workflow-build-panel::after,
+          .workflow-video-render,
+          .workflow-render-scan,
+          .workflow-render-progress,
+          .workflow-output-tile,
+          .workflow-output-tile img,
+          .workflow-output-tile video,
+          .workflow-mini-output,
+          .workflow-beam,
+          .workflow-command-bar {
+            animation: none !important;
+          }
+          .workflow-output-tile {
+            opacity: 1;
+            transform: none;
+          }
         }
         @keyframes engineSweep {
           from { transform: translateX(-115%); }
