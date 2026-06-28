@@ -527,7 +527,18 @@ function FlowCanvas() {
 
   return (
     <WorkflowContext.Provider value={workflowContextValue}>
-      <div className="w-full h-screen flex flex-col bg-black">
+      <div className="relative flex h-screen w-full flex-col overflow-hidden bg-[#08080a] text-white">
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.025]"
+          style={{
+            backgroundImage: `
+              linear-gradient(to right, #ffffff 1px, transparent 1px),
+              linear-gradient(to bottom, #ffffff 1px, transparent 1px)
+            `,
+            backgroundSize: '4rem 4rem',
+          }}
+        />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.08),transparent_36%),linear-gradient(to_bottom,transparent,#08080a_82%)]" />
         <Topbar
           onNewWorkflow={handleNewBlankCanvas}
           onOpenOnboarding={() => setShowOnboarding(true)}
@@ -538,7 +549,7 @@ function FlowCanvas() {
           onOrganizeNodes={handleOrganizeNodes}
         />
 
-        <div className="flex-1 flex relative overflow-hidden">
+        <div className="relative z-10 flex flex-1 overflow-hidden px-3 pb-[92px] pt-3">
           <Sidebar
             onAddNode={handleAddNode}
             showGrid={showGrid}
@@ -553,7 +564,7 @@ function FlowCanvas() {
 
           <div
             ref={reactFlowWrapper}
-            className="flex-1 relative"
+            className="relative flex-1 overflow-hidden rounded-[28px] border border-white/8 bg-[#0b0b0d]/58 shadow-[0_28px_100px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-xl"
             onDrop={onDrop}
             onDragOver={onDragOver}
           >
@@ -576,7 +587,7 @@ function FlowCanvas() {
               nodeTypes={nodeTypes}
               edgeTypes={edgeTypes}
               fitView
-              className="bg-black"
+              className="workflow-flow-canvas bg-transparent"
               proOptions={proOptions}
               defaultEdgeOptions={defaultEdgeOptions}
               nodesDraggable
@@ -610,14 +621,14 @@ function FlowCanvas() {
                   gap={gridSize}
                   size={gridVariant === BackgroundVariant.Dots ? 1.5 : 1}
                   variant={gridVariant}
-                  className="opacity-20"
+                  className="opacity-[0.14]"
                 />
               )}
 
               {/* Zoom Controls */}
               <Controls
-                className="!bg-[#0a0a0a] !border !border-[#2a2a2a] !rounded-lg"
-                style={{ position: 'absolute', bottom: isMobile ? 20 : 100, left: 24 }}
+                className="!overflow-hidden !rounded-2xl !border !border-white/10 !bg-[#151519]/78 !shadow-[0_18px_60px_rgba(0,0,0,0.34)] !backdrop-blur-xl"
+                style={{ position: 'absolute', bottom: isMobile ? 20 : 24, left: 24 }}
                 showZoom={true}
                 showFitView={true}
                 showInteractive={false}
@@ -628,9 +639,9 @@ function FlowCanvas() {
                 <MiniMapWithEdges
                   nodeColor={nodeColor}
                   nodeComponent={CustomMiniMapNode}
-                  maskColor="rgba(0, 0, 0, 0.9)"
-                  className="!bg-[#0a0a0a] !border !border-[#2a2a2a] !rounded-lg overflow-hidden"
-                  style={{ position: 'absolute', bottom: 100, right: 24 }}
+                  maskColor="rgba(8, 8, 10, 0.88)"
+                  className="!overflow-hidden !rounded-2xl !border !border-white/10 !bg-[#151519]/80 !shadow-[0_18px_70px_rgba(0,0,0,0.36)] !backdrop-blur-xl"
+                  style={{ position: 'absolute', bottom: 24, right: 24 }}
                   zoomable={true}
                   pannable={true}
                 />
@@ -645,14 +656,14 @@ function FlowCanvas() {
 
             {/* Empty State Presets */}
             {nodes.length === 0 && canvasReady && !menuPosition && !showOnboarding && (
-              <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center z-10 -mt-20">
+              <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center px-6">
                 <div className="flex flex-col items-center gap-6">
-                  <div className="flex items-center gap-2 text-gray-400 text-sm">
+                  <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-light text-white/58 backdrop-blur-xl">
                     <MousePointer2 className="w-4 h-4" />
-                    <span>Double click to add a new node, or select a preset...</span>
+                    <span>Double-click to add a node, or start from a preset</span>
                   </div>
                   
-                  <div className="flex gap-4 pointer-events-auto">
+                  <div className="pointer-events-auto grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     {[
                       { id: 'prompt_idea', icon: <Lightbulb className="w-4 h-4" />, title: 'Get prompt idea', desc: 'Quick prompt suggestions.' },
                       { id: 'animate_image', icon: <Sparkles className="w-4 h-4" />, title: 'Animate Image', desc: 'Add motion to your image.' },
@@ -662,13 +673,13 @@ function FlowCanvas() {
                       <button
                         key={preset.id}
                         onClick={() => handleAddPreset(preset.id)}
-                        className="workflow-preset-card flex flex-col gap-1 p-4 rounded-lg bg-[#111111] border border-white/5 hover:border-white/20 hover:bg-[#1a1a1a] transition-colors w-[240px] text-left group"
+                        className="workflow-preset-card group flex w-[240px] flex-col gap-1 rounded-[22px] border border-white/10 bg-[#151519]/74 p-4 text-left shadow-[0_18px_60px_rgba(0,0,0,0.30)] backdrop-blur-xl transition-all hover:-translate-y-0.5 hover:border-[#fff05a]/32 hover:bg-white/[0.06]"
                       >
                         <div className="flex items-center gap-2 text-white font-medium text-[13px]">
-                          <span className="text-gray-400 group-hover:text-white transition-colors">{preset.icon}</span>
+                          <span className="text-[#fff05a] transition-colors">{preset.icon}</span>
                           {preset.title}
                         </div>
-                        <div className="text-[11px] text-gray-500 font-normal mt-[2px] leading-snug">
+                        <div className="mt-[2px] text-[11px] font-normal leading-snug text-white/42">
                           {preset.desc}
                         </div>
                       </button>
@@ -697,7 +708,9 @@ function FlowCanvas() {
           )}
         </div>
 
-        <RunControls onRun={handleRun} isRunning={isGenerationRunning} />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20">
+          <RunControls onRun={handleRun} isRunning={isGenerationRunning} />
+        </div>
       </div>
     </WorkflowContext.Provider>
   );

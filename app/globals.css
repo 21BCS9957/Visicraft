@@ -457,6 +457,155 @@ textarea:focus-visible {
   transform: translateZ(0);
 }
 
+/* Visicraft workflow editor premium layer */
+.workflow-flow-canvas .react-flow__pane {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.055), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.012), transparent 42%);
+}
+
+.workflow-flow-canvas .react-flow__attribution {
+  display: none;
+}
+
+.workflow-flow-canvas .react-flow__controls {
+  display: block;
+}
+
+.workflow-flow-canvas .react-flow__controls-button {
+  width: 38px !important;
+  height: 38px !important;
+  border: 0 !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: transparent !important;
+  color: rgba(255, 255, 255, 0.72) !important;
+}
+
+.workflow-flow-canvas .react-flow__controls-button:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+}
+
+.workflow-flow-canvas .react-flow__minimap {
+  background: rgba(21, 21, 25, 0.78) !important;
+}
+
+.workflow-node-card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), transparent 38%),
+    rgba(21, 21, 25, 0.84) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(18px);
+}
+
+.react-flow__node.selected .workflow-node-card,
+.workflow-node-card:hover {
+  border-color: rgba(255, 240, 90, 0.34) !important;
+  box-shadow:
+    0 30px 92px rgba(0, 0, 0, 0.44),
+    0 0 0 1px rgba(255, 240, 90, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+.workflow-node-card > div:first-of-type:not(.react-flow__resize-control) {
+  border-color: rgba(255, 255, 255, 0.10) !important;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.workflow-node-card input,
+.workflow-node-card textarea {
+  border-color: rgba(255, 255, 255, 0.10) !important;
+  background: rgba(0, 0, 0, 0.24) !important;
+  color: #ffffff !important;
+}
+
+.workflow-node-card input:focus,
+.workflow-node-card textarea:focus {
+  border-color: rgba(255, 240, 90, 0.36) !important;
+  outline: none !important;
+}
+
+.workflow-node-menu,
+.workflow-properties-panel [class*="absolute top-full"] {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  background: rgba(21, 21, 25, 0.94) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.48) !important;
+  backdrop-filter: blur(18px);
+}
+
+.workflow-node-menu button:hover,
+.workflow-properties-panel [class*="absolute top-full"] button:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.workflow-properties-panel label {
+  color: rgba(255, 255, 255, 0.46) !important;
+  font-weight: 300;
+}
+
+.workflow-properties-panel button {
+  border-radius: 18px;
+}
+
+.workflow-properties-panel button[class*="border-white/10"] {
+  border-color: rgba(255, 255, 255, 0.10) !important;
+  background: rgba(0, 0, 0, 0.22) !important;
+}
+
+.workflow-properties-panel button[class*="border-white/10"]:hover {
+  background: rgba(255, 255, 255, 0.07) !important;
+}
+
+.workflow-properties-panel .bg-amber-500\/10,
+.workflow-properties-panel .bg-red-500\/10,
+.workflow-properties-panel .bg-red-500\/20 {
+  border-radius: 20px !important;
+}
+
+.workflow-properties-panel button:last-child {
+  border-radius: 999px;
+}
+
+.workflow-node-import .bg-gradient-to-br,
+.workflow-node-generate .bg-gradient-to-br,
+.workflow-node-video .bg-gradient-to-br,
+.workflow-node-output .bg-gradient-to-br,
+.workflow-node-prompt .bg-gradient-to-br,
+.workflow-node-crop .bg-gradient-to-br {
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.22);
+}
+
+.workflow-node-card .border-dashed {
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.workflow-node-card .border-dashed:hover {
+  border-color: rgba(255, 240, 90, 0.34) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+
+.react-flow__handle {
+  width: 13px !important;
+  height: 13px !important;
+  border: 2px solid #08080a !important;
+  background: #fff05a !important;
+  box-shadow: 0 0 0 3px rgba(255, 240, 90, 0.16), 0 0 18px rgba(255, 240, 90, 0.18);
+}
+
+.react-flow__edge-path {
+  stroke: rgba(255, 240, 90, 0.88);
+  filter: drop-shadow(0 0 8px rgba(255, 240, 90, 0.18));
+}
+
+.workflow-preset-card {
+  will-change: transform;
+}
+
 /* Performance optimizations for animations */
 .animate-word-appear,
 .animate-grid-draw,

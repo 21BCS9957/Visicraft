@@ -82,7 +82,7 @@ export function NodeSelectorMenu({ isOpen, position, onClose, onSelect }: NodeSe
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: -10 }}
         transition={{ duration: 0.15 }}
-        className="fixed z-[200] w-[300px] max-h-[450px] bg-[#1a1a1a] rounded-[24px] border border-white/10 shadow-2xl overflow-hidden flex flex-col font-body"
+        className="font-body fixed z-[200] flex max-h-[450px] w-[320px] flex-col overflow-hidden rounded-[28px] border border-white/12 bg-[#151519]/92 shadow-[0_28px_100px_rgba(0,0,0,0.48),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl"
         style={style}
       >
         {/* Search Header */}
@@ -95,7 +95,7 @@ export function NodeSelectorMenu({ isOpen, position, onClose, onSelect }: NodeSe
               placeholder="Search nodes or models"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-[#111111] border border-white/10 text-white rounded-full py-2 pl-9 pr-4 text-sm focus:outline-none focus-visible:outline-none !ring-0 !outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-white transition-colors placeholder:text-gray-500"
+              className="w-full rounded-full border border-white/10 bg-black/24 py-2 pl-9 pr-4 text-sm text-white !outline-none !ring-0 transition-colors placeholder:text-white/32 focus:border-[#fff05a]/38 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
             />
           </div>
         </div>
@@ -104,7 +104,7 @@ export function NodeSelectorMenu({ isOpen, position, onClose, onSelect }: NodeSe
         <div className="flex-1 overflow-y-auto custom-scrollbar px-2 pb-2">
           {filteredCategories.map((category, idx) => (
             <div key={category.title} className="mb-2">
-              <div className="px-3 py-2 text-xs font-semibold text-gray-500 tracking-wide">
+              <div className="px-3 py-2 text-xs font-semibold tracking-wide text-white/38">
                 {category.title}
               </div>
               <div className="flex flex-col gap-0.5">
@@ -117,13 +117,13 @@ export function NodeSelectorMenu({ isOpen, position, onClose, onSelect }: NodeSe
                         onClose();
                       }
                     }}
-                    className="flex justify-between items-center px-3 py-2.5 rounded-xl hover:bg-white/5 transition-colors group text-left w-full"
+                    className="group flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left transition-colors hover:bg-white/7"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="p-1.5 rounded-lg bg-[#2a2a2a] group-hover:bg-[#333333] transition-colors">
-                        <option.icon className="w-4 h-4 text-gray-300" />
+                      <div className="rounded-xl border border-white/8 bg-white/[0.055] p-1.5 transition-colors group-hover:border-[#fff05a]/24 group-hover:bg-[#fff05a]/10">
+                        <option.icon className="h-4 w-4 text-white/72 group-hover:text-[#fff05a]" />
                       </div>
-                      <span className="text-[14px] text-gray-200 group-hover:text-white">{option.label}</span>
+                      <span className="text-[14px] text-white/72 group-hover:text-white">{option.label}</span>
                       {option.badge && (
                         <span className="px-1.5 py-0.5 rounded text-[10px] bg-purple-500/20 text-purple-300 ml-1">
                           {option.badge}

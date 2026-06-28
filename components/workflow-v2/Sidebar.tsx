@@ -119,15 +119,15 @@ export function Sidebar({
   };
 
   return (
-    <div className="flex h-full">
+    <div className="mr-3 flex h-full">
       {/* Icon Bar */}
-      <div className={`${isMobile ? 'w-[50px]' : 'w-[60px]'} relative z-50 bg-[#0a0a0a] border-r border-[#1a1a1a] flex flex-col items-center py-4 gap-2`}>
+      <div className={`${isMobile ? 'w-[52px]' : 'w-[64px]'} relative z-50 flex flex-col items-center gap-2 rounded-[24px] border border-white/10 bg-[#151519]/76 py-4 shadow-[0_18px_70px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl`}>
         <button
           onClick={() => handleAddNode('note')}
-          className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} rounded-lg bg-[#1a1a1a] hover:bg-[#222222] flex items-center justify-center mb-4 transition-colors group`}
+          className={`${isMobile ? 'h-9 w-9' : 'h-11 w-11'} mb-4 flex items-center justify-center rounded-2xl border border-[#fff05a]/20 bg-[#fff05a]/10 text-[#fff05a] transition-all hover:-translate-y-0.5 hover:bg-[#fff05a] hover:text-black group`}
           title="Add Note"
         >
-          <StickyNote className={`${isMobile ? 'w-4 h-4' : 'w-5 h-5'} text-[#fbbf24] group-hover:scale-110 transition-transform`} />
+          <StickyNote className={`${isMobile ? 'h-4 w-4' : 'h-5 w-5'} transition-transform group-hover:scale-110`} />
         </button>
 
         {tools.map((tool) => (
@@ -142,9 +142,9 @@ export function Sidebar({
                 setActivePanel(activePanel === tool.id ? null : tool.id);
               }
             }}
-            className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} rounded-lg flex items-center justify-center transition-colors ${(activePanel === tool.id || (tool.id === 'grid' && showGrid))
-              ? 'bg-[#1a1a1a] text-white'
-              : 'hover:bg-[#1a1a1a] text-[#666666] hover:text-white'
+            className={`${isMobile ? 'h-9 w-9' : 'h-11 w-11'} flex items-center justify-center rounded-2xl transition-all ${(activePanel === tool.id || (tool.id === 'grid' && showGrid))
+              ? 'bg-white/12 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]'
+              : 'text-white/36 hover:bg-white/7 hover:text-white'
               }`}
             title={tool.label}
           >
@@ -158,7 +158,7 @@ export function Sidebar({
           <button
             onClick={undo}
             disabled={!canUndo}
-            className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} rounded-lg flex items-center justify-center transition-colors ${canUndo ? 'bg-[#1a1a1a] text-white' : 'text-[#666666] cursor-not-allowed'
+            className={`${isMobile ? 'h-9 w-9' : 'h-11 w-11'} flex items-center justify-center rounded-2xl transition-colors ${canUndo ? 'bg-white/8 text-white hover:bg-white/12' : 'cursor-not-allowed text-white/22'
               }`}
             title="Undo"
           >
@@ -170,7 +170,7 @@ export function Sidebar({
           <button
             onClick={redo}
             disabled={!canRedo}
-            className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} rounded-lg flex items-center justify-center transition-colors ${canRedo ? 'bg-[#1a1a1a] text-white' : 'text-[#666666] cursor-not-allowed'
+            className={`${isMobile ? 'h-9 w-9' : 'h-11 w-11'} flex items-center justify-center rounded-2xl transition-colors ${canRedo ? 'bg-white/8 text-white hover:bg-white/12' : 'cursor-not-allowed text-white/22'
               }`}
             title="Redo"
           >
@@ -189,18 +189,18 @@ export function Sidebar({
             animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
             exit={{ opacity: 0, x: -20, filter: 'blur(4px)' }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className={`absolute top-0 bottom-0 z-40 bg-[#0f0f0f] border-r border-[#1a1a1a] shadow-2xl flex flex-col ${
-              isMobile ? 'left-[50px]' : 'left-[60px]'
+            className={`absolute bottom-3 top-3 z-40 flex flex-col rounded-[28px] border border-white/10 bg-[#151519]/88 shadow-[0_28px_100px_rgba(0,0,0,0.42)] backdrop-blur-2xl ${
+              isMobile ? 'left-[68px]' : 'left-[82px]'
             } ${
               activePanel === 'nodes' 
-                ? (isMobile ? 'w-[200px]' : 'w-[240px]') 
-                : (isMobile ? 'w-[240px]' : 'w-[280px]')
+                ? (isMobile ? 'w-[220px]' : 'w-[260px]') 
+                : (isMobile ? 'w-[260px]' : 'w-[310px]')
             }`}
           >
             {activePanel === 'nodes' && (
               <div className="p-4 flex flex-col h-full">
-                <h3 className="text-white text-sm font-medium mb-4">Add Nodes</h3>
-                <p className="text-xs text-gray-500 mb-3">Drag nodes to canvas or click to add</p>
+                <h3 className="mb-2 text-sm font-medium text-white">Add Nodes</h3>
+                <p className="mb-4 text-xs font-light text-white/42">Drag nodes to canvas or click to add</p>
                 <div className="space-y-2 overflow-y-auto custom-scrollbar flex-1 pb-4">
                   {nodeTypes.map((node) => (
                     <div
@@ -208,7 +208,7 @@ export function Sidebar({
                       draggable
                       onDragStart={(e) => onDragStart(e, node.type, node.nodeType || '')}
                       onClick={() => handleAddNode(node.type, node.nodeType)}
-                      className="w-full flex items-center gap-3 p-3 bg-[#1a1a1a] hover:bg-[#222222] rounded-lg transition-colors group cursor-move"
+                      className="group flex w-full cursor-move items-center gap-3 rounded-2xl border border-white/8 bg-white/[0.045] p-3 transition-all hover:border-[#fff05a]/24 hover:bg-white/[0.075]"
                     >
                       <div
                         className={`${isMobile ? 'w-6 h-6' : 'w-8 h-8'} rounded flex items-center justify-center`}
@@ -216,7 +216,7 @@ export function Sidebar({
                       >
                         <node.icon className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'}`} style={{ color: node.color }} />
                       </div>
-                      <span className={`${isMobile ? 'text-xs' : 'text-sm'} text-[#a0a0a0] group-hover:text-white transition-colors`}>
+                      <span className={`${isMobile ? 'text-xs' : 'text-sm'} text-white/62 transition-colors group-hover:text-white`}>
                         {node.label}
                       </span>
                     </div>
@@ -228,16 +228,16 @@ export function Sidebar({
             {activePanel === 'notes' && (
               <div className="p-4 flex flex-col h-full">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-white text-sm font-medium">Workflow Notes</h3>
-                  <StickyNote className="w-4 h-4 text-[#8b7355]" />
+                  <h3 className="text-sm font-medium text-white">Workflow Notes</h3>
+                  <StickyNote className="w-4 h-4 text-[#fff05a]" />
                 </div>
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Add notes about your workflow...&#10;&#10;• Ideas&#10;• Settings&#10;• Reminders"
-                  className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-3 text-sm text-white placeholder:text-[#666666] focus:outline-none focus:border-[#8b7355] resize-none"
+                  className="flex-1 resize-none rounded-2xl border border-white/10 bg-black/22 p-3 text-sm text-white placeholder:text-white/30 focus:border-[#fff05a]/38 focus:outline-none"
                 />
-                <div className="mt-2 text-xs text-[#666666] text-right">
+                <div className="mt-2 text-right text-xs text-white/32">
                   {notes.length} characters
                 </div>
               </div>
@@ -246,15 +246,15 @@ export function Sidebar({
             {activePanel === 'files' && (
               <div className="p-4 flex flex-col h-full">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-white text-sm font-medium">File Manager</h3>
+                  <h3 className="text-sm font-medium text-white">File Manager</h3>
                   <FolderOpen className="w-4 h-4 text-blue-400" />
                 </div>
 
                 {/* Upload Button */}
-                <label className="w-full bg-gradient-to-r from-blue-500/20 to-purple-500/20 hover:from-blue-500/30 hover:to-purple-500/30 border border-blue-500/30 rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer transition-all mb-4">
-                  <Upload className="w-8 h-8 text-blue-400 mb-2" />
+                <label className="mb-4 flex w-full cursor-pointer flex-col items-center justify-center rounded-2xl border border-[#fff05a]/22 bg-[#fff05a]/8 p-4 transition-all hover:bg-[#fff05a]/12">
+                  <Upload className="mb-2 h-8 w-8 text-[#fff05a]" />
                   <span className="text-sm text-white font-medium">Upload Image</span>
-                  <span className="text-xs text-gray-400 mt-1">Click to browse</span>
+                  <span className="mt-1 text-xs text-white/42">Click to browse</span>
                   <input
                     type="file"
                     accept="image/*"
@@ -266,16 +266,16 @@ export function Sidebar({
                 {/* Uploaded Files List */}
                 <div className="flex-1 overflow-y-auto space-y-2">
                   {uploadedFiles.length === 0 ? (
-                    <div className="text-center py-8">
-                      <FileImage className="w-12 h-12 text-gray-600 mx-auto mb-2" />
-                      <p className="text-sm text-gray-500">No files uploaded yet</p>
-                      <p className="text-xs text-gray-600 mt-1">Upload images to use in your workflow</p>
+                    <div className="py-8 text-center">
+                      <FileImage className="mx-auto mb-2 h-12 w-12 text-white/24" />
+                      <p className="text-sm text-white/44">No files uploaded yet</p>
+                      <p className="mt-1 text-xs text-white/28">Upload images to use in your workflow</p>
                     </div>
                   ) : (
                     uploadedFiles.map((file, index) => (
                       <div
                         key={index}
-                        className="bg-[#1a1a1a] hover:bg-[#222222] rounded-lg p-3 flex items-center gap-3 transition-colors"
+                        className="flex items-center gap-3 rounded-2xl border border-white/8 bg-white/[0.045] p-3 transition-colors hover:bg-white/[0.075]"
                       >
                         <img
                           src={file.url}
@@ -283,16 +283,16 @@ export function Sidebar({
                           className="w-10 h-10 rounded object-cover"
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-white truncate">{file.name}</p>
-                          <p className="text-xs text-gray-500">{file.type}</p>
+                          <p className="truncate text-sm text-white">{file.name}</p>
+                          <p className="text-xs text-white/36">{file.type}</p>
                         </div>
                       </div>
                     ))
                   )}
                 </div>
 
-                <div className="mt-4 pt-4 border-t border-white/10">
-                  <p className="text-xs text-gray-500 text-center">
+                <div className="mt-4 border-t border-white/10 pt-4">
+                  <p className="text-center text-xs text-white/36">
                     {uploadedFiles.length} file{uploadedFiles.length !== 1 ? 's' : ''} uploaded
                   </p>
                 </div>

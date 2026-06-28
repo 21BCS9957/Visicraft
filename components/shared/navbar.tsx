@@ -54,6 +54,10 @@ export function Navbar() {
     }
   }, [showUserMenu]);
 
+  if (pathname?.startsWith('/workflow')) {
+    return null;
+  }
+
   const links = [
     { href: '/', label: 'Home' },
     { href: '/workflow', label: 'Workflow' },
