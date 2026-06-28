@@ -1,20 +1,18 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { LogOut, User, Sparkles } from 'lucide-react';
-import { Icon } from '@iconify/react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import gsap from 'gsap';
 
 export function Navbar() {
   const pathname = usePathname();
-  const router = useRouter();
-  const { user, loading, signOut } = useAuth();
-  const { credits, loading: creditsLoading } = useCredits();
+  const { user, signOut } = useAuth();
+  const { credits } = useCredits();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const logoRef = useRef<HTMLImageElement>(null);
@@ -57,71 +55,35 @@ export function Navbar() {
   }, [showUserMenu]);
 
   const links = [
-    { href: '/', label: 'Home', icon: 'ph:house-fill' },
-    { href: '/generate', label: 'Generate', icon: 'ph:magic-wand-fill' },
-    { href: '/pricing', label: 'Pricing', icon: 'ph:currency-inr' },
+    { href: '/', label: 'Home' },
+    { href: '/workflow', label: 'Workflow' },
+    { href: '/generate', label: 'Generate' },
+    { href: '/pricing', label: 'Pricing' },
   ];
 
-  const handleSignOut = useCallback(async () => {
-    await signOut();
-    setShowUserMenu(false);
-  }, [signOut]);
-
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-[#0a0a0a]/80 backdrop-blur-xl border-b border-white/5">
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6">
-        <div className="flex items-center justify-between h-14 sm:h-16">
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-[#08080a]/90 backdrop-blur-2xl">
+      <div className="mx-auto w-full max-w-[1840px] px-5 sm:px-8">
+        <div className="relative flex h-20 items-center justify-between">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-1 sm:gap-1.5 group">
+          <Link href="/" className="flex items-center gap-2 group">
             {/* Logo Image */}
             <div className="relative">
               <img 
                 ref={logoRef}
                 src="/new-section/logo.png" 
                 alt="Visicraft Logo" 
-                className="w-9 h-9 sm:w-11 sm:h-11 object-contain cursor-pointer"
+                className="h-9 w-9 cursor-pointer object-contain sm:h-10 sm:w-10"
               />
             </div>
-            <span className="text-white font-light text-base sm:text-xl tracking-wider">
+            <span className="text-base font-light tracking-wide text-white sm:text-xl">
               Visicraft
             </span>
           </Link>
 
           {/* Navigation Links */}
-          <div className="flex items-center gap-0.5 sm:gap-1">
-            {/* Home Link */}
-            <Link
-              href="/"
-              className={`
-                flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 lg:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-light tracking-wide
-                transition-all duration-200
-                ${pathname === '/' 
-                  ? 'text-white bg-white/10' 
-                  : 'text-gray-400 hover:text-white hover:bg-white/5'
-                }
-              `}
-            >
-              <Icon icon="ph:house-fill" width={14} height={14} className="sm:w-4 sm:h-4" />
-              <span className="hidden md:inline">Home</span>
-            </Link>
-
-            <Link
-              href="/workflow"
-              className={`
-                flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 lg:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-light tracking-wide
-                transition-all duration-200
-                ${pathname === '/workflow'
-                  ? 'text-white bg-white/10'
-                  : 'text-gray-400 hover:text-white hover:bg-white/5'
-                }
-              `}
-            >
-              <Icon icon="ph:flow-arrow-fill" width={14} height={14} className="sm:w-4 sm:h-4" />
-              <span className="hidden md:inline">Workflow</span>
-            </Link>
-
-            {/* Other Links */}
-            {links.slice(1).map((item) => {
+          <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-8 md:flex lg:gap-12">
+            {links.map((item) => {
               const isActive = pathname === item.href;
               
               return (
@@ -129,16 +91,14 @@ export function Navbar() {
                   key={item.href}
                   href={item.href}
                   className={`
-                    flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 lg:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-light tracking-wide
-                    transition-all duration-200
+                    text-base font-light transition-colors duration-200
                     ${isActive 
-                      ? 'text-white bg-white/10' 
-                      : 'text-gray-400 hover:text-white hover:bg-white/5'
+                      ? 'text-white' 
+                      : 'text-[#a6a6ad] hover:text-white'
                     }
                   `}
                 >
-                  <Icon icon={item.icon} width={14} height={14} className="sm:w-4 sm:h-4" />
-                  <span className="hidden md:inline">{item.label}</span>
+                  {item.label}
                 </Link>
               );
             })}
@@ -149,17 +109,17 @@ export function Navbar() {
             {user ? (
               <>
                 {/* Credits Display */}
-                <div className="hidden sm:flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 lg:px-4 py-1.5 sm:py-2 rounded-lg bg-gradient-to-r from-[#8b7355]/20 to-[#6b5545]/20 border border-[#8b7355]/30">
-                  <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#c8b4a0]" />
+                <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 sm:flex">
+                  <Sparkles className="h-4 w-4 text-[#fff05a]" />
                   <span className="text-xs sm:text-sm font-light text-white">{credits}</span>
-                  <span className="text-[10px] sm:text-xs text-gray-400 hidden lg:inline">credits</span>
+                  <span className="hidden text-xs text-[#a6a6ad] lg:inline">credits</span>
                 </div>
 
                 {/* Profile Menu */}
                 <div className="relative" ref={menuRef}>
                   <button
                     onClick={() => setShowUserMenu(!showUserMenu)}
-                    className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-[#8b7355] to-[#6b5545] flex items-center justify-center text-white font-light text-xs sm:text-sm hover:scale-110 transition-transform overflow-hidden border-2 border-[#8b7355]/30"
+                    className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-white/10 text-xs font-light text-white transition-transform hover:scale-105 sm:text-sm"
                   >
                     {user.user_metadata?.avatar_url ? (
                       <img 
@@ -239,12 +199,20 @@ export function Navbar() {
                 </div>
               </>
             ) : (
-              <Link
-                href="/login"
-                className="px-3 sm:px-4 lg:px-6 py-1.5 sm:py-2 rounded-lg bg-gradient-to-r from-[#8b7355] to-[#6b5545] text-white text-xs sm:text-sm font-light tracking-wide hover:shadow-lg hover:shadow-[#8b7355]/20 transition-all"
-              >
-                Sign In
-              </Link>
+              <>
+                <Link
+                  href="/login"
+                  className="hidden text-base font-light text-[#d8d8de] transition-colors hover:text-white sm:inline-flex"
+                >
+                  Log in
+                </Link>
+                <Link
+                  href="/login"
+                  className="rounded-full bg-[#f4f4f5] px-5 py-2 text-sm font-light text-black transition-colors hover:bg-white sm:px-6 sm:text-base"
+                >
+                  Get started
+                </Link>
+              </>
             )}
           </div>
         </div>
