@@ -111,9 +111,11 @@ const showcaseCategories = [
 const ShowcaseCard = memo(({ card, index }: { card: (typeof showcaseCategories)[number]; index: number }) => {
   const [cycleIndex, setCycleIndex] = useState(0);
   const [failedVideos, setFailedVideos] = useState<Set<string>>(new Set());
+  const [hasLoadedVideo, setHasLoadedVideo] = useState(false);
   const activeVideoIndex = card.videos.length ? cycleIndex % card.videos.length : 0;
   const activeVideo = card.videos[activeVideoIndex];
-  const showVideo = activeVideo && !failedVideos.has(activeVideo);
+  const nextVideo = card.videos.length ? card.videos[(activeVideoIndex + 1) % card.videos.length] : undefined;
+  const showPoster = !hasLoadedVideo || !activeVideo || failedVideos.has(activeVideo);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -135,29 +137,41 @@ const ShowcaseCard = memo(({ card, index }: { card: (typeof showcaseCategories)[
         src={card.poster}
         alt=""
         className={`absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.04] ${
-          showVideo ? 'opacity-0' : 'opacity-100'
+          showPoster ? 'opacity-100' : 'opacity-0'
         }`}
         style={{ objectPosition: card.objectPosition }}
         aria-hidden
       />
-      {showVideo && (
+      {activeVideo && !failedVideos.has(activeVideo) && (
         <video
-          key={`${activeVideo}-${cycleIndex}`}
-          className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.04]"
+          key={activeVideo}
+          className="absolute inset-0 h-full w-full object-cover opacity-100 transition-transform duration-700 ease-out group-hover:scale-[1.04]"
           style={{ objectPosition: card.objectPosition }}
           src={activeVideo}
-          poster={card.poster}
           muted
           autoPlay
           loop
           playsInline
           preload="auto"
           onCanPlay={(event) => {
+            setHasLoadedVideo(true);
             void event.currentTarget.play().catch(() => undefined);
           }}
           onError={() => {
             setFailedVideos((current) => new Set(current).add(activeVideo));
           }}
+        />
+      )}
+      {nextVideo && nextVideo !== activeVideo && !failedVideos.has(nextVideo) && (
+        <video
+          key={`preload-${nextVideo}`}
+          className="pointer-events-none absolute h-0 w-0 opacity-0"
+          src={nextVideo}
+          muted
+          playsInline
+          preload="auto"
+          aria-hidden
+          tabIndex={-1}
         />
       )}
       <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/10 to-black/35" />
@@ -303,13 +317,13 @@ function buildProductCreativePrompt(product: ProductCapture, originalPrompt: str
   const userDirection = removeUrlFromPrompt(originalPrompt, productUrl);
   const productName = product.title ? `"${product.title}"` : 'the product';
   const brandLine = product.vendor ? ` for ${product.vendor}` : '';
-  const base = `Create four premium advertising creatives${brandLine} using ${productName} as the exact product reference. Make them look like polished ecommerce campaign shots with realistic lighting, sharp packaging detail, modern art direction, and scroll-stopping social ad composition.`;
+  const base = `Create premium advertising creative${brandLine} using ${productName} as the exact product reference. Preserve the real packaging, label, colors, proportions, and recognizable product details from the attached Shopify images. Make the result aesthetic, premium, realistic, and campaign-ready with refined art direction.`;
 
   if (userDirection) {
     return `${base} Creative direction: ${userDirection}`;
   }
 
-  return `${base} Explore lifestyle, studio, texture, and stacked product compositions.`;
+  return `${base} Explore a polished product-led visual direction.`;
 }
 
 let imageIdCounter = 0;
@@ -453,6 +467,14 @@ export function HeroSection() {
     promptInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     window.setTimeout(() => promptInputRef.current?.focus(), 450);
   }, []);
+
+  const handlePricingClick = useCallback(() => {
+    router.push('/pricing');
+  }, [router]);
+
+  const handleSignupClick = useCallback(() => {
+    router.push('/login');
+  }, [router]);
 
   const handleFilesSelected = useCallback((files: FileList | null) => {
     if (!files) return;
@@ -608,7 +630,8 @@ export function HeroSection() {
       setProgress(30);
 
       if (generationMode === 'image') {
-        setStatusMessage('Generating image...');
+        const isProductCreativeSet = productReferenceUrls.length > 0;
+        setStatusMessage(isProductCreativeSet ? 'Generating four premium creative directions...' : 'Generating image...');
 
         const res = await fetch('/api/generate', {
           method: 'POST',
@@ -618,6 +641,7 @@ export function HeroSection() {
             referenceImages: imageUrls,
             prompt: promptForGeneration || '',
             model: selectedModel,
+            creativeSet: isProductCreativeSet,
           }),
         });
 
@@ -1202,11 +1226,11 @@ export function HeroSection() {
             </div>
           </section>
 
-          <section className="relative -mx-4 mt-24 overflow-hidden border-y border-white/10 py-16 sm:-mx-6 sm:mt-32 sm:py-24 lg:-mx-8">
+          <section className="relative -mx-4 mt-16 overflow-hidden py-10 sm:-mx-6 sm:mt-24 sm:py-16 lg:-mx-8">
             <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-24 bg-gradient-to-r from-[#0b0b0d] to-transparent sm:w-48" />
             <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-24 bg-gradient-to-l from-[#0b0b0d] to-transparent sm:w-48" />
-            <div className="space-y-5 opacity-0 animate-word-appear" style={{ animationDelay: '0.12s', animationFillMode: 'forwards' }}>
-              <Marquee baseVelocity={-2.4} className="font-semibold tracking-normal text-white">
+            <div className="space-y-3 opacity-0 animate-word-appear sm:space-y-4" style={{ animationDelay: '0.12s', animationFillMode: 'forwards' }}>
+              <Marquee baseVelocity={-2.4} className="font-semibold tracking-normal text-white/90">
                 AGENCIES TRUST US • CREATORS TRUST US •
               </Marquee>
               <Marquee baseVelocity={2.1} className="font-semibold tracking-normal text-[#fff05a]" delay={120}>
@@ -1216,25 +1240,121 @@ export function HeroSection() {
                 PRODUCT ADS • SOCIAL CUTS • BRAND VISUALS •
               </Marquee>
             </div>
-            <div className="relative z-20 mx-auto mt-14 flex max-w-4xl flex-col items-center px-4 text-center sm:mt-20">
-              <p className="text-sm font-light uppercase tracking-[0.24em] text-white/42">
+            <div className="relative z-20 mx-auto mt-10 flex max-w-3xl flex-col items-center px-4 text-center sm:mt-12">
+              <p className="text-xs font-light uppercase tracking-[0.24em] text-white/42 sm:text-sm">
                 Built for repeat creative work
               </p>
-              <h2 className="mt-5 text-4xl font-light leading-tight text-[#f4f4f5] sm:text-6xl">
-                Agencies and creators use Visicraft to turn product links into ready-to-ship campaign assets.
+              <h2 className="mt-4 max-w-4xl text-[clamp(2.1rem,5.2vw,4.6rem)] font-light leading-[1.04] text-[#f4f4f5]">
+                Agencies and creators turn product links into ready-to-ship campaign assets.
               </h2>
-              <p className="mt-6 max-w-2xl text-base font-light leading-relaxed text-[#a6a6ad] sm:text-xl">
+              <p className="mt-5 max-w-2xl text-base font-light leading-relaxed text-[#a6a6ad] sm:text-lg">
                 Capture the product once, then generate the angles your client, store, or audience needs across launch pages, paid ads, and social posts.
               </p>
               <button
                 type="button"
                 onClick={handleTrustCtaClick}
-                className="mt-9 inline-flex h-12 items-center justify-center rounded-full bg-white px-6 text-sm font-medium text-black transition-all hover:-translate-y-0.5 hover:bg-[#fff05a] hover:shadow-[0_18px_44px_rgba(255,240,90,0.18)]"
+                className="premium-engine-button mt-7 inline-flex h-12 items-center justify-center rounded-full bg-white px-6 text-sm font-medium text-black transition-all hover:-translate-y-0.5 hover:bg-[#fff05a] hover:shadow-[0_18px_44px_rgba(255,240,90,0.18)]"
               >
-                Start with a product link
+                <span className="relative z-10">Start with a product link</span>
               </button>
             </div>
           </section>
+
+          <footer className="relative -mx-4 overflow-hidden bg-[#0b0b0d] pt-14 text-white sm:-mx-6 sm:pt-24 lg:-mx-8">
+            <div className="mx-auto max-w-6xl px-4 text-center">
+              <h2 className="text-[clamp(2.7rem,8.5vw,8rem)] font-light leading-[0.92] tracking-normal text-[#f4f4f5]">
+                Ready to <span className="font-serif italic">transform</span> your
+                <br />
+                product content?
+              </h2>
+              <p className="mx-auto mt-5 max-w-2xl text-base font-light leading-relaxed text-[#9a9aa2] sm:mt-7 sm:text-xl">
+                Start creating campaign-ready product shots today.{' '}
+                <span className="text-[#fff05a]">From ₹499/mo.</span>
+              </p>
+              <div className="mt-7 flex flex-wrap items-center justify-center gap-3 sm:mt-9">
+                <button
+                  type="button"
+                  onClick={handlePricingClick}
+                  className="inline-flex h-12 items-center justify-center rounded-full border border-white/16 bg-transparent px-6 text-base font-light text-[#f4f4f5] transition-colors hover:border-white/35 hover:bg-white/8"
+                >
+                  View pricing
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSignupClick}
+                  className="inline-flex h-12 items-center justify-center rounded-full bg-[#f4f4f5] px-6 text-base font-light text-black transition-colors hover:bg-white"
+                >
+                  Sign up
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-16 px-4 pb-8 pt-8 sm:mt-24 sm:px-8 sm:pt-14">
+              <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_minmax(500px,0.48fr)] xl:items-end">
+                <div className="min-w-0">
+                  <button
+                    type="button"
+                    onClick={handleTrustCtaClick}
+                    className="footer-wordmark group block select-none text-left text-[clamp(3.25rem,9.5vw,10.5rem)] font-semibold leading-[0.78] tracking-[-0.035em] text-white"
+                    aria-label="Try Visicraft with your product"
+                  >
+                    <span className="footer-wordmark-letter">V</span>
+                    <span className="footer-wordmark-letter">i</span>
+                    <span className="footer-wordmark-letter">s</span>
+                    <span className="footer-wordmark-letter">i</span>
+                    <span className="footer-wordmark-letter">c</span>
+                    <span className="footer-wordmark-letter">r</span>
+                    <span className="footer-wordmark-letter">a</span>
+                    <span className="footer-wordmark-letter">f</span>
+                    <span className="footer-wordmark-letter">t</span>
+                  </button>
+                </div>
+                <div className="grid min-w-0 grid-cols-2 gap-x-8 gap-y-8 sm:grid-cols-3 xl:gap-x-12">
+                  <div>
+                    <p className="mb-3 text-base font-light text-white/42 sm:text-lg">Product</p>
+                    <div className="flex flex-col items-start gap-1.5 text-lg font-light leading-tight text-[#f4f4f5] sm:text-xl">
+                      <a href="#showcase" className="transition-colors hover:text-[#fff05a]">Features</a>
+                      <a href="#showcase" className="transition-colors hover:text-[#fff05a]">Showcase</a>
+                      <a href="/workflow" className="transition-colors hover:text-[#fff05a]">Workflow</a>
+                      <a href="/pricing" className="transition-colors hover:text-[#fff05a]">Pricing</a>
+                      <a href="/generate" className="transition-colors hover:text-[#fff05a]">Tools</a>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="mb-3 text-base font-light text-white/42 sm:text-lg">Resources</p>
+                    <div className="flex flex-col items-start gap-1.5 text-lg font-light leading-tight text-[#f4f4f5] sm:text-xl">
+                      <a href="/workflow" className="transition-colors hover:text-[#fff05a]">Docs</a>
+                      <a href="#showcase" className="transition-colors hover:text-[#fff05a]">Learn</a>
+                      <a href="#showcase" className="transition-colors hover:text-[#fff05a]">Customers</a>
+                      <a href="/pricing" className="transition-colors hover:text-[#fff05a]">Plans</a>
+                      <a href="/login" className="transition-colors hover:text-[#fff05a]">Account</a>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="mb-3 text-base font-light text-white/42 sm:text-lg">Social</p>
+                    <div className="flex flex-col items-start gap-1.5 text-lg font-light leading-tight text-[#f4f4f5] sm:text-xl">
+                      <a href="#" className="transition-colors hover:text-[#fff05a]">Instagram</a>
+                      <a href="#" className="transition-colors hover:text-[#fff05a]">Youtube</a>
+                      <a href="#" className="transition-colors hover:text-[#fff05a]">Facebook</a>
+                      <a href="#" className="transition-colors hover:text-[#fff05a]">X</a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="relative mt-10 flex flex-col items-center justify-between gap-5 text-base font-light text-white/36 sm:mt-8 sm:flex-row sm:text-lg">
+                <span>© 2026 Visicraft</span>
+                <button
+                  type="button"
+                  onClick={handleTrustCtaClick}
+                  className="premium-engine-button inline-flex h-12 items-center justify-center gap-3 rounded-full bg-[#f4f4f5] px-6 text-base font-light text-black shadow-[0_12px_40px_rgba(0,0,0,0.28)] transition-colors hover:bg-[#fff05a]"
+                >
+                  <ArrowUp className="relative z-10 h-4 w-4" />
+                  <span className="relative z-10">Try with your product</span>
+                </button>
+                <span className="hidden sm:block">Built for product teams</span>
+              </div>
+            </div>
+          </footer>
         </div>
         </div>
       </div>
@@ -1276,6 +1396,192 @@ export function HeroSection() {
         @keyframes showcaseProgress {
           from { width: 0%; }
           to { width: 100%; }
+        }
+        .footer-wordmark {
+          position: relative;
+          appearance: none;
+          border: 0;
+          background: transparent;
+          padding: 0 0 0.08em;
+          cursor: pointer;
+          isolation: isolate;
+          filter: drop-shadow(0 0 0 rgba(255, 240, 90, 0));
+          transition:
+            letter-spacing 520ms cubic-bezier(0.2, 0.8, 0.2, 1),
+            filter 520ms ease,
+            transform 520ms cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+        .footer-wordmark::before {
+          content: '';
+          position: absolute;
+          left: -4%;
+          right: -4%;
+          top: 48%;
+          height: 0.08em;
+          border-radius: 999px;
+          background: linear-gradient(90deg, transparent, rgba(255, 240, 90, 0.18), rgba(255, 255, 255, 0.5), transparent);
+          opacity: 0;
+          transform: translateX(-14%) scaleX(0.2);
+          transform-origin: left;
+          pointer-events: none;
+          z-index: -1;
+        }
+        .footer-wordmark::after {
+          content: '';
+          position: absolute;
+          left: 3%;
+          top: 14%;
+          height: 0.12em;
+          width: 0.12em;
+          border-radius: 999px;
+          background: #fff05a;
+          opacity: 0;
+          box-shadow: 0 0 26px rgba(255, 240, 90, 0.75), 0 0 52px rgba(255, 255, 255, 0.26);
+          transform: translate3d(0, 0, 0) scale(0.45);
+          pointer-events: none;
+        }
+        .footer-wordmark-letter {
+          display: inline-block;
+          background: linear-gradient(110deg, #ffffff 0%, #ffffff 35%, #fff6a8 48%, #ffffff 62%, #ffffff 100%);
+          background-size: 240% 100%;
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+          transition:
+            transform 520ms cubic-bezier(0.2, 0.8, 0.2, 1),
+            background-position 720ms cubic-bezier(0.2, 0.8, 0.2, 1),
+            text-shadow 520ms ease;
+        }
+        .footer-wordmark:hover,
+        .footer-wordmark:focus-visible {
+          letter-spacing: -0.02em;
+          filter: drop-shadow(0 18px 50px rgba(255, 240, 90, 0.08));
+          transform: translateY(-0.015em);
+          outline: none;
+        }
+        .footer-wordmark:hover::before,
+        .footer-wordmark:focus-visible::before {
+          opacity: 1;
+          animation: wordmarkRail 920ms cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+        .footer-wordmark:hover::after,
+        .footer-wordmark:focus-visible::after {
+          opacity: 1;
+          animation: wordmarkSpark 980ms cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+        .footer-wordmark:hover .footer-wordmark-letter,
+        .footer-wordmark:focus-visible .footer-wordmark-letter {
+          background-position: 100% 0;
+          text-shadow: 0 0 24px rgba(255, 255, 255, 0.08);
+        }
+        .footer-wordmark:hover .footer-wordmark-letter:nth-child(1),
+        .footer-wordmark:focus-visible .footer-wordmark-letter:nth-child(1) { transform: translateY(-0.045em) rotate(-1.4deg); transition-delay: 0ms; }
+        .footer-wordmark:hover .footer-wordmark-letter:nth-child(2),
+        .footer-wordmark:focus-visible .footer-wordmark-letter:nth-child(2) { transform: translateY(-0.02em) rotate(0.8deg); transition-delay: 24ms; }
+        .footer-wordmark:hover .footer-wordmark-letter:nth-child(3),
+        .footer-wordmark:focus-visible .footer-wordmark-letter:nth-child(3) { transform: translateY(-0.055em) rotate(-0.7deg); transition-delay: 48ms; }
+        .footer-wordmark:hover .footer-wordmark-letter:nth-child(4),
+        .footer-wordmark:focus-visible .footer-wordmark-letter:nth-child(4) { transform: translateY(-0.018em) rotate(0.8deg); transition-delay: 72ms; }
+        .footer-wordmark:hover .footer-wordmark-letter:nth-child(5),
+        .footer-wordmark:focus-visible .footer-wordmark-letter:nth-child(5) { transform: translateY(-0.046em) rotate(-0.8deg); transition-delay: 96ms; }
+        .footer-wordmark:hover .footer-wordmark-letter:nth-child(6),
+        .footer-wordmark:focus-visible .footer-wordmark-letter:nth-child(6) { transform: translateY(-0.026em) rotate(0.5deg); transition-delay: 120ms; }
+        .footer-wordmark:hover .footer-wordmark-letter:nth-child(7),
+        .footer-wordmark:focus-visible .footer-wordmark-letter:nth-child(7) { transform: translateY(-0.05em) rotate(-0.7deg); transition-delay: 144ms; }
+        .footer-wordmark:hover .footer-wordmark-letter:nth-child(8),
+        .footer-wordmark:focus-visible .footer-wordmark-letter:nth-child(8) { transform: translateY(-0.025em) rotate(0.6deg); transition-delay: 168ms; }
+        .footer-wordmark:hover .footer-wordmark-letter:nth-child(9),
+        .footer-wordmark:focus-visible .footer-wordmark-letter:nth-child(9) { transform: translateY(-0.046em) rotate(0.9deg); transition-delay: 192ms; }
+        @keyframes wordmarkRail {
+          0% {
+            transform: translateX(-16%) scaleX(0.2);
+            opacity: 0;
+          }
+          35% {
+            opacity: 1;
+          }
+          100% {
+            transform: translateX(16%) scaleX(1);
+            opacity: 0;
+          }
+        }
+        @keyframes wordmarkSpark {
+          0% {
+            transform: translate3d(0, 0, 0) scale(0.45);
+            opacity: 0;
+          }
+          18% {
+            opacity: 1;
+          }
+          68% {
+            transform: translate3d(680%, 210%, 0) scale(1);
+            opacity: 1;
+          }
+          100% {
+            transform: translate3d(920%, 250%, 0) scale(0.45);
+            opacity: 0;
+          }
+        }
+        .premium-engine-button {
+          position: relative;
+          isolation: isolate;
+          overflow: hidden;
+        }
+        .premium-engine-button::before {
+          content: '';
+          position: absolute;
+          inset: 2px;
+          border-radius: inherit;
+          background:
+            linear-gradient(115deg, transparent 0%, rgba(255,255,255,0.72) 46%, rgba(255,240,90,0.72) 52%, transparent 62%);
+          opacity: 0;
+          transform: translateX(-115%);
+          transition: opacity 180ms ease;
+          z-index: 0;
+          pointer-events: none;
+        }
+        .premium-engine-button::after {
+          content: '';
+          position: absolute;
+          right: 14px;
+          top: 50%;
+          height: 7px;
+          width: 7px;
+          border-radius: 999px;
+          background: #fff05a;
+          box-shadow: 0 0 0 0 rgba(255,240,90,0.34), 0 0 18px rgba(255,240,90,0.42);
+          opacity: 0;
+          transform: translateY(-50%) scale(0.45);
+          z-index: 0;
+          pointer-events: none;
+        }
+        .premium-engine-button:hover::before,
+        .premium-engine-button:focus-visible::before {
+          opacity: 0.46;
+          animation: engineSweep 780ms cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+        .premium-engine-button:hover::after,
+        .premium-engine-button:focus-visible::after {
+          opacity: 1;
+          animation: enginePulse 900ms ease-out;
+        }
+        @keyframes engineSweep {
+          from { transform: translateX(-115%); }
+          to { transform: translateX(115%); }
+        }
+        @keyframes enginePulse {
+          0% {
+            transform: translateY(-50%) scale(0.45);
+            box-shadow: 0 0 0 0 rgba(255,240,90,0.34), 0 0 18px rgba(255,240,90,0.42);
+          }
+          55% {
+            transform: translateY(-50%) scale(1);
+            box-shadow: 0 0 0 10px rgba(255,240,90,0), 0 0 22px rgba(255,240,90,0.55);
+          }
+          100% {
+            transform: translateY(-50%) scale(0.7);
+            box-shadow: 0 0 0 0 rgba(255,240,90,0), 0 0 14px rgba(255,240,90,0.32);
+          }
         }
       `}</style>
     </div>
