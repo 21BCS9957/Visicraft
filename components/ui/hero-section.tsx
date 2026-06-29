@@ -325,18 +325,20 @@ function buildProductCreativePrompt(product: ProductCapture, originalPrompt: str
     descriptionLine,
     'Analyze all attached Shopify reference images before generating: packaging shape, label layout, logo placement, text branding, colors, material finish, proportions, category cues, and how the product should be presented for a premium brand.',
     'Preserve the true product identity, packaging geometry, label placement, brand colors, and recognizable details from the references.',
+    'The product package must keep the exact same physical format as the Shopify reference: same box/jar/bottle dimensions, silhouette, height-to-width ratio, cap size, label scale, front-facing layout, and relative product size. Do not resize, stretch, slim, widen, stack, duplicate, or redesign the package unless explicitly requested.',
     'The creative must be vertical 9:16 for Instagram stories/reels/ads while still feeling premium enough for Shopify product and collection imagery: clean focal point, strong negative space, editorial realism, refined lighting, no clutter.',
-    'If any human model or hand appears, use Indian-origin people with authentic Indian skin tones, real facial structure, natural body language, believable hands, modern premium styling, and documentary-level realism.',
-    'Make humans look photographed, not AI generated: natural lens compression, real skin texture, subtle imperfections, grounded shadows, believable contact points, realistic eyes, and no plastic or waxy face.',
+    'If any human model or hand appears, use Indian-origin young adult people, around 20-25 years old, with authentic Indian skin tones, real facial structure, natural body language, believable hands, modern premium styling, and documentary-level realism. Do not make the model look aged, elderly, tired, waxy, or artificial.',
+    'Make humans look photographed, not AI generated: Vogue India editorial meets premium Nykaa campaign, medium-format commercial photography, natural lens compression, real skin texture, subtle imperfections, grounded shadows, believable contact points, realistic eyes, crisp product focus, and no plastic or waxy face.',
     'No added text: no headlines, captions, slogans, pricing, badges, UI labels, watermarks, fake label copy, or readable typography in the scene. Only real product packaging marks from the reference may remain, and they must not be invented.',
-    'Avoid distorted labels, wrong logos, extra products, duplicated containers, messy hands, malformed anatomy, uncanny eyes, fake AI posing, cheap stock-photo styling, and overdesigned props.',
+    'Product is the hero and model is supporting character. The client will reject the image if the package changes by even 1%. Build lighting, background, and pose around a locked, rigid, photo-accurate product anchor.',
+    'Avoid distorted labels, wrong logos, extra products, duplicated containers, messy hands, malformed anatomy, uncanny eyes, aged-looking models, fake AI posing, changed package size, floating/composited product, cheap stock-photo styling, and overdesigned props.',
   ].filter(Boolean).join(' ');
 
   if (userDirection) {
     return `${base} Creative direction: ${userDirection}`;
   }
 
-  return `${base} Explore four polished product-led visual directions: Indian model lifestyle, clean product hero, sensory still life, and hook-worthy Instagram campaign scene.`;
+  return `${base} Explore four polished product-led visual directions: young Indian model lifestyle, clean exact-package product hero, sensory still life, and hook-worthy Instagram campaign scene.`;
 }
 
 function ProductCreativeProgress({
@@ -1283,7 +1285,7 @@ export function HeroSection() {
 
           {/* Results / Progress Section */}
           {(generatedResults.length > 0 || error) && (
-            <div ref={resultsRef} className="mx-auto w-full max-w-5xl pt-6">
+            <div ref={resultsRef} className="mx-auto w-full max-w-[1780px] pt-6">
               {/* Error */}
               {error && (
                 <p className="text-center text-sm text-red-400">{error}</p>
@@ -1291,11 +1293,12 @@ export function HeroSection() {
 
               {/* Generated Images */}
               {!isGenerating && generatedResults.length > 0 && generatedType === 'image' && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="mx-auto w-full overflow-x-auto pb-2 scrollbar-hide">
+                  <div className="mx-auto grid min-w-[920px] max-w-[1280px] grid-cols-4 gap-3 sm:gap-4">
                   {generatedResults.map((url, i) => (
                     <div
                       key={i}
-                      className="group relative aspect-[9/16] overflow-hidden rounded-[24px] border border-white/10 bg-[#151519] opacity-0 shadow-[0_22px_70px_rgba(0,0,0,0.34)] animate-word-appear"
+                      className="group relative aspect-[9/16] w-full overflow-hidden rounded-[22px] border border-white/10 bg-[#151519] opacity-0 shadow-[0_22px_70px_rgba(0,0,0,0.34)] animate-word-appear"
                       style={{ animationDelay: `${i * 0.1}s`, animationFillMode: 'forwards' }}
                     >
                       <button
@@ -1339,6 +1342,7 @@ export function HeroSection() {
                       </div>
                     </div>
                   ))}
+                  </div>
                 </div>
               )}
 
