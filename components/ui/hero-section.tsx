@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { ArrowUp, ChevronDown, Clapperboard, Image as ImageIcon, Mic, Plus, X, Download } from 'lucide-react';
+import { ArrowUp, ChevronDown, Clapperboard, Download, Eye, Image as ImageIcon, Mic, Plus, X } from 'lucide-react';
 import { forwardRef, memo, useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
   motion,
@@ -317,14 +317,124 @@ function removeUrlFromPrompt(value: string, url: string): string {
 function buildProductCreativePrompt(product: ProductCapture, originalPrompt: string, productUrl: string): string {
   const userDirection = removeUrlFromPrompt(originalPrompt, productUrl);
   const productName = product.title ? `"${product.title}"` : 'the product';
-  const brandLine = product.vendor ? ` for ${product.vendor}` : '';
-  const base = `Create premium advertising creative${brandLine} using ${productName} as the exact product reference. Preserve the real packaging, label, colors, proportions, and recognizable product details from the attached Shopify images. Make the result aesthetic, premium, realistic, and campaign-ready with refined art direction.`;
+  const brandLine = product.vendor ? `Brand/vendor: ${product.vendor}.` : '';
+  const descriptionLine = product.description ? `Product context: ${product.description.slice(0, 520)}.` : '';
+  const base = [
+    `Create a god-level premium ecommerce creative system using ${productName} as the exact product reference.`,
+    brandLine,
+    descriptionLine,
+    'Analyze all attached Shopify reference images before generating: packaging shape, label layout, logo placement, text branding, colors, material finish, proportions, category cues, and how the product should be presented for a premium brand.',
+    'Preserve the true product identity, packaging geometry, label placement, brand colors, and recognizable details from the references.',
+    'The creative must work for Instagram feed/ads and Shopify product or collection imagery: premium crop, clean focal point, strong negative space, editorial realism, refined lighting, no clutter.',
+    'No added text: no headlines, captions, slogans, pricing, badges, UI labels, watermarks, fake label copy, or readable typography in the scene. Only real product packaging marks from the reference may remain, and they must not be invented.',
+    'Avoid distorted labels, wrong logos, extra products, duplicated containers, messy hands, malformed anatomy, cheap stock-photo styling, and overdesigned props.',
+  ].filter(Boolean).join(' ');
 
   if (userDirection) {
     return `${base} Creative direction: ${userDirection}`;
   }
 
-  return `${base} Explore a polished product-led visual direction.`;
+  return `${base} Explore four polished product-led visual directions: model lifestyle, clean product hero, sensory still life, and Instagram-ready campaign scene.`;
+}
+
+function ProductCreativeProgress({
+  statusMessage,
+  progress,
+  referenceUrls,
+  productCapture,
+}: {
+  statusMessage: string;
+  progress: number;
+  referenceUrls: string[];
+  productCapture: ProductCapture | null;
+}) {
+  const displayUrls = referenceUrls.length
+    ? referenceUrls.slice(0, 6)
+    : productCapture?.images.slice(0, 6).map((image) => image.url) ?? [];
+  const steps = [
+    'Analyzing reference images',
+    'Reading branding and packaging',
+    'Mapping Instagram and Shopify crops',
+    'Generating tailored images',
+  ];
+  const activeStep = progress < 30 ? 0 : progress < 54 ? 1 : progress < 74 ? 2 : 3;
+
+  return (
+    <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[#151519]/88 p-4 text-left shadow-[0_26px_90px_rgba(0,0,0,0.48)] backdrop-blur-2xl sm:p-5">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,240,90,0.10),transparent_42%)]" />
+      <div className="relative grid gap-5 lg:grid-cols-[1fr_0.82fr]">
+        <div className="overflow-hidden rounded-[22px] border border-white/10 bg-black/28 p-3">
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-xs font-medium uppercase tracking-[0.22em] text-white/38">
+              Reference analysis
+            </span>
+            <span className="rounded-full bg-[#fff05a] px-2.5 py-1 text-[10px] font-semibold text-black">
+              {Math.max(12, Math.min(progress, 96))}%
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {(displayUrls.length ? displayUrls : new Array(6).fill('')).map((url, index) => (
+              <div
+                key={`${url || 'placeholder'}-${index}`}
+                className="relative aspect-square overflow-hidden rounded-2xl border border-white/10 bg-white/[0.045]"
+              >
+                {url ? (
+                  <img src={url} alt="Analyzed product reference" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="h-full w-full animate-pulse bg-white/8" />
+                )}
+                <span
+                  className="absolute inset-y-0 w-8 bg-gradient-to-r from-transparent via-white/45 to-transparent"
+                  style={{
+                    animation: `workflowScan ${2.4 + index * 0.16}s cubic-bezier(0.2,0.8,0.2,1) infinite`,
+                    animationDelay: `${index * 120}ms`,
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-col justify-center">
+          <div className="mb-4">
+            <p className="text-2xl font-light leading-tight text-white sm:text-3xl">
+              {activeStep < 3 ? 'Analyzing your product system' : 'Generating tailored images'}
+            </p>
+            <p className="mt-2 text-sm font-light leading-relaxed text-white/50">
+              {statusMessage || 'Reading visual identity, packaging, color, and product context from the references.'}
+            </p>
+          </div>
+          <div className="space-y-2">
+            {steps.map((step, index) => (
+              <div
+                key={step}
+                className={cn(
+                  'flex items-center gap-3 rounded-2xl border px-3 py-2.5 transition-colors',
+                  index <= activeStep
+                    ? 'border-[#fff05a]/20 bg-[#fff05a]/10 text-white'
+                    : 'border-white/8 bg-white/[0.035] text-white/34'
+                )}
+              >
+                <span
+                  className={cn(
+                    'h-2 w-2 rounded-full',
+                    index <= activeStep ? 'bg-[#fff05a] shadow-[0_0_18px_rgba(255,240,90,0.45)]' : 'bg-white/20'
+                  )}
+                />
+                <span className="text-sm font-light">{step}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/8">
+            <div
+              className="h-full rounded-full bg-[#fff05a] transition-all duration-500 ease-out"
+              style={{ width: `${Math.max(8, Math.min(progress, 100))}%` }}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 let imageIdCounter = 0;
@@ -357,6 +467,8 @@ export function HeroSection() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedResults, setGeneratedResults] = useState<string[]>([]);
   const [generatedType, setGeneratedType] = useState<'image' | 'video'>('image');
+  const [generationReferenceUrls, setGenerationReferenceUrls] = useState<string[]>([]);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState('');
   const [error, setError] = useState('');
@@ -531,8 +643,7 @@ export function HeroSection() {
       }
 
       setProductCapture(result.product);
-      const firstImage = result.product.images[0]?.url;
-      const selected = firstImage ? [firstImage] : [];
+      const selected = result.product.images.slice(0, 4).map((image) => image.url);
       setSelectedProductUrls(selected);
       setProgress(24);
       setStatusMessage(`Found ${result.product.images.length} product images`);
@@ -553,6 +664,7 @@ export function HeroSection() {
         ? []
         : selectedProductUrls;
     let promptForGeneration = promptValue;
+    let activeProductCapture = productCapture;
     let capturedThisRun = false;
 
     if (activeProductUrl && uploadedImages.length === 0 && productReferenceUrls.length === 0) {
@@ -560,6 +672,7 @@ export function HeroSection() {
         const capture = await captureProductImages(activeProductUrl);
         capturedThisRun = true;
         productReferenceUrls = capture.selected;
+        activeProductCapture = capture.product;
         promptForGeneration = buildProductCreativePrompt(capture.product, promptValue, activeProductUrl);
         setPromptValue(promptForGeneration);
       } catch (err) {
@@ -604,6 +717,11 @@ export function HeroSection() {
       return;
     }
 
+    setGenerationReferenceUrls([...productReferenceUrls, ...uploadedImages.map((img) => img.preview)].slice(0, 8));
+    setStatusMessage(productReferenceUrls.length > 0
+      ? 'Analyzing Shopify references, text branding, packaging, and product identity...'
+      : 'Analyzing uploaded product references...');
+    setProgress(18);
     setIsGenerating(true);
     setGeneratedResults([]);
     setGeneratedType(generationMode);
@@ -616,8 +734,8 @@ export function HeroSection() {
     }
 
     try {
-      setStatusMessage(uploadedImages.length > 0 ? 'Uploading images...' : 'Preparing product images...');
-      setProgress(10);
+      setStatusMessage(uploadedImages.length > 0 ? 'Preparing reference board...' : 'Preparing product image set...');
+      setProgress(26);
 
       const uploadedImageUrls = uploadedImages.length > 0
         ? await Promise.all(
@@ -625,14 +743,17 @@ export function HeroSection() {
           )
         : [];
       const imageUrls = [...productReferenceUrls, ...uploadedImageUrls];
+      setGenerationReferenceUrls([...productReferenceUrls, ...uploadedImageUrls].slice(0, 8));
 
       console.log(`📎 Sending ${imageUrls.length} reference image(s) to model:`, imageUrls);
 
-      setProgress(30);
+      setStatusMessage('Reading brand colors, product shape, labels, and ecommerce context...');
+      setProgress(42);
 
       if (generationMode === 'image') {
         const isProductCreativeSet = productReferenceUrls.length > 0;
-        setStatusMessage(isProductCreativeSet ? 'Generating four premium creative directions...' : 'Generating image...');
+        setStatusMessage(isProductCreativeSet ? 'Generating four tailored premium images for Instagram and Shopify...' : 'Generating tailored image...');
+        setProgress(68);
 
         const res = await fetch('/api/generate', {
           method: 'POST',
@@ -643,19 +764,28 @@ export function HeroSection() {
             prompt: promptForGeneration || '',
             model: selectedModel,
             creativeSet: isProductCreativeSet,
+            aspectRatio: isProductCreativeSet ? '4:5' : undefined,
+            resolution: '2K',
+            productContext: activeProductCapture
+              ? {
+                  title: activeProductCapture.title,
+                  vendor: activeProductCapture.vendor,
+                  description: activeProductCapture.description,
+                }
+              : undefined,
           }),
         });
 
-        setProgress(80);
+        setProgress(86);
 
         const result = await res.json();
         if (!res.ok) throw new Error(result.error || 'Generation failed');
 
         setProgress(100);
-        setStatusMessage('Done!');
+        setStatusMessage('Tailored images ready.');
         setGeneratedResults(result.images ?? []);
       } else {
-        setStatusMessage('Starting video generation...');
+        setStatusMessage('Starting tailored video generation...');
 
         const res = await fetch('/api/img2vid', {
           method: 'POST',
@@ -1114,7 +1244,12 @@ export function HeroSection() {
                       )}
                     >
                       {isGenerating || isCapturingProduct ? (
-                        <span className="block h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white/70" />
+                        <>
+                          <span className="flex h-4 w-4 items-center justify-center">
+                            <span className="h-2 w-2 animate-pulse rounded-full bg-[#fff05a] shadow-[0_0_18px_rgba(255,240,90,0.55)]" />
+                          </span>
+                          <span>{isGenerating ? 'Working' : 'Capturing'}</span>
+                        </>
                       ) : (
                         <>
                           <ArrowUp className="h-[18px] w-[18px]" />
@@ -1134,31 +1269,15 @@ export function HeroSection() {
 
           {/* Results / Progress Section */}
           {(isGenerating || generatedResults.length > 0 || error) && (
-            <div ref={resultsRef} className="mx-auto w-full max-w-3xl pt-6">
+            <div ref={resultsRef} className="mx-auto w-full max-w-5xl pt-6">
               {/* Progress */}
               {isGenerating && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-center gap-3">
-                    <div className="relative h-32 w-full overflow-hidden rounded-2xl bg-[#1a1a1a] border border-[#4d453c]/20">
-                      <div
-                        className="absolute inset-0 bg-gradient-to-r from-transparent via-[#4d453c]/10 to-transparent"
-                        style={{
-                          animation: 'shimmer 1.5s ease-in-out infinite',
-                        }}
-                      />
-                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                        <span className="block h-5 w-5 animate-spin rounded-full border-2 border-[#8b7355]/30 border-t-[#c8b4a0]" />
-                        <span className="text-sm font-light text-[#d1c4b8]/60">{statusMessage}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="h-1 w-full overflow-hidden rounded-full bg-[#1a1a1a]">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-[#8b7355] to-[#c8b4a0] transition-all duration-500 ease-out"
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
-                </div>
+                <ProductCreativeProgress
+                  statusMessage={statusMessage}
+                  progress={progress}
+                  referenceUrls={generationReferenceUrls}
+                  productCapture={productCapture}
+                />
               )}
 
               {/* Error */}
@@ -1168,26 +1287,51 @@ export function HeroSection() {
 
               {/* Generated Images */}
               {!isGenerating && generatedResults.length > 0 && generatedType === 'image' && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {generatedResults.map((url, i) => (
                     <div
                       key={i}
-                      className="group relative overflow-hidden rounded-2xl border border-[#4d453c]/20 bg-[#1a1a1a] opacity-0 animate-word-appear"
+                      className="group relative overflow-hidden rounded-[24px] border border-white/10 bg-[#151519] opacity-0 shadow-[0_22px_70px_rgba(0,0,0,0.34)] animate-word-appear"
                       style={{ animationDelay: `${i * 0.1}s`, animationFillMode: 'forwards' }}
                     >
-                      <img
-                        src={url}
-                        alt={`Generated ${i + 1}`}
-                        className="w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-                      />
-                      <div className="absolute inset-0 flex items-end justify-end bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 transition-opacity duration-200 group-hover:opacity-100 p-3">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewImageUrl(url)}
+                        className="block w-full cursor-zoom-in"
+                      >
+                        <img
+                          src={url}
+                          alt={`Generated ${i + 1}`}
+                          className="w-full object-cover transition-transform duration-500 group-hover:scale-[1.025]"
+                        />
+                      </button>
+                      <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/72 via-black/20 to-transparent p-3 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                        <div className="flex gap-1.5">
+                          <span className="rounded-full border border-white/10 bg-white/10 px-2.5 py-1 text-[10px] font-medium text-white/76 backdrop-blur">
+                            Instagram
+                          </span>
+                          <span className="rounded-full border border-white/10 bg-white/10 px-2.5 py-1 text-[10px] font-medium text-white/76 backdrop-blur">
+                            Shopify
+                          </span>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setPreviewImageUrl(url)}
+                            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-black shadow-lg backdrop-blur-sm transition-transform hover:scale-110"
+                            aria-label="Preview generated image"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
                         <a
                           href={url}
                           download={`visicraft-${i + 1}.png`}
                           className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-black shadow-lg backdrop-blur-sm transition-transform hover:scale-110"
+                          aria-label="Download generated image"
                         >
                           <Download className="h-4 w-4" />
                         </a>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -1208,6 +1352,50 @@ export function HeroSection() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {previewImageUrl && (
+            <div
+              className="fixed inset-0 z-[80] flex items-center justify-center bg-black/82 p-4 backdrop-blur-xl"
+              onClick={() => setPreviewImageUrl(null)}
+            >
+              <div
+                className="relative max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-[28px] border border-white/12 bg-[#151519] shadow-[0_30px_120px_rgba(0,0,0,0.62)]"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+                  <div className="text-left">
+                    <p className="text-sm font-medium text-white">Creative preview</p>
+                    <p className="mt-0.5 text-xs text-white/42">Review before using on Instagram or Shopify.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={previewImageUrl}
+                      download="visicraft-preview.png"
+                      className="flex h-9 items-center gap-2 rounded-full bg-[#fff05a] px-3 text-xs font-medium text-black transition-colors hover:bg-white"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Download
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewImageUrl(null)}
+                      className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 text-white/58 transition-colors hover:bg-white/10 hover:text-white"
+                      aria-label="Close preview"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+                <div className="max-h-[calc(92vh-66px)] overflow-auto bg-black/30 p-3">
+                  <img
+                    src={previewImageUrl}
+                    alt="Generated creative preview"
+                    className="mx-auto max-h-[calc(92vh-92px)] w-auto rounded-2xl object-contain"
+                  />
+                </div>
+              </div>
             </div>
           )}
 
