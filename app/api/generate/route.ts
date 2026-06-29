@@ -35,15 +35,17 @@ function buildProductCreativeSetPrompts(basePrompt: string | undefined, productC
     'Generate exactly one standalone image, not a collage, contact sheet, grid, before-after view, or multi-panel layout.',
     'Use the references only to preserve the real product identity. Keep packaging geometry, label placement, logo area, colors, proportions, and recognizable details faithful to the source.',
     'No added text of any kind: no headlines, captions, slogans, price tags, promo badges, UI labels, watermarks, fake label copy, or readable scene typography. Only unavoidable real packaging marks from the reference may remain, and they must be faithful rather than invented.',
-    'Make the result premium, aesthetic, realistic, editorial, and commercially usable for both Instagram feed/ads and Shopify product/collection imagery, with clean crop room and no clutter.',
-    'Avoid distorted labels, wrong branding, extra products, messy hands, malformed anatomy, plastic skin, warped containers, duplicated packaging, and low-end stock-photo styling.',
+    'Make the result premium, aesthetic, photorealistic, cinematic, editorial, and commercially usable for vertical Instagram stories/reels/ads and Shopify product/collection imagery, with clean crop room and no clutter.',
+    'When a human model or hand appears, use Indian-origin people with authentic Indian skin tones, real facial structure, natural body language, believable hands, modern premium styling, and documentary-level realism.',
+    'Use real camera language: natural lens compression, realistic depth of field, true-to-life skin texture, grounded shadows, believable contact points, imperfect human nuance, and premium commercial photography lighting.',
+    'Avoid distorted labels, wrong branding, extra products, messy hands, malformed anatomy, plastic skin, waxy faces, uncanny eyes, fake AI model posing, warped containers, duplicated packaging, and low-end stock-photo styling.',
   ].join(' ');
 
   return [
-    `${shared} Direction 1: premium lifestyle campaign image with a tasteful human model naturally holding or using the product. Elegant wardrobe, refined skin tones, soft cinematic daylight, aspirational but believable setting, product clearly readable and heroed.`,
+    `${shared} Direction 1: premium Indian lifestyle campaign image with a tasteful Indian-origin model naturally holding or using the product. Elegant wardrobe, refined skin tones, soft cinematic daylight, aspirational but believable setting, product clearly readable and heroed.`,
     `${shared} Direction 2: clean Shopify-ready studio product hero with only the product as the focal point. Sculptural lighting, soft contact shadow, premium background material, perfect ecommerce clarity, no model, no props that compete with the product.`,
     `${shared} Direction 3: sensory editorial still life focused on benefit cues and material feeling. Macro-inspired composition, elevated props or natural textures only when relevant to the product category, refined depth of field, no model.`,
-    `${shared} Direction 4: Instagram-ready social creative with product-first composition and tasteful model/hand interaction or environment context. Modern campaign framing, strong negative space, premium palette, no text overlay, no ad copy.`,
+    `${shared} Direction 4: Instagram-ready vertical social creative with product-first composition and tasteful Indian-origin model or hand interaction when useful. Modern campaign framing, strong negative space, premium palette, no text overlay, no ad copy.`,
   ];
 }
 

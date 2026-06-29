@@ -325,16 +325,18 @@ function buildProductCreativePrompt(product: ProductCapture, originalPrompt: str
     descriptionLine,
     'Analyze all attached Shopify reference images before generating: packaging shape, label layout, logo placement, text branding, colors, material finish, proportions, category cues, and how the product should be presented for a premium brand.',
     'Preserve the true product identity, packaging geometry, label placement, brand colors, and recognizable details from the references.',
-    'The creative must work for Instagram feed/ads and Shopify product or collection imagery: premium crop, clean focal point, strong negative space, editorial realism, refined lighting, no clutter.',
+    'The creative must be vertical 9:16 for Instagram stories/reels/ads while still feeling premium enough for Shopify product and collection imagery: clean focal point, strong negative space, editorial realism, refined lighting, no clutter.',
+    'If any human model or hand appears, use Indian-origin people with authentic Indian skin tones, real facial structure, natural body language, believable hands, modern premium styling, and documentary-level realism.',
+    'Make humans look photographed, not AI generated: natural lens compression, real skin texture, subtle imperfections, grounded shadows, believable contact points, realistic eyes, and no plastic or waxy face.',
     'No added text: no headlines, captions, slogans, pricing, badges, UI labels, watermarks, fake label copy, or readable typography in the scene. Only real product packaging marks from the reference may remain, and they must not be invented.',
-    'Avoid distorted labels, wrong logos, extra products, duplicated containers, messy hands, malformed anatomy, cheap stock-photo styling, and overdesigned props.',
+    'Avoid distorted labels, wrong logos, extra products, duplicated containers, messy hands, malformed anatomy, uncanny eyes, fake AI posing, cheap stock-photo styling, and overdesigned props.',
   ].filter(Boolean).join(' ');
 
   if (userDirection) {
     return `${base} Creative direction: ${userDirection}`;
   }
 
-  return `${base} Explore four polished product-led visual directions: model lifestyle, clean product hero, sensory still life, and Instagram-ready campaign scene.`;
+  return `${base} Explore four polished product-led visual directions: Indian model lifestyle, clean product hero, sensory still life, and hook-worthy Instagram campaign scene.`;
 }
 
 function ProductCreativeProgress({
@@ -349,8 +351,9 @@ function ProductCreativeProgress({
   productCapture: ProductCapture | null;
 }) {
   const displayUrls = referenceUrls.length
-    ? referenceUrls.slice(0, 6)
-    : productCapture?.images.slice(0, 6).map((image) => image.url) ?? [];
+    ? referenceUrls
+    : productCapture?.images.map((image) => image.url) ?? [];
+  const placeholderCount = Math.max(8, productCapture?.images.length ?? 8);
   const steps = [
     'Analyzing reference images',
     'Reading branding and packaging',
@@ -366,14 +369,14 @@ function ProductCreativeProgress({
         <div className="overflow-hidden rounded-[22px] border border-white/10 bg-black/28 p-3">
           <div className="mb-3 flex items-center justify-between">
             <span className="text-xs font-medium uppercase tracking-[0.22em] text-white/38">
-              Reference analysis
+              Analyzing {displayUrls.length || placeholderCount} references
             </span>
             <span className="rounded-full bg-[#fff05a] px-2.5 py-1 text-[10px] font-semibold text-black">
               {Math.max(12, Math.min(progress, 96))}%
             </span>
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            {(displayUrls.length ? displayUrls : new Array(6).fill('')).map((url, index) => (
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {(displayUrls.length ? displayUrls : new Array(placeholderCount).fill('')).map((url, index) => (
               <div
                 key={`${url || 'placeholder'}-${index}`}
                 className="relative aspect-square overflow-hidden rounded-2xl border border-white/10 bg-white/[0.045]"
@@ -612,7 +615,7 @@ export function HeroSection() {
       if (prev.includes(url)) {
         return prev.filter((item) => item !== url);
       }
-      return [...prev, url].slice(0, 4);
+      return [...prev, url];
     });
   }, []);
 
@@ -643,7 +646,7 @@ export function HeroSection() {
       }
 
       setProductCapture(result.product);
-      const selected = result.product.images.slice(0, 4).map((image) => image.url);
+      const selected = result.product.images.map((image) => image.url);
       setSelectedProductUrls(selected);
       setProgress(24);
       setStatusMessage(`Found ${result.product.images.length} product images`);
@@ -717,7 +720,7 @@ export function HeroSection() {
       return;
     }
 
-    setGenerationReferenceUrls([...productReferenceUrls, ...uploadedImages.map((img) => img.preview)].slice(0, 8));
+    setGenerationReferenceUrls([...productReferenceUrls, ...uploadedImages.map((img) => img.preview)]);
     setStatusMessage(productReferenceUrls.length > 0
       ? 'Analyzing Shopify references, text branding, packaging, and product identity...'
       : 'Analyzing uploaded product references...');
@@ -743,7 +746,7 @@ export function HeroSection() {
           )
         : [];
       const imageUrls = [...productReferenceUrls, ...uploadedImageUrls];
-      setGenerationReferenceUrls([...productReferenceUrls, ...uploadedImageUrls].slice(0, 8));
+      setGenerationReferenceUrls([...productReferenceUrls, ...uploadedImageUrls]);
 
       console.log(`📎 Sending ${imageUrls.length} reference image(s) to model:`, imageUrls);
 
@@ -764,7 +767,7 @@ export function HeroSection() {
             prompt: promptForGeneration || '',
             model: selectedModel,
             creativeSet: isProductCreativeSet,
-            aspectRatio: isProductCreativeSet ? '4:5' : undefined,
+            aspectRatio: isProductCreativeSet ? '9:16' : undefined,
             resolution: '2K',
             productContext: activeProductCapture
               ? {
@@ -915,6 +918,16 @@ export function HeroSection() {
 
           {/* Prompt Box */}
           <div className="relative z-20 pt-8 sm:pt-10">
+            {isGenerating ? (
+              <div className="mx-auto w-full max-w-[1080px]">
+                <ProductCreativeProgress
+                  statusMessage={statusMessage}
+                  progress={progress}
+                  referenceUrls={generationReferenceUrls}
+                  productCapture={productCapture}
+                />
+              </div>
+            ) : (
             <div className="mx-auto w-full max-w-[980px] rounded-[28px] border border-white/10 bg-[#18181b]/90 p-3 shadow-[0_28px_100px_rgba(0,0,0,0.62)] backdrop-blur-2xl">
               <div className="flex flex-col">
                 <div className="flex flex-wrap items-center gap-2 px-3 pt-2 text-left sm:px-4">
@@ -1265,23 +1278,14 @@ export function HeroSection() {
                 </div>
               </div>
             </div>
+            )}
           </div>
 
           {/* Results / Progress Section */}
-          {(isGenerating || generatedResults.length > 0 || error) && (
+          {(generatedResults.length > 0 || error) && (
             <div ref={resultsRef} className="mx-auto w-full max-w-5xl pt-6">
-              {/* Progress */}
-              {isGenerating && (
-                <ProductCreativeProgress
-                  statusMessage={statusMessage}
-                  progress={progress}
-                  referenceUrls={generationReferenceUrls}
-                  productCapture={productCapture}
-                />
-              )}
-
               {/* Error */}
-              {error && !isGenerating && (
+              {error && (
                 <p className="text-center text-sm text-red-400">{error}</p>
               )}
 
@@ -1291,18 +1295,18 @@ export function HeroSection() {
                   {generatedResults.map((url, i) => (
                     <div
                       key={i}
-                      className="group relative overflow-hidden rounded-[24px] border border-white/10 bg-[#151519] opacity-0 shadow-[0_22px_70px_rgba(0,0,0,0.34)] animate-word-appear"
+                      className="group relative aspect-[9/16] overflow-hidden rounded-[24px] border border-white/10 bg-[#151519] opacity-0 shadow-[0_22px_70px_rgba(0,0,0,0.34)] animate-word-appear"
                       style={{ animationDelay: `${i * 0.1}s`, animationFillMode: 'forwards' }}
                     >
                       <button
                         type="button"
                         onClick={() => setPreviewImageUrl(url)}
-                        className="block w-full cursor-zoom-in"
+                        className="block h-full w-full cursor-zoom-in"
                       >
                         <img
                           src={url}
                           alt={`Generated ${i + 1}`}
-                          className="w-full object-cover transition-transform duration-500 group-hover:scale-[1.025]"
+                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.025]"
                         />
                       </button>
                       <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/72 via-black/20 to-transparent p-3 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
