@@ -204,7 +204,9 @@ export function Sidebar({
             animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
             exit={{ opacity: 0, x: -20, filter: 'blur(4px)' }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className={`absolute top-0 bottom-0 z-40 flex flex-col rounded-[24px] border border-white/10 bg-[#151519]/88 shadow-[0_28px_100px_rgba(0,0,0,0.42)] backdrop-blur-2xl ${
+            className={`absolute top-0 z-40 flex flex-col rounded-[24px] border border-white/10 bg-[#151519]/88 shadow-[0_28px_100px_rgba(0,0,0,0.42)] backdrop-blur-2xl ${
+              activePanel === 'nodes' ? 'max-h-full' : 'bottom-0'
+            } ${
               isMobile ? 'left-[68px]' : 'left-[82px]'
             } ${
               activePanel === 'nodes' 
@@ -216,22 +218,19 @@ export function Sidebar({
               <div className="p-4 flex flex-col h-full">
                 <h3 className="mb-2 text-sm font-medium text-white">Add Nodes</h3>
                 <p className="mb-4 text-xs font-light text-white/42">Drag nodes to canvas or click to add</p>
-                <div className="space-y-2 overflow-y-auto custom-scrollbar flex-1 pb-4">
+                <div className="space-y-1.5 overflow-y-auto custom-scrollbar flex-1 pb-4">
                   {nodeTypes.map((node) => (
                     <div
                       key={`${node.type}-${node.nodeType || 'default'}`}
                       draggable
                       onDragStart={(e) => onDragStart(e, node.type, node.nodeType || '')}
                       onClick={() => handleAddNode(node.type, node.nodeType)}
-                      className="group flex w-full cursor-move items-center gap-3 rounded-2xl border border-white/8 bg-white/[0.045] p-3 transition-all hover:border-[#fff05a]/24 hover:bg-white/[0.075]"
+                      className="group flex w-full cursor-move items-center gap-3 rounded-xl px-1 py-2.5 transition-all hover:bg-white/7"
                     >
-                      <div
-                        className={`${isMobile ? 'w-6 h-6' : 'w-8 h-8'} rounded flex items-center justify-center`}
-                        style={{ backgroundColor: `${node.color}20` }}
-                      >
-                        <node.icon className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'}`} style={{ color: node.color }} />
+                      <div className="rounded-xl border border-white/8 bg-white/[0.055] p-1.5 transition-colors group-hover:bg-white/10">
+                        <node.icon className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} text-white/72 group-hover:text-white`} />
                       </div>
-                      <span className={`${isMobile ? 'text-xs' : 'text-sm'} text-white/62 transition-colors group-hover:text-white`}>
+                      <span className={`${isMobile ? 'text-xs' : 'text-sm'} text-white/72 transition-colors group-hover:text-white`}>
                         {node.label}
                       </span>
                     </div>
