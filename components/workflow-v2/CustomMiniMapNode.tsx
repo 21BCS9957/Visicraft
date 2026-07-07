@@ -1,15 +1,6 @@
 import React, { memo } from 'react';
 import { useStore } from 'reactflow';
-import { Zap, Play, Upload, Clapperboard, StickyNote, MoreVertical, MonitorPlay } from 'lucide-react';
-
-const NOTE_COLORS = [
-    { name: 'Yellow', bg: '#fef3c7', border: '#fbbf24', text: '#78350f' },
-    { name: 'Pink', bg: '#fce7f3', border: '#ec4899', text: '#831843' },
-    { name: 'Blue', bg: '#dbeafe', border: '#3b82f6', text: '#1e3a8a' },
-    { name: 'Green', bg: '#d1fae5', border: '#10b981', text: '#064e3b' },
-    { name: 'Purple', bg: '#e9d5ff', border: '#a855f7', text: '#581c87' },
-    { name: 'Orange', bg: '#fed7aa', border: '#f97316', text: '#7c2d12' },
-];
+import { Zap, Play, Upload, Clapperboard, StickyNote, MoreVertical, MonitorPlay, Palette } from 'lucide-react';
 
 export const CustomMiniMapNode = memo(({ x, y, width, height, id }: any) => {
     const node = useStore((s) => s.nodeInternals.get(id));
@@ -178,32 +169,31 @@ function PromptMiniNode({ data }: { data: any }) {
 }
 
 function NoteMiniNode({ data }: { data: any }) {
-    const colorIndex = data.colorIndex || 0;
-    const currentColor = NOTE_COLORS[colorIndex] || NOTE_COLORS[0];
     const noteText = data.text || '';
 
     return (
-        <div
-            className="workflow-note-card w-full h-full rounded-2xl flex flex-col box-border backdrop-blur-md shadow-xl"
-            style={{
-                backgroundColor: currentColor.bg + 'e6',
-                borderWidth: '2px',
-                borderStyle: 'solid',
-                borderColor: currentColor.border + 'cc',
-            }}
-        >
-            <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: currentColor.border + '40' }}>
-                <div className="flex items-center gap-2">
-                    <StickyNote className="w-4 h-4" style={{ color: currentColor.text }} />
-                    <span className="text-sm font-medium" style={{ color: currentColor.text }}>Note</span>
+        <div className="workflow-node-card w-full h-full bg-[#1a1a1a] border-2 border-[#2a2a2a] rounded-2xl flex flex-col overflow-hidden box-border shadow-xl">
+            <div className="px-4 py-3 border-b border-[#2a2a2a]">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-lg">
+                            <StickyNote className="w-5 h-5 text-white" />
+                        </div>
+                        <div>
+                            <h3 className="text-white font-semibold text-sm">Note</h3>
+                            <p className="text-gray-500 text-xs">Documentation & Ideas</p>
+                        </div>
+                    </div>
+                    <div className="text-[#666666]">
+                        <MoreVertical className="w-4 h-4" />
+                    </div>
                 </div>
             </div>
             <div className="p-4 flex-1 flex flex-col">
                 <textarea 
-                    className="w-full flex-1 bg-transparent border-none rounded-lg px-0 py-0 text-sm placeholder:opacity-50 focus:outline-none resize-none"
+                    className="w-full h-full resize-none bg-transparent border-0 text-gray-200 outline-none placeholder:text-[#444444] text-[14px]"
                     value={noteText}
                     placeholder="Write your notes here...&#10;&#10;• Ideas&#10;• Reminders&#10;• Documentation"
-                    style={{ color: currentColor.text }}
                     readOnly
                 />
             </div>

@@ -2,29 +2,15 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { NodeProps, useReactFlow, NodeResizer } from 'reactflow';
-import { MoreVertical, StickyNote, Copy, Trash2, RefreshCw, Palette } from 'lucide-react';
+import { MoreVertical, StickyNote, Copy, Trash2, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from '@/lib/toast';
-
-const NOTE_COLORS = [
-  { name: 'Yellow', bg: '#fef3c7', border: '#fbbf24', text: '#78350f' },
-  { name: 'Pink', bg: '#fce7f3', border: '#ec4899', text: '#831843' },
-  { name: 'Blue', bg: '#dbeafe', border: '#3b82f6', text: '#1e3a8a' },
-  { name: 'Green', bg: '#d1fae5', border: '#10b981', text: '#064e3b' },
-  { name: 'Purple', bg: '#e9d5ff', border: '#a855f7', text: '#581c87' },
-  { name: 'Orange', bg: '#fed7aa', border: '#f97316', text: '#7c2d12' },
-];
 
 export function NoteNode({ data, selected, id }: NodeProps) {
   const { setNodes, getNodes, setEdges, getEdges } = useReactFlow();
   const [note, setNote] = useState(data.text || '');
   const [showMenu, setShowMenu] = useState(false);
-  const [showColorPicker, setShowColorPicker] = useState(false);
-  const [colorIndex, setColorIndex] = useState(data.colorIndex || 0);
   const menuRef = useRef<HTMLDivElement>(null);
-  const colorPickerRef = useRef<HTMLDivElement>(null);
-
-  const currentColor = NOTE_COLORS[colorIndex];
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -32,16 +18,13 @@ export function NoteNode({ data, selected, id }: NodeProps) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setShowMenu(false);
       }
-      if (colorPickerRef.current && !colorPickerRef.current.contains(event.target as Node)) {
-        setShowColorPicker(false);
-      }
     };
 
-    if (showMenu || showColorPicker) {
+    if (showMenu) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [showMenu, showColorPicker]);
+  }, [showMenu]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
@@ -55,20 +38,6 @@ export function NoteNode({ data, selected, id }: NodeProps) {
         return node;
       })
     );
-  };
-
-  const handleColorChange = (index: number) => {
-    setColorIndex(index);
-    setNodes((nds) =>
-      nds.map((node) => {
-        if (node.id === id) {
-          return { ...node, data: { ...node.data, colorIndex: index } };
-        }
-        return node;
-      })
-    );
-    setShowColorPicker(false);
-    toast.success(`Note color changed to ${NOTE_COLORS[index].name}`);
   };
 
   const handleDuplicate = () => {
@@ -117,30 +86,26 @@ export function NoteNode({ data, selected, id }: NodeProps) {
       initial={{ scale: 0.95, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       className={`
-        workflow-note-card
+        workflow-node-card workflow-node-note
         group
-        rounded-xl
+        bg-[#1a1a1a]
+        border-2 border-[#2a2a2a]
+        rounded-2xl
         shadow-xl
-        min-w-[280px]
+        min-w-[220px]
         min-h-[200px]
         h-full
         flex flex-col
         transition-all
-        ${selected ? 'ring-2 ring-offset-2 ring-offset-black' : ''}
+        ${selected ? 'ring-2 ring-amber-500/50 border-amber-500/30' : ''}
       `}
-      style={{
-        cursor: 'default',
-        backgroundColor: currentColor.bg,
-        borderWidth: '2px',
-        borderStyle: 'solid',
-        borderColor: currentColor.border,
-      }}
+      style={{ cursor: 'default' }}
     >
       {/* Node Resizer */}
       <NodeResizer
-        color={currentColor.border}
+        color="#f59e0b"
         isVisible={false}
-        minWidth={280}
+        minWidth={220}
         minHeight={200}
         handleStyle={{
           width: 8,
@@ -150,88 +115,16 @@ export function NoteNode({ data, selected, id }: NodeProps) {
       />
 
       {/* Header */}
-      <div
-        className="px-4 py-3 border-b flex items-center justify-between"
-        style={{ borderColor: currentColor.border + '40' }}
-      >
-        <div className="flex items-center gap-2">
-          <StickyNote
-            className="w-4 h-4"
-            style={{ color: currentColor.text }}
-          />
-          <span
-            className="text-sm font-medium"
-            style={{ color: currentColor.text }}
-          >
-            Note
-          </span>
-        </div>
-
-        <div className="flex items-center gap-1">
-          {/* Color Picker Button */}
-          <div className="relative" ref={colorPickerRef}>
-            <button
-              onClick={() => setShowColorPicker(!showColorPicker)}
-              className="p-1.5 rounded hover:bg-black/10 transition-colors"
-              style={{ color: currentColor.text }}
-              title="Change color"
-            >
-              <Palette className="w-4 h-4" />
-            </button>
-
-            <AnimatePresence>
-              {showColorPicker && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.85, y: -6 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.85, y: -6 }}
-                  transition={{ type: 'spring', bounce: 0.35, duration: 0.3 }}
-                  className="absolute right-0 top-full mt-2 z-50"
-                  style={{
-                    background: 'rgba(0,0,0,0.55)',
-                    backdropFilter: 'blur(10px)',
-                    borderRadius: '999px',
-                    padding: '6px 10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    boxShadow: '0 4px 20px rgba(0,0,0,0.35)',
-                    border: '1px solid rgba(255,255,255,0.12)',
-                  }}
-                >
-                  {NOTE_COLORS.map((color, index) => (
-                    <motion.button
-                      key={index}
-                      initial={{ opacity: 0, scale: 0.4 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.4 }}
-                      transition={{
-                        type: 'spring',
-                        bounce: 0.5,
-                        duration: 0.35,
-                        delay: index * 0.04,
-                      }}
-                      onClick={() => handleColorChange(index)}
-                      title={color.name}
-                      style={{
-                        width: 22,
-                        height: 22,
-                        borderRadius: '50%',
-                        backgroundColor: color.bg,
-                        border: `2.5px solid ${color.border}`,
-                        flexShrink: 0,
-                        boxShadow: colorIndex === index
-                          ? `0 0 0 2px white, 0 0 0 4px ${color.border}`
-                          : '0 1px 4px rgba(0,0,0,0.3)',
-                        transform: colorIndex === index ? 'scale(1.2)' : 'scale(1)',
-                        transition: 'transform 0.15s, box-shadow 0.15s',
-                        cursor: 'pointer',
-                      }}
-                    />
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
+      <div className="px-4 py-3 border-b border-[#2a2a2a]">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-lg">
+              <StickyNote className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-white font-semibold text-sm">Note</h3>
+              <p className="text-gray-500 text-xs">Documentation & Ideas</p>
+            </div>
           </div>
 
           {/* Menu Button */}
@@ -243,8 +136,7 @@ export function NoteNode({ data, selected, id }: NodeProps) {
                 e.stopPropagation();
                 setShowMenu(!showMenu);
               }}
-              className="workflow-node-menu-button nodrag nopan p-1.5 rounded hover:bg-black/10 transition-colors"
-              style={{ color: currentColor.text }}
+              className="workflow-node-menu-button nodrag nopan text-[#666666] hover:text-white transition-colors"
             >
               <MoreVertical className="w-4 h-4" />
             </button>
@@ -296,33 +188,28 @@ export function NoteNode({ data, selected, id }: NodeProps) {
       </div>
 
       {/* Textarea */}
-      <div className="p-4 flex-1 flex flex-col min-h-[150px]">
+      <div className="p-4 flex-1 flex flex-col min-h-[100px]">
         <textarea
           value={note}
           onChange={handleChange}
           placeholder="Write your notes here...&#10;&#10;• Ideas&#10;• Reminders&#10;• Documentation"
           className="
             w-full flex-1
-            bg-transparent
-            border-none
+            bg-[#0f0f0f]
+            border-2 border-[#2a2a2a]
             rounded-lg
-            px-0 py-0
-            text-sm
-            placeholder:opacity-50
-            focus:outline-none
+            px-3 py-2
+            text-sm text-white
+            placeholder:text-gray-600
+            focus:outline-none focus:ring-2
+            focus:border-amber-500/50 focus:ring-amber-500/30
             resize-none
+            transition-all
             nodrag
           "
-          style={{ color: currentColor.text }}
           onMouseDown={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
         />
-        <div
-          className="text-right text-xs mt-2 opacity-60"
-          style={{ color: currentColor.text }}
-        >
-          {note.length} characters
-        </div>
       </div>
     </motion.div>
   );
