@@ -77,7 +77,7 @@ function ImportMiniNode({ data }: { data: any }) {
             />
             <div className="p-4 flex-1 min-h-0 flex flex-col">
                 {image ? (
-                    <img src={image} alt="" className="w-full h-full object-cover rounded-lg flex-1 min-h-0" />
+                    <img src={image} alt="" className="w-full h-full object-contain rounded-lg flex-1 min-h-0" />
                 ) : (
                     <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg h-full w-full flex-1 flex flex-col items-center justify-center min-h-0">
                         <Upload className="w-8 h-8 text-gray-600 mb-2" />
