@@ -298,7 +298,7 @@ export function ImportNode({ data, selected, id }: NodeProps) {
             <img
               src={image}
               alt="Imported"
-              className={`absolute inset-0 w-full h-full object-cover rounded-lg transition-opacity duration-300 ${imageLoading ? 'opacity-0' : 'opacity-100'}`}
+              className={`absolute inset-0 w-full h-full object-contain rounded-lg transition-opacity duration-300 ${imageLoading ? 'opacity-0' : 'opacity-100'}`}
               loading="lazy"
               decoding="async"
               onLoad={() => setImageLoading(false)}
