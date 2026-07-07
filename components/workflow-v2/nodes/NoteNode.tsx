@@ -21,8 +21,8 @@ export function NoteNode({ data, selected, id }: NodeProps) {
     };
 
     if (showMenu) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
+      document.addEventListener('pointerdown', handleClickOutside, true);
+      return () => document.removeEventListener('pointerdown', handleClickOutside, true);
     }
   }, [showMenu]);
 
