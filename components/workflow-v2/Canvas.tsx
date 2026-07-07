@@ -389,13 +389,8 @@ function FlowCanvas() {
   };
 
   const nodeColor = useCallback((node: Node) => {
-    switch (node.type) {
-      case 'generate': return '#ef4444';
-      case 'videoGenerate': return '#a855f7';
-      case 'import': return '#3b82f6';
-      case 'prompt': return '#8b5cf6';
-      default: return '#666666';
-    }
+    // Return transparent since CustomMiniMapNode handles all visual rendering
+    return 'transparent';
   }, []);
 
   const handleOrganizeNodes = useCallback(() => {
