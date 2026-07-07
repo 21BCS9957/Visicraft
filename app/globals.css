@@ -120,17 +120,24 @@
   * {
     @apply border-border outline-ring/50;
   }
+
   html {
     overflow-y: scroll;
   }
+
   body {
     @apply bg-[#0a0a0a] text-[#e5e5e5];
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
-  
-  h1, h2, h3, h4, h5, h6 {
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
     @apply text-white font-light tracking-wide;
   }
 }
@@ -153,8 +160,8 @@
   overflow: visible !important;
 }
 
-.workflow-node-card > .px-4.py-3,
-.workflow-note-card > .px-4.py-3 {
+.workflow-node-card>.px-4.py-3,
+.workflow-note-card>.px-4.py-3 {
   display: inline-flex !important;
   width: auto !important;
   min-width: 180px;
@@ -172,13 +179,13 @@
   z-index: 1000 !important;
 }
 
-.workflow-node-card > .px-4.py-3 > .flex,
-.workflow-note-card > .px-4.py-3 > .flex {
+.workflow-node-card>.px-4.py-3>.flex,
+.workflow-note-card>.px-4.py-3>.flex {
   width: 100%;
 }
 
-.workflow-node-card > .p-4,
-.workflow-node-card > .p-3.relative {
+.workflow-node-card>.p-4,
+.workflow-node-card>.p-3.relative {
   position: relative !important;
   z-index: 1 !important;
 }
@@ -213,12 +220,12 @@
 }
 
 /* Make node titles read as deliberate title chips, not floating text. */
-.workflow-node-card > .px-4.py-3,
-.workflow-note-card > .px-4.py-3 {
+.workflow-node-card>.px-4.py-3,
+.workflow-note-card>.px-4.py-3 {
   display: flex !important;
-  width: fit-content !important;
+  width: 100% !important;
   min-width: 190px !important;
-  max-width: calc(100% - 8px) !important;
+  max-width: 100% !important;
   margin: 0 0 10px 0 !important;
   padding: 7px 8px 7px 10px !important;
   background: #17181b !important;
@@ -229,18 +236,18 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.055) !important;
 }
 
-.workflow-node-card > .px-4.py-3 h3,
-.workflow-note-card > .px-4.py-3 span {
+.workflow-node-card>.px-4.py-3 h3,
+.workflow-note-card>.px-4.py-3 span {
   color: rgba(255, 255, 255, 0.94) !important;
 }
 
-.workflow-node-card > .px-4.py-3 .workflow-node-menu-button,
-.workflow-note-card > .px-4.py-3 .workflow-node-menu-button {
+.workflow-node-card>.px-4.py-3 .workflow-node-menu-button,
+.workflow-note-card>.px-4.py-3 .workflow-node-menu-button {
   background: rgba(255, 255, 255, 0.07) !important;
 }
 
 /* Explicit title strap: small black label behind the node heading text. */
-.workflow-node-card > .px-4.py-3 h3 {
+.workflow-node-card>.px-4.py-3 h3 {
   display: inline-flex !important;
   align-items: center;
   min-height: 26px;
@@ -261,6 +268,7 @@
     filter: blur(10px);
     transform: translateY(20px);
   }
+
   100% {
     opacity: 1;
     filter: blur(0);
@@ -272,24 +280,31 @@
   0% {
     opacity: 0;
   }
+
   100% {
     opacity: 0.08;
   }
 }
 
 @keyframes pulse-glow {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 0.5;
   }
+
   50% {
     opacity: 1;
   }
 }
 
 @keyframes float {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateY(0);
   }
+
   50% {
     transform: translateY(-10px);
   }
@@ -299,6 +314,7 @@
   0% {
     transform: translate3d(0, 0, 0);
   }
+
   100% {
     transform: translate3d(-50%, 0, 0);
   }
@@ -306,10 +322,12 @@
 
 /* Voice mic: outer ring scales in/out while listening */
 @keyframes mic-listen-pulse {
+
   0%,
   100% {
     transform: scale(1);
   }
+
   50% {
     transform: scale(0.9);
   }
@@ -342,7 +360,7 @@
 
 /* Grid Pattern Utility */
 .grid-pattern {
-  background-image: 
+  background-image:
     linear-gradient(to right, rgba(200, 180, 160, 0.1) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(200, 180, 160, 0.1) 1px, transparent 1px);
   background-size: 4rem 4rem;
@@ -486,6 +504,10 @@ textarea:focus-visible {
   color: #ffffff !important;
 }
 
+.workflow-flow-canvas .react-flow__controls-button svg {
+  fill: currentColor !important;
+}
+
 .workflow-flow-canvas .react-flow__minimap {
   background: rgba(21, 21, 25, 0.78) !important;
 }
@@ -510,7 +532,7 @@ textarea:focus-visible {
     inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
 }
 
-.workflow-node-card > div:first-of-type:not(.react-flow__resize-control) {
+.workflow-node-card>div:first-of-type:not(.react-flow__resize-control) {
   border-color: rgba(255, 255, 255, 0.10) !important;
   background: rgba(0, 0, 0, 0.12);
 }
@@ -689,12 +711,12 @@ a:hover {
   opacity: 0.85;
 }
 
-.workflow-node-card > * {
+.workflow-node-card>* {
   position: relative;
   z-index: 1;
 }
 
-.workflow-node-card > .px-4.py-3 {
+.workflow-node-card>.px-4.py-3 {
   border-bottom: 1px solid rgba(255, 255, 255, 0.075) !important;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0));
@@ -718,7 +740,7 @@ a:hover {
   letter-spacing: 0 !important;
 }
 
-.workflow-node-card h3 + p {
+.workflow-node-card h3+p {
   color: rgba(255, 255, 255, 0.42) !important;
   font-size: 11px !important;
 }
@@ -741,7 +763,7 @@ a:hover {
   color: rgba(255, 255, 255, 0.28) !important;
 }
 
-.workflow-node-card > .px-3.pb-3 button {
+.workflow-node-card>.px-3.pb-3 button {
   border: 1px solid color-mix(in srgb, var(--node-accent) 34%, transparent) !important;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--node-accent) 19%, transparent), color-mix(in srgb, var(--node-accent) 8%, transparent)) !important;
@@ -750,7 +772,7 @@ a:hover {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-.workflow-node-card > .px-3.pb-3 button:hover {
+.workflow-node-card>.px-3.pb-3 button:hover {
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--node-accent) 25%, transparent), color-mix(in srgb, var(--node-accent) 12%, transparent)) !important;
 }
@@ -807,7 +829,8 @@ a:hover {
 
 /* Source handles (output) */
 .react-flow__handle-right {
-  right: -6px; /* Half of width for perfect flush positioning */
+  right: -6px;
+  /* Half of width for perfect flush positioning */
 }
 
 /* Target handles (input) */
@@ -840,23 +863,28 @@ a:hover {
 
 /* Different colors for different handle types */
 .react-flow__handle.handle-reference {
-  color: #f97316; /* Orange */
+  color: #f97316;
+  /* Orange */
 }
 
 .react-flow__handle.handle-source {
-  color: #eab308; /* Yellow */
+  color: #eab308;
+  /* Yellow */
 }
 
 .react-flow__handle.handle-prompt {
-  color: #06b6d4; /* Cyan */
+  color: #06b6d4;
+  /* Cyan */
 }
 
 .react-flow__handle.handle-output {
-  color: #10b981; /* Green */
+  color: #10b981;
+  /* Green */
 }
 
 .react-flow__handle.handle-image {
-  color: #3b82f6; /* Blue */
+  color: #3b82f6;
+  /* Blue */
 }
 
 /* Connecting state (while dragging) */
@@ -867,9 +895,12 @@ a:hover {
 }
 
 @keyframes pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4);
   }
+
   50% {
     box-shadow: 0 0 0 6px rgba(255, 255, 255, 0);
   }
@@ -890,10 +921,12 @@ a:hover {
 /* Edge/connection line styling - SMOOTH */
 .react-flow__edge-path {
   stroke-width: 2px;
-  stroke-linecap: round; /* Rounded line endings - prevents overlap */
+  stroke-linecap: round;
+  /* Rounded line endings - prevents overlap */
   stroke-linejoin: round;
   fill: none;
-  transition: none !important; /* Remove transition for instant updates */
+  transition: none !important;
+  /* Remove transition for instant updates */
 }
 
 .react-flow__edges {
@@ -914,6 +947,7 @@ a:hover {
   from {
     stroke-dashoffset: 10;
   }
+
   to {
     stroke-dashoffset: 0;
   }
@@ -932,7 +966,8 @@ a:hover {
 /* Remove default edge interaction area (prevents overlap issues) */
 .react-flow__edge-interaction {
   stroke: transparent;
-  stroke-width: 20px; /* Larger for easier clicking */
+  stroke-width: 20px;
+  /* Larger for easier clicking */
   fill: none;
 }
 
@@ -940,20 +975,21 @@ a:hover {
 .react-flow__node {
   cursor: grab;
   border-radius: 16px;
-  box-shadow: 
+  box-shadow:
     0 4px 6px -1px rgba(0, 0, 0, 0.3),
     0 2px 4px -1px rgba(0, 0, 0, 0.2);
-  transition: box-shadow 0.2s ease; /* Only transition shadow, not transform */
+  transition: box-shadow 0.2s ease;
+  /* Only transition shadow, not transform */
 }
 
 .react-flow__node:hover {
-  box-shadow: 
+  box-shadow:
     0 10px 15px -3px rgba(0, 0, 0, 0.4),
     0 4px 6px -2px rgba(0, 0, 0, 0.3);
 }
 
 .react-flow__node.selected {
-  box-shadow: 
+  box-shadow:
     0 0 0 2px rgba(6, 182, 212, 0.5),
     0 10px 15px -3px rgba(0, 0, 0, 0.4);
 }
@@ -1021,12 +1057,12 @@ a:hover {
   border: 1px solid rgba(255, 255, 255, 0.035);
 }
 
-.workflow-node-card > * {
+.workflow-node-card>* {
   position: relative;
   z-index: 1;
 }
 
-.workflow-node-card > .px-4.py-3 {
+.workflow-node-card>.px-4.py-3 {
   padding: 12px 14px !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
   background: rgba(255, 255, 255, 0.018) !important;
@@ -1050,7 +1086,7 @@ a:hover {
   letter-spacing: 0 !important;
 }
 
-.workflow-node-card h3 + p {
+.workflow-node-card h3+p {
   margin-top: 3px;
   color: rgba(255, 255, 255, 0.42) !important;
   font-size: 10.5px !important;
@@ -1076,7 +1112,7 @@ a:hover {
   color: rgba(255, 255, 255, 0.28) !important;
 }
 
-.workflow-node-card > .px-3.pb-3 button {
+.workflow-node-card>.px-3.pb-3 button {
   min-height: 34px;
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
   background: #f4f1e8 !important;
@@ -1088,7 +1124,7 @@ a:hover {
     0 10px 22px rgba(0, 0, 0, 0.2);
 }
 
-.workflow-node-card > .px-3.pb-3 button:hover {
+.workflow-node-card>.px-3.pb-3 button:hover {
   background: #ffffff !important;
 }
 
@@ -1188,7 +1224,7 @@ a:hover {
   border-color: rgba(255, 255, 255, 0.035);
 }
 
-.workflow-node-card > .px-4.py-3 {
+.workflow-node-card>.px-4.py-3 {
   border-bottom-color: rgba(255, 255, 255, 0.075) !important;
   background: #15161a !important;
   border-top-left-radius: 10px;
@@ -1248,6 +1284,7 @@ a:hover {
 
 /* Touch-friendly interactions */
 @media (hover: none) and (pointer: coarse) {
+
   /* Increase tap targets for mobile */
   button,
   a,
@@ -1255,13 +1292,13 @@ a:hover {
     min-height: 44px;
     min-width: 44px;
   }
-  
+
   /* Larger handles for touch */
   .react-flow__handle {
     width: 16px !important;
     height: 16px !important;
   }
-  
+
   /* Remove hover states on touch devices */
   *:hover {
     transition: none;
@@ -1270,46 +1307,47 @@ a:hover {
 
 /* Mobile viewport optimizations */
 @media (max-width: 768px) {
+
   /* Prevent zoom on input focus */
   input,
   textarea,
   select {
     font-size: 16px !important;
   }
-  
+
   /* Full-width nodes on mobile */
   .react-flow__node {
     min-width: 280px !important;
     max-width: calc(100vw - 32px) !important;
   }
-  
+
   /* Adjust minimap for mobile */
   .react-flow__minimap {
     display: none !important;
   }
-  
+
   /* Mobile-friendly controls */
   .react-flow__controls {
     bottom: 80px !important;
     right: 16px !important;
   }
-  
+
   /* Compact node styling */
   .react-flow__node {
     font-size: 14px;
   }
-  
+
   /* Mobile toast positioning */
   .mobile-toast {
     margin: 8px !important;
     font-size: 14px !important;
   }
-  
+
   /* Adjust edge width for visibility */
   .react-flow__edge-path {
     stroke-width: 3px !important;
   }
-  
+
   .react-flow__edge.selected .react-flow__edge-path {
     stroke-width: 4px !important;
   }
@@ -1330,19 +1368,19 @@ a:hover {
   display: none !important;
 }
 
-.workflow-node-card > * {
+.workflow-node-card>* {
   position: relative;
   z-index: 1;
 }
 
-.workflow-node-card > .px-4.py-3 {
+.workflow-node-card>.px-4.py-3 {
   padding: 0 2px 9px 2px !important;
   border: 0 !important;
   background: transparent !important;
   overflow: visible !important;
 }
 
-.workflow-node-card > .px-4.py-3 > .flex {
+.workflow-node-card>.px-4.py-3>.flex {
   min-height: 24px;
   align-items: center;
 }
@@ -1371,12 +1409,12 @@ a:hover {
   letter-spacing: 0 !important;
 }
 
-.workflow-node-card h3 + p {
+.workflow-node-card h3+p {
   display: none !important;
 }
 
-.workflow-node-card > .p-4,
-.workflow-node-card > .p-3.relative {
+.workflow-node-card>.p-4,
+.workflow-node-card>.p-3.relative {
   padding: 0 !important;
   border-radius: 20px !important;
   background: #171717 !important;
@@ -1426,11 +1464,11 @@ a:hover {
   border-radius: 20px !important;
 }
 
-.workflow-node-card > .px-3.pb-3 {
+.workflow-node-card>.px-3.pb-3 {
   padding: 10px 0 0 0 !important;
 }
 
-.workflow-node-card > .px-3.pb-3 button {
+.workflow-node-card>.px-3.pb-3 button {
   min-height: 34px;
   border: 0 !important;
   border-radius: 999px !important;
@@ -1439,7 +1477,7 @@ a:hover {
   box-shadow: none !important;
 }
 
-.workflow-node-card > .px-3.pb-3 button:hover {
+.workflow-node-card>.px-3.pb-3 button:hover {
   background: rgba(255, 255, 255, 0.13) !important;
   color: white !important;
 }
@@ -1543,8 +1581,8 @@ a:hover {
   box-shadow: none !important;
 }
 
-.workflow-node-card > .px-4.py-3,
-.workflow-note-card > .px-4.py-3 {
+.workflow-node-card>.px-4.py-3,
+.workflow-note-card>.px-4.py-3 {
   z-index: 120 !important;
 }
 
@@ -1582,17 +1620,18 @@ a:hover {
 
 /* Small mobile devices */
 @media (max-width: 480px) {
+
   /* Even more compact */
   .react-flow__node {
     min-width: 260px !important;
     border-radius: 12px;
   }
-  
+
   /* Smaller text */
   body {
     font-size: 14px;
   }
-  
+
   /* Compact buttons */
   button {
     padding: 8px 12px;
@@ -1602,11 +1641,12 @@ a:hover {
 
 /* Landscape mobile optimization */
 @media (max-width: 896px) and (orientation: landscape) {
+
   /* Maximize canvas space */
   .react-flow__controls {
     scale: 0.8;
   }
-  
+
   /* Compact nodes in landscape */
   .react-flow__node {
     transform: scale(0.9);
@@ -1618,18 +1658,19 @@ a:hover {
   .react-flow__node {
     min-width: 300px;
   }
-  
+
   .react-flow__minimap {
     scale: 0.8;
   }
 }
 
 /* High DPI displays (Retina) */
-@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+@media (-webkit-min-device-pixel-ratio: 2),
+(min-resolution: 192dpi) {
   .react-flow__edge-path {
     stroke-width: 2px;
   }
-  
+
   .react-flow__handle {
     border-width: 1.5px;
   }
@@ -1637,6 +1678,7 @@ a:hover {
 
 /* Reduce motion for accessibility */
 @media (prefers-reduced-motion: reduce) {
+
   *,
   *::before,
   *::after {
@@ -1664,6 +1706,7 @@ a:hover {
 
 /* PWA optimization */
 @media (display-mode: standalone) {
+
   /* Hide browser UI elements when installed as PWA */
   body {
     padding-top: max(20px, env(safe-area-inset-top));
@@ -1699,25 +1742,29 @@ body {
 
 /* Mobile-specific performance optimizations */
 @media (max-width: 768px) {
+
   /* Reduce shadow complexity on mobile */
   .react-flow__node {
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3) !important;
   }
-  
+
   .react-flow__node:hover {
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4) !important;
   }
-  
+
   /* Disable expensive effects on mobile */
   .react-flow__edge {
     filter: none !important;
   }
-  
+
   /* Simplify animations */
   @keyframes pulse {
-    0%, 100% {
+
+    0%,
+    100% {
       box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4);
     }
+
     50% {
       box-shadow: 0 0 0 4px rgba(255, 255, 255, 0);
     }
@@ -1731,18 +1778,18 @@ body {
   filter: drop-shadow(0 18px 34px rgba(0, 0, 0, 0.28));
 }
 
-.workflow-node-card > .px-4.py-3 {
+.workflow-node-card>.px-4.py-3 {
   padding: 0 1px 8px 1px !important;
   background: transparent !important;
   border: 0 !important;
 }
 
-.workflow-node-card > .px-4.py-3 > .flex {
+.workflow-node-card>.px-4.py-3>.flex {
   min-height: 22px !important;
   gap: 8px !important;
 }
 
-.workflow-node-card > .px-4.py-3 .flex.items-center.gap-3 {
+.workflow-node-card>.px-4.py-3 .flex.items-center.gap-3 {
   gap: 5px !important;
 }
 
@@ -1798,8 +1845,8 @@ body {
   height: 13px !important;
 }
 
-.workflow-node-card > .p-4,
-.workflow-node-card > .p-3.relative {
+.workflow-node-card>.p-4,
+.workflow-node-card>.p-3.relative {
   position: relative !important;
   border-radius: 11px !important;
   background:
@@ -1814,8 +1861,8 @@ body {
     inset 0 -1px 0 rgba(0, 0, 0, 0.4) !important;
 }
 
-.workflow-node-card > .p-4::after,
-.workflow-node-card > .p-3.relative::after {
+.workflow-node-card>.p-4::after,
+.workflow-node-card>.p-3.relative::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -1842,11 +1889,11 @@ body {
   border: 1px dashed rgba(255, 255, 255, 0.11) !important;
 }
 
-.workflow-node-card > .px-3.pb-3 {
+.workflow-node-card>.px-3.pb-3 {
   padding-top: 8px !important;
 }
 
-.workflow-node-card > .px-3.pb-3 button {
+.workflow-node-card>.px-3.pb-3 button {
   min-height: 28px !important;
   border-radius: 999px !important;
   background: rgba(255, 255, 255, 0.075) !important;
@@ -1865,7 +1912,7 @@ body {
     inset 0 1px 0 rgba(255, 255, 255, 0.28) !important;
 }
 
-.workflow-note-card > .px-4.py-3 {
+.workflow-note-card>.px-4.py-3 {
   background: #050505 !important;
   border-bottom: 0 !important;
   color: rgba(255, 255, 255, 0.9) !important;
@@ -1965,19 +2012,19 @@ body {
   filter: none !important;
 }
 
-.workflow-node-card > .px-4.py-3 {
+.workflow-node-card>.px-4.py-3 {
   padding: 0 2px 9px 2px !important;
   border: 0 !important;
   background: transparent !important;
   overflow: visible !important;
 }
 
-.workflow-node-card > .px-4.py-3 > .flex {
+.workflow-node-card>.px-4.py-3>.flex {
   min-height: 24px !important;
   align-items: center;
 }
 
-.workflow-node-card > .px-4.py-3 .flex.items-center.gap-3 {
+.workflow-node-card>.px-4.py-3 .flex.items-center.gap-3 {
   gap: 6px !important;
 }
 
@@ -2018,12 +2065,12 @@ body {
   white-space: nowrap;
 }
 
-.workflow-node-card h3 + p {
+.workflow-node-card h3+p {
   display: none !important;
 }
 
-.workflow-node-card > .p-4,
-.workflow-node-card > .p-3.relative {
+.workflow-node-card>.p-4,
+.workflow-node-card>.p-3.relative {
   position: relative !important;
   padding: 0 !important;
   border-radius: 20px !important;
@@ -2035,8 +2082,8 @@ body {
   overflow: hidden !important;
 }
 
-.workflow-node-card > .p-4::after,
-.workflow-node-card > .p-3.relative::after {
+.workflow-node-card>.p-4::after,
+.workflow-node-card>.p-3.relative::after {
   display: none !important;
 }
 
@@ -2058,12 +2105,12 @@ body {
   border-radius: 20px !important;
 }
 
-.workflow-node-card > .px-3.pb-3 {
+.workflow-node-card>.px-3.pb-3 {
   padding: 10px 0 0 0 !important;
 }
 
-.workflow-node-card > .px-3.pb-3 button {
-  min-height: 34px !important;
+.workflow-node-card>.px-3.pb-3 button {
+  min-height: 48px !important;
   border: 0 !important;
   border-radius: 999px !important;
   background: rgba(255, 255, 255, 0.08) !important;

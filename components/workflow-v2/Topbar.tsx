@@ -52,7 +52,7 @@ export function Topbar({
   }, [showAccountMenu]);
 
   return (
-    <div className="relative z-20 flex h-[76px] items-center justify-between px-3 pt-3 md:px-5">
+    <div className="relative z-20 flex h-[76px] items-center justify-between px-7 pt-3 md:px-10">
       <div className="pointer-events-none absolute inset-x-3 top-3 h-16 rounded-full border border-white/10 bg-[#101014]/58 shadow-[0_18px_70px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl md:inset-x-5" />
       <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0">
         <Link
