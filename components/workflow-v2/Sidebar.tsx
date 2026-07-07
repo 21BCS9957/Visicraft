@@ -60,6 +60,7 @@ export function Sidebar({
   const [notes, setNotes] = useState('');
   const [isMobile, setIsMobile] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<Array<{ name: string; url: string; type: string }>>([]);
+  const sidebarRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -67,6 +68,20 @@ export function Sidebar({
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Close panel when clicking outside
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (sidebarRef.current && !sidebarRef.current.contains(event.target as Node)) {
+        setActivePanel(null);
+      }
+    };
+
+    if (activePanel) {
+      document.addEventListener('pointerdown', handleClickOutside, true);
+      return () => document.removeEventListener('pointerdown', handleClickOutside, true);
+    }
+  }, [activePanel]);
 
   const handleAddNode = (type: string, nodeType?: string) => {
     const position = {
@@ -119,7 +134,7 @@ export function Sidebar({
   };
 
   return (
-    <div className="mr-3 flex h-full relative">
+    <div ref={sidebarRef} className="mr-3 flex h-full relative">
       {/* Icon Bar */}
       <div className={`${isMobile ? 'w-[52px]' : 'w-[64px]'} relative z-50 flex flex-col items-center gap-2 rounded-[24px] border border-white/10 bg-[#151519]/76 py-4 shadow-[0_18px_70px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl`}>
         <button
