@@ -97,7 +97,7 @@ export function NoteNode({ data, selected, id }: NodeProps) {
         h-full
         flex flex-col
         transition-all
-        ${selected ? 'ring-2 ring-amber-500/50 border-amber-500/30' : ''}
+        ${selected ? 'ring-2 ring-white/20 border-white/20' : ''}
       `}
       style={{ cursor: 'default' }}
     >
@@ -201,8 +201,7 @@ export function NoteNode({ data, selected, id }: NodeProps) {
             px-3 py-2
             text-sm text-white
             placeholder:text-gray-600
-            focus:outline-none focus:ring-2
-            focus:border-amber-500/50 focus:ring-amber-500/30
+            focus:outline-none focus:border-white/20 focus:ring-1 focus:ring-white/20
             resize-none
             transition-all
             nodrag

@@ -119,7 +119,7 @@ export function Sidebar({
   };
 
   return (
-    <div className="mr-3 flex h-full">
+    <div className="mr-3 flex h-full relative">
       {/* Icon Bar */}
       <div className={`${isMobile ? 'w-[52px]' : 'w-[64px]'} relative z-50 flex flex-col items-center gap-2 rounded-[24px] border border-white/10 bg-[#151519]/76 py-4 shadow-[0_18px_70px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl`}>
         <button
@@ -189,7 +189,7 @@ export function Sidebar({
             animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
             exit={{ opacity: 0, x: -20, filter: 'blur(4px)' }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className={`absolute bottom-3 top-3 z-40 flex flex-col rounded-[28px] border border-white/10 bg-[#151519]/88 shadow-[0_28px_100px_rgba(0,0,0,0.42)] backdrop-blur-2xl ${
+            className={`absolute top-0 bottom-0 z-40 flex flex-col rounded-[24px] border border-white/10 bg-[#151519]/88 shadow-[0_28px_100px_rgba(0,0,0,0.42)] backdrop-blur-2xl ${
               isMobile ? 'left-[68px]' : 'left-[82px]'
             } ${
               activePanel === 'nodes' 
@@ -235,7 +235,7 @@ export function Sidebar({
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Add notes about your workflow...&#10;&#10;• Ideas&#10;• Settings&#10;• Reminders"
-                  className="flex-1 resize-none rounded-2xl border border-white/10 bg-black/22 p-3 text-sm text-white placeholder:text-white/30 focus:border-[#fff05a]/38 focus:outline-none"
+                  className="flex-1 resize-none rounded-2xl border border-white/10 bg-black/22 p-3 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-white/20 focus:ring-1 focus:ring-white/20"
                 />
                 <div className="mt-2 text-right text-xs text-white/32">
                   {notes.length} characters
