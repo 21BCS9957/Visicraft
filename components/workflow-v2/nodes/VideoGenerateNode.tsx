@@ -379,18 +379,6 @@ export function VideoGenerateNode({ data, selected, id }: NodeProps) {
         </button>
       </div>
 
-      {/* Status Badge */}
-      {status !== 'idle' && status !== 'processing' && (
-        <div className="px-3 pb-2">
-          <div className={`text-xs text-center py-1 rounded ${
-            status === 'complete' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'
-          }`}>
-            {status === 'complete' && '✓ Complete'}
-            {status === 'error' && '✗ Error'}
-          </div>
-        </div>
-      )}
-
       {/* Input Handles */}
       <SmartHandle nodeId={id} handleId="referenceImage" handleType="reference" type="target" position={Position.Left} style={{ top: '35%' }} />
       <SmartHandle nodeId={id} handleId="prompt" handleType="prompt" type="target" position={Position.Left} style={{ top: '65%' }} />
