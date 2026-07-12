@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import {
+  deductCreditsForUser,
+  estimateGoogleVideoCostUsd,
+  getServerVideoCreditCost,
+  logUsage,
+  refundCreditsForUser,
+  requireAuthenticatedUser,
+} from '@/lib/server/usage';
 
 /**
  * Video Generation using Google Gemini API (Veo 3.1)
@@ -10,9 +18,12 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
 export async function POST(request: NextRequest) {
+  let chargedUserId: string | null = null;
+  let chargedCredits = 0;
   try {
+    const user = await requireAuthenticatedUser();
     const body = await request.json();
-    const { imageUrl, prompt, duration, aspectRatio, style, mood, model, userId } = body;
+    const { imageUrl, prompt, duration, aspectRatio, style, mood, model } = body;
 
     if (!prompt) {
       return NextResponse.json(
@@ -38,11 +49,22 @@ export async function POST(request: NextRequest) {
     console.log('🎨 Style:', style || 'cinematic');
     console.log('😌 Mood:', mood || 'energetic');
     console.log('🤖 Model:', model || 'veo-3.1');
-    console.log('👤 User ID:', userId);
+    console.log('👤 User ID:', user.id);
     console.log('========================================\n');
 
     const durationValue = parseInt(duration?.replace('s', '') || '8');
     const aspectRatioValue = aspectRatio === '9:16' ? '9:16' : '16:9';
+    const targetModel = model || 'gemini-veo-3.1';
+    const creditCost = getServerVideoCreditCost({ model: targetModel, duration: durationValue, resolution: '720p' });
+    const deducted = await deductCreditsForUser(user.id, creditCost);
+    if (!deducted) {
+      return NextResponse.json(
+        { error: `Insufficient credits. Need ${creditCost} credits.` },
+        { status: 402 }
+      );
+    }
+    chargedUserId = user.id;
+    chargedCredits = creditCost;
     
     const enhancedPrompt = `${prompt}. Create a ${style || 'cinematic'} style video with ${mood || 'energetic'} mood. Make it dynamic with smooth transitions and professional cinematography.`;
 
@@ -115,10 +137,10 @@ export async function POST(request: NextRequest) {
       const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
       const supabase = createClient(supabaseUrl, supabaseKey);
       
-      const { data: job } = await supabase
+      await supabase
         .from('video_generation_jobs')
         .insert({
-          user_id: userId,
+          user_id: user.id,
           prompt: prompt,
           source_image_url: imageUrl,
           status: 'error',
@@ -135,13 +157,7 @@ export async function POST(request: NextRequest) {
         .select()
         .single();
 
-      return NextResponse.json({
-        success: false,
-        jobId: job?.id || null,
-        status: 'error',
-        error: result.error?.message || 'Gemini API error: ' + response.status,
-        details: result,
-      });
+      throw new Error(result.error?.message || `Gemini API error: ${response.status}`);
     }
 
     // Check if we got an operation name (async generation)
@@ -157,7 +173,7 @@ export async function POST(request: NextRequest) {
       const { data: job } = await supabase
         .from('video_generation_jobs')
         .insert({
-          user_id: userId,
+          user_id: user.id,
           prompt: prompt,
           source_image_url: imageUrl,
           status: 'processing',
@@ -171,6 +187,24 @@ export async function POST(request: NextRequest) {
         })
         .select()
         .single();
+      const estimatedCostUsd = estimateGoogleVideoCostUsd({ model: targetModel, duration: durationValue });
+
+      await logUsage({
+        user,
+        model: targetModel,
+        feature: 'video_generation',
+        videoSeconds: durationValue,
+        estimatedCostUsd,
+        creditCost,
+        metadata: {
+          mode: imageUrl ? 'image_to_video' : 'text_to_video',
+          operationName: result.name,
+          aspectRatio: aspectRatioValue,
+          style: style || 'cinematic',
+          mood: mood || 'energetic',
+          chargedServerSide: true,
+        },
+      });
 
       return NextResponse.json({
         success: true,
@@ -225,7 +259,7 @@ export async function POST(request: NextRequest) {
       const { data: job } = await supabase
         .from('video_generation_jobs')
         .insert({
-          user_id: userId,
+          user_id: user.id,
           prompt: prompt,
           source_image_url: imageUrl,
           status: videoUrl ? 'completed' : 'no_video',
@@ -241,6 +275,25 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (videoUrl) {
+        const estimatedCostUsd = estimateGoogleVideoCostUsd({ model: targetModel, duration: durationValue });
+
+        await logUsage({
+          user,
+          model: targetModel,
+          feature: 'video_generation',
+          videoSeconds: durationValue,
+          estimatedCostUsd,
+          creditCost,
+          metadata: {
+            mode: imageUrl ? 'image_to_video' : 'text_to_video',
+            immediateResult: true,
+            aspectRatio: aspectRatioValue,
+            style: style || 'cinematic',
+            mood: mood || 'energetic',
+            chargedServerSide: true,
+          },
+        });
+
         console.log('✅ Video generation completed - DIRECT RESULT');
         return NextResponse.json({
           success: true,
@@ -251,34 +304,27 @@ export async function POST(request: NextRequest) {
           requiresPolling: false,
         });
       } else {
-        return NextResponse.json({
-          success: false,
-          jobId: job?.id,
-          status: 'no_video',
-          error: 'No video generated. API response did not contain video data.',
-          apiResponse: result,
-        });
+        throw new Error('No video generated. API response did not contain video data.');
       }
     }
 
     // No operation name and no immediate result
-    return NextResponse.json({
-      success: false,
-      status: 'error',
-      error: 'Unexpected API response format',
-      apiResponse: result,
-    });
+    throw new Error('Unexpected API response format');
 
   } catch (error) {
+    if (chargedUserId && chargedCredits > 0) {
+      await refundCreditsForUser(chargedUserId, chargedCredits);
+    }
     console.error('❌ Video generation exception:', error);
     console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack');
     
+    const message = error instanceof Error ? error.message : 'Video generation failed';
     return NextResponse.json({
       success: false,
       status: 'error',
       message: 'Video generation failed.',
-      error: error instanceof Error ? error.message : 'Video generation failed',
-    }, { status: 500 });
+      error: message,
+    }, { status: message.includes('Authentication required') ? 401 : 500 });
   }
 }
 

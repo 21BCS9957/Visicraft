@@ -1,12 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { normalizeSeedanceDuration } from '@/lib/workflow/seedance';
+import {
+  getSeedanceCreditCost,
+  getSeedanceUnitPrice,
+  normalizeSeedanceDuration,
+  SEEDANCE_MAX_INPUT_VIDEO_SECONDS,
+} from '@/lib/workflow/seedance';
+import {
+  deductCreditsForUser,
+  logUsage,
+  refundCreditsForUser,
+  requireAuthenticatedUser,
+} from '@/lib/server/usage';
 
 type MediaKind = 'image' | 'video' | 'audio';
 
 const VALID_ASPECT_RATIOS = new Set(['21:9', '16:9', '4:3', '1:1', '3:4', '9:16', 'auto']);
 
 export async function POST(request: NextRequest) {
+  let chargedUserId: string | null = null;
+  let chargedCredits = 0;
   try {
+    const user = await requireAuthenticatedUser();
     const {
       referenceUrls = [],
       prompt,
@@ -35,6 +49,19 @@ export async function POST(request: NextRequest) {
 
     const classified = classifyReferenceUrls(refs);
     validateSeedanceRequest(selectedMode, classified);
+    const inputVideoSeconds = classified.video.length > 0 ? SEEDANCE_MAX_INPUT_VIDEO_SECONDS : 0;
+    const creditCost = getSeedanceCreditCost(selectedModel, resolution || '720p', selectedDuration, inputVideoSeconds);
+    const deducted = await deductCreditsForUser(user.id, creditCost);
+
+    if (!deducted) {
+      return NextResponse.json(
+        { error: `Insufficient credits. Need ${creditCost} credits.` },
+        { status: 402 }
+      );
+    }
+
+    chargedUserId = user.id;
+    chargedCredits = creditCost;
 
     const input: Record<string, unknown> = {
       prompt: typeof prompt === 'string' ? prompt : '',
@@ -67,25 +94,57 @@ export async function POST(request: NextRequest) {
     const data = await response.json();
 
     if (!response.ok) {
-      return NextResponse.json(
-        { error: data?.error?.message || data?.message || 'Failed to create Seedance task' },
-        { status: response.status }
-      );
+      throw new Error(data?.error?.message || data?.message || 'Failed to create Seedance task');
     }
 
     const taskId = data?.data?.task_id || data?.task_id;
     const videoUrl = data?.data?.output?.video || data?.data?.output?.video_url;
 
     if (!taskId && !videoUrl) {
-      return NextResponse.json({ error: 'Seedance did not return a task id' }, { status: 500 });
+      throw new Error('Seedance did not return a task id');
     }
 
-    return NextResponse.json({ success: true, taskId, videoUrl });
+    const outputSeconds = selectedDuration;
+    const unitPrice = getSeedanceUnitPrice(selectedModel, resolution || '720p');
+    const estimatedCostUsd = Number((unitPrice * outputSeconds + (unitPrice / 2) * inputVideoSeconds).toFixed(6));
+
+    await logUsage({
+      user,
+      provider: 'piapi',
+      model: selectedModel,
+      feature: 'video_generation',
+      videoSeconds: outputSeconds,
+      estimatedCostUsd,
+      creditCost,
+      metadata: {
+        mode: selectedMode,
+        taskId,
+        aspectRatio: selectedAspectRatio,
+        resolution: resolution || '720p',
+        referenceCount: refs.length,
+        chargedServerSide: true,
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      taskId,
+      videoUrl,
+      usage: {
+        videoSeconds: outputSeconds,
+        estimatedCostUsd,
+        creditsDeducted: creditCost,
+      },
+    });
   } catch (error) {
+    if (chargedUserId && chargedCredits > 0) {
+      await refundCreditsForUser(chargedUserId, chargedCredits);
+    }
     console.error('Seedance video API error:', error);
+    const message = error instanceof Error ? error.message : 'Seedance generation failed';
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Seedance generation failed' },
-      { status: 500 }
+      { error: message },
+      { status: message.includes('Authentication required') ? 401 : 500 }
     );
   }
 }

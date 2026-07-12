@@ -16,6 +16,7 @@ import { ChevronDown } from 'lucide-react';
 import toast from '@/lib/toast';
 import { useRouter } from 'next/navigation';
 import { uploadFileWithSignedUrl } from '@/lib/supabase/storage';
+import { getCreditCost } from '@/lib/credits/calculator';
 
 type FeatureMode = 'generate' | 'upscale' | 'unblur' | 'edit' | 'img2vid' | 'vid2vid';
 
@@ -114,12 +115,16 @@ export default function GeneratePage() {
   const [generationProgress, setGenerationProgress] = useState<number>(0);
   const [statusMessage, setStatusMessage] = useState<string>('');
   const { user } = useAuth();
-  const { credits, deductCredits, refreshCredits, addCredits } = useCredits();
+  const { credits, refreshCredits } = useCredits();
   const router = useRouter();
 
   const handlePromptChange = useCallback((val: string) => setPrompt(val), [setPrompt]);
 
   const getDynamicCreditCost = () => {
+    if (selectedFeature.id === 'generate') {
+      return getCreditCost('nano-banana-pro', '2K');
+    }
+
     let base = CREDIT_COSTS[selectedFeature.id] || 50;
     
     if (selectedFeature.id === 'img2vid' || selectedFeature.id === 'vid2vid') {
@@ -187,14 +192,7 @@ export default function GeneratePage() {
       return;
     }
 
-    const amountToDeduct = creditCost;
-    const deducted = await deductCredits(amountToDeduct);
-    if (!deducted) {
-      toast.error('Failed to deduct credits. Please try again.');
-      return;
-    }
-    
-    toast.success(`${amountToDeduct} credits deducted. Processing...`);
+    toast.success('Processing...');
 
     try {
       let result;
@@ -348,7 +346,6 @@ export default function GeneratePage() {
       setReferenceVideo(null);
       setSourceVideo(null);
     } catch (err) {
-      await addCredits(amountToDeduct);
       await refreshCredits();
       
       const errorMessage = err instanceof Error ? err.message : 'An error occurred';

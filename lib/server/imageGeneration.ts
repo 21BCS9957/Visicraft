@@ -1,4 +1,5 @@
 import { generateThumbnail } from '@/lib/banana/api';
+import type { ProviderUsage } from '@/lib/server/usage';
 import { uploadDataUrlToBucket } from '@/lib/server/supabaseStorage';
 import { supabase } from '@/lib/supabase/client';
 
@@ -69,9 +70,16 @@ export interface RunImageGenerationOptions {
   aspectRatio?: string;
   resolution?: string;
   persistToGenerationsTable?: boolean;
+  referencePolicy?: 'balanced' | 'product-lock';
+  userId?: string;
 }
 
-export async function runImageGeneration(options: RunImageGenerationOptions): Promise<string[]> {
+export interface RunImageGenerationResult {
+  images: string[];
+  usage: ProviderUsage;
+}
+
+export async function runImageGeneration(options: RunImageGenerationOptions): Promise<RunImageGenerationResult> {
   const {
     mode,
     referenceImages,
@@ -80,6 +88,8 @@ export async function runImageGeneration(options: RunImageGenerationOptions): Pr
     aspectRatio,
     resolution,
     persistToGenerationsTable = mode === 'generate',
+    referencePolicy = 'balanced',
+    userId,
   } = options;
 
   if (referenceImages.length === 0) {
@@ -96,10 +106,17 @@ export async function runImageGeneration(options: RunImageGenerationOptions): Pr
 
   const effectivePrompt = resolveEffectivePrompt(mode, prompt, referenceImages.length);
 
-  const dataUrls = await generateThumbnail(referenceImages, effectivePrompt, model, aspectRatio, resolution);
+  const generated = await generateThumbnail(
+    referenceImages,
+    effectivePrompt,
+    model,
+    aspectRatio,
+    resolution,
+    referencePolicy
+  );
 
   const publicUrls = await Promise.all(
-    dataUrls.map((dataUrl) => uploadDataUrlToBucket(dataUrl, 'generated-thumbnails'))
+    generated.images.map((dataUrl) => uploadDataUrlToBucket(dataUrl, 'generated-thumbnails'))
   );
 
   if (persistToGenerationsTable) {
@@ -110,6 +127,7 @@ export async function runImageGeneration(options: RunImageGenerationOptions): Pr
           reference_image_url: referenceImages[0] ?? null,
           source_images_urls: referenceImages.length > 1 ? referenceImages.slice(1) : [],
           generated_thumbnails: publicUrls,
+          user_id: userId ?? null,
           prompt: prompt || null,
           model: model || 'nano-banana-pro',
           aspect_ratio: aspectRatio || '16:9',
@@ -124,5 +142,11 @@ export async function runImageGeneration(options: RunImageGenerationOptions): Pr
     }
   }
 
-  return publicUrls;
+  return {
+    images: publicUrls,
+    usage: {
+      ...generated.usage,
+      imageCount: publicUrls.length,
+    },
+  };
 }

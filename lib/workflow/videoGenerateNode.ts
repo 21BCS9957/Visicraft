@@ -64,8 +64,6 @@ export async function executeVideoGeneration(params: VideoGenerateNodeParams): P
     mode,
     updateNodeData,
     credits,
-    deductCredits,
-    addCredits,
     refreshCredits,
   } = params;
 
@@ -73,18 +71,16 @@ export async function executeVideoGeneration(params: VideoGenerateNodeParams): P
     ? (mode || getDefaultSeedanceMode(referenceImageUrls))
     : undefined;
   const hasSeedanceVideoReference = isSeedanceModel(model) && referenceImageUrls.some(isVideoUrl);
-  const creditCost = deductCredits
-    ? isSeedanceModel(model)
-      ? getVideoGenerationCreditCost(
-        model,
-        resolution,
-        duration,
-        hasSeedanceVideoReference ? SEEDANCE_MAX_INPUT_VIDEO_SECONDS : 0
-      )
-      : getVideoGenerationCreditCost(model, resolution, duration)
-    : 0;
+  const creditCost = isSeedanceModel(model)
+    ? getVideoGenerationCreditCost(
+      model,
+      resolution,
+      duration,
+      hasSeedanceVideoReference ? SEEDANCE_MAX_INPUT_VIDEO_SECONDS : 0
+    )
+    : getVideoGenerationCreditCost(model, resolution, duration);
 
-  if (deductCredits && credits !== undefined && credits < creditCost) {
+  if (credits !== undefined && credits < creditCost) {
     throw new Error(`Insufficient credits! Need ${creditCost}, have ${credits}`);
   }
 
@@ -95,14 +91,6 @@ export async function executeVideoGeneration(params: VideoGenerateNodeParams): P
   }
 
   updateNodeData(nodeId, { status: 'processing', videoProgress: 0 });
-
-  if (deductCredits) {
-    const ok = await deductCredits(creditCost);
-    if (!ok) {
-      updateNodeData(nodeId, { status: 'idle', videoProgress: 0 });
-      throw new Error(`Insufficient credits! Need ${creditCost}, have ${credits}`);
-    }
-  }
 
   try {
     const response = await fetch(isSeedanceModel(model) ? '/api/seedance-video' : '/api/img2vid', {
@@ -220,11 +208,6 @@ export async function executeVideoGeneration(params: VideoGenerateNodeParams): P
     return videoUrl;
   } catch (error) {
     console.error('❌ Video generation error:', error);
-
-    if (addCredits && refreshCredits) {
-      await addCredits(creditCost);
-      await refreshCredits();
-    }
 
     updateNodeData(nodeId, { status: 'error', videoProgress: 0 });
     throw error;

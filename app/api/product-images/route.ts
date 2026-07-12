@@ -159,8 +159,8 @@ async function tryFetchShopifyProduct(productUrl: URL) {
   if (!product) return null;
 
   const imageUrls = [
-    ...(Array.isArray(product.images) ? product.images : []),
     product.featured_image,
+    ...(Array.isArray(product.images) ? product.images : []),
   ].filter((value): value is string => typeof value === 'string' && value.length > 0);
 
   return {

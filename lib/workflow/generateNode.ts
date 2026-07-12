@@ -41,14 +41,12 @@ export async function executeGeneration(params: GenerateNodeParams): Promise<str
     resolution,
     updateNodeData,
     credits,
-    deductCredits,
-    addCredits,
     refreshCredits,
   } = params;
 
-  const creditCost = deductCredits ? getCreditCost(model, resolution) : 0;
+  const creditCost = getCreditCost(model, resolution);
 
-  if (deductCredits && credits !== undefined && credits < creditCost) {
+  if (credits !== undefined && credits < creditCost) {
     throw new Error(`Insufficient credits! Need ${creditCost}, have ${credits}`);
   }
 
@@ -59,14 +57,6 @@ export async function executeGeneration(params: GenerateNodeParams): Promise<str
     referenceImagesUsed: referenceImageUrls,
     referenceImageCount: referenceImageUrls.length,
   });
-
-  if (deductCredits) {
-    const ok = await deductCredits(creditCost);
-    if (!ok) {
-      updateNodeData(nodeId, { status: 'idle' });
-      throw new Error(`Insufficient credits! Need ${creditCost}, have ${credits}`);
-    }
-  }
 
   try {
     const response = await fetch('/api/generate', {
@@ -110,11 +100,6 @@ export async function executeGeneration(params: GenerateNodeParams): Promise<str
     return generatedImageUrl;
   } catch (error) {
     console.error('❌ Generation error:', error);
-
-    if (addCredits && refreshCredits) {
-      await addCredits(creditCost);
-      await refreshCredits();
-    }
 
     updateNodeData(nodeId, { status: 'error' });
     throw error;
