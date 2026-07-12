@@ -78,7 +78,82 @@ CREATE POLICY "Allow all operations" ON generations
   FOR ALL USING (true) WITH CHECK (true);
 
 -- ============================================
--- 3. STORAGE BUCKETS & POLICIES
+-- 3. USAGE LEDGER
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS usage_logs (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  user_email TEXT,
+  provider TEXT NOT NULL DEFAULT 'google',
+  model TEXT NOT NULL,
+  feature TEXT NOT NULL CHECK (feature IN ('image_generation', 'video_generation')),
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  total_tokens INTEGER NOT NULL DEFAULT 0,
+  image_count INTEGER NOT NULL DEFAULT 0,
+  video_seconds NUMERIC(10, 2) NOT NULL DEFAULT 0,
+  estimated_cost_usd NUMERIC(12, 6) NOT NULL DEFAULT 0,
+  credit_cost INTEGER NOT NULL DEFAULT 0,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_usage_logs_user_email_created_at ON usage_logs(user_email, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_logs_user_id_created_at ON usage_logs(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_logs_model_created_at ON usage_logs(model, created_at DESC);
+
+ALTER TABLE usage_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view their own usage logs" ON usage_logs;
+DROP POLICY IF EXISTS "Service role can manage usage logs" ON usage_logs;
+
+CREATE POLICY "Users can view their own usage logs" ON usage_logs
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Service role can manage usage logs" ON usage_logs
+  FOR ALL USING (true) WITH CHECK (true);
+
+CREATE OR REPLACE FUNCTION public.deduct_user_credits(p_user_id UUID, p_amount INTEGER)
+RETURNS BOOLEAN AS $$
+DECLARE
+  current_balance INTEGER;
+BEGIN
+  IF p_amount <= 0 THEN
+    RETURN TRUE;
+  END IF;
+
+  SELECT credits INTO current_balance
+  FROM public.user_credits
+  WHERE user_id = p_user_id
+  FOR UPDATE;
+
+  IF current_balance IS NULL THEN
+    INSERT INTO public.user_credits (user_id, credits)
+    VALUES (p_user_id, 100)
+    ON CONFLICT (user_id) DO NOTHING;
+
+    SELECT credits INTO current_balance
+    FROM public.user_credits
+    WHERE user_id = p_user_id
+    FOR UPDATE;
+  END IF;
+
+  IF current_balance < p_amount THEN
+    RETURN FALSE;
+  END IF;
+
+  UPDATE public.user_credits
+  SET credits = credits - p_amount,
+      updated_at = NOW()
+  WHERE user_id = p_user_id;
+
+  RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================
+-- 4. STORAGE BUCKETS & POLICIES
 -- ============================================
 
 -- Create storage bucket for uploads
@@ -111,7 +186,9 @@ CREATE POLICY "Allow authenticated deletes" ON storage.objects
 -- Check tables
 SELECT 'user_credits' as table_name, COUNT(*) as row_count FROM user_credits
 UNION ALL
-SELECT 'generations', COUNT(*) FROM generations;
+SELECT 'generations', COUNT(*) FROM generations
+UNION ALL
+SELECT 'usage_logs', COUNT(*) FROM usage_logs;
 
 -- Check your credits (replace with your email)
 SELECT 

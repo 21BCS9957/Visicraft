@@ -1,4 +1,5 @@
 import axios from 'axios';
+import type { ProviderUsage } from '@/lib/server/usage';
 
 interface GeminiPart {
   text?: string;
@@ -21,6 +22,11 @@ interface GeminiRequest {
   };
 }
 
+interface DownloadedImage {
+  data: string;
+  mimeType: string;
+}
+
 interface GeminiResponse {
   candidates?: Array<{
     content?: {
@@ -34,6 +40,16 @@ interface GeminiResponse {
     };
     finishReason?: string;
   }>;
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    totalTokenCount?: number;
+  };
+}
+
+export interface GeneratedImageData {
+  images: string[];
+  usage: ProviderUsage;
 }
 
 export async function generateThumbnail(
@@ -41,8 +57,9 @@ export async function generateThumbnail(
   prompt?: string,
   model?: string,
   aspectRatio?: string,
-  resolution?: string
-): Promise<string[]> {
+  resolution?: string,
+  referencePolicy: 'balanced' | 'product-lock' = 'balanced'
+): Promise<GeneratedImageData> {
   const apiKey = process.env.GEMINI_API_KEY!;
 
   if (!apiKey) {
@@ -51,7 +68,7 @@ export async function generateThumbnail(
 
   // Map model IDs to Gemini API model names
   const modelMap: Record<string, string> = {
-    'nano-banana-pro': 'gemini-3-pro-image-preview',
+    'nano-banana-pro': 'gemini-3-pro-image',
   };
 
   // Map UI aspect ratios to Gemini API format
@@ -74,7 +91,7 @@ export async function generateThumbnail(
   };
 
   const selectedModel = model || 'nano-banana-pro';
-  const geminiModel = modelMap[selectedModel] || 'gemini-3-pro-image-preview';
+  const geminiModel = modelMap[selectedModel] || 'gemini-3-pro-image';
   const selectedAspectRatio = aspectRatioMap[aspectRatio || '16:9'] || '16:9';
   const selectedResolution = resolutionMap[resolution || '1080p'] || '2K';
 
@@ -102,16 +119,31 @@ export async function generateThumbnail(
       throw new Error('At least one image URL is required');
     }
 
-    const imageBase64List = await Promise.all(referenceImages.map((url) => urlToBase64(url)));
+    const downloadedImages = await Promise.all(referenceImages.map((url) => urlToBase64(url)));
     const fullPrompt = prompt || '';
 
-    const parts: GeminiPart[] = [{ text: fullPrompt }];
-    imageBase64List.forEach((data, index) => {
+    const parts: GeminiPart[] = referencePolicy === 'product-lock'
+      ? [{
+          text: 'REFERENCE PROTOCOL: Image 1 is the PRIMARY CANONICAL PRODUCT and overrides every other image if details conflict. Images 2 onward are supporting angles of the same product. They are evidence for fidelity, not separate products and not style references.',
+        }]
+      : [{ text: fullPrompt }];
+    downloadedImages.forEach((image, index) => {
+      const label = referencePolicy === 'product-lock'
+        ? index === 0
+          ? 'REFERENCE IMAGE 1 - PRIMARY CANONICAL PRODUCT IDENTITY. Copy this exact real product; do not redesign or substitute it.'
+          : `REFERENCE IMAGE ${index + 1} - SUPPORTING VIEW ONLY. Use it to verify the same product's geometry, material, scale, color, construction, and artwork placement.`
+        : `Reference image ${index + 1} of ${downloadedImages.length}:`;
       parts.push(
-        { text: `Reference image ${index + 1} of ${imageBase64List.length}:` },
-        { inlineData: { mimeType: 'image/jpeg', data } }
+        { text: label },
+        { inlineData: image }
       );
     });
+    if (referencePolicy === 'product-lock') {
+      parts.push(
+        { text: fullPrompt },
+        { text: 'FINAL IDENTITY REMINDER: the set, model, pose, and lighting may change; the product from reference image 1 may not change.' }
+      );
+    }
 
     const requestData: GeminiRequest = {
       contents: [{
@@ -181,10 +213,23 @@ export async function generateThumbnail(
           const mimeType = part.inlineData!.mimeType || 'image/png';
           return `data:${mimeType};base64,${base64Data}`;
         });
+        const usageMetadata = response.data.usageMetadata;
+        const inputTokens = Number(usageMetadata?.promptTokenCount) || 0;
+        const outputTokens = Number(usageMetadata?.candidatesTokenCount) || 0;
+        const totalTokens = Number(usageMetadata?.totalTokenCount) || inputTokens + outputTokens;
 
         console.log(`🎉 Generated ${generatedImages.length} image(s)`);
         
-        return generatedImages;
+        return {
+          images: generatedImages,
+          usage: {
+            inputTokens,
+            outputTokens,
+            totalTokens,
+            imageCount: generatedImages.length,
+            providerModel: geminiModel,
+          },
+        };
         
       } catch (error) {
         lastError = error;
@@ -263,7 +308,7 @@ export async function generateThumbnail(
   }
 }
 
-async function urlToBase64(imageUrl: string): Promise<string> {
+async function urlToBase64(imageUrl: string): Promise<DownloadedImage> {
   try {
     // Handle relative URLs (convert to absolute)
     let absoluteUrl = imageUrl;
@@ -279,12 +324,24 @@ async function urlToBase64(imageUrl: string): Promise<string> {
       responseType: 'arraybuffer',
       timeout: 30000
     });
-    const base64 = Buffer.from(response.data, 'binary').toString('base64');
-    return base64;
+    const contentType = String(response.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+    const mimeType = contentType.startsWith('image/') ? contentType : inferImageMimeType(absoluteUrl);
+    return {
+      data: Buffer.from(response.data, 'binary').toString('base64'),
+      mimeType,
+    };
   } catch (error) {
     console.error('Failed to download image:', imageUrl);
     throw new Error(`Failed to download image: ${error instanceof Error ? error.message : 'Invalid URL'}`);
   }
+}
+
+function inferImageMimeType(imageUrl: string): string {
+  const pathname = new URL(imageUrl).pathname.toLowerCase();
+  if (pathname.endsWith('.png')) return 'image/png';
+  if (pathname.endsWith('.webp')) return 'image/webp';
+  if (pathname.endsWith('.gif')) return 'image/gif';
+  return 'image/jpeg';
 }
 
 function assertDownloadableImageUrl(imageUrl: string): void {
@@ -317,6 +374,6 @@ function assertDownloadableImageUrl(imageUrl: string): void {
 }
 
 export async function imageToBase64(imageUrl: string): Promise<string> {
-  const base64 = await urlToBase64(imageUrl);
-  return `data:image/jpeg;base64,${base64}`;
+  const image = await urlToBase64(imageUrl);
+  return `data:${image.mimeType};base64,${image.data}`;
 }

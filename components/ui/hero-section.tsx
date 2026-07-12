@@ -316,29 +316,9 @@ function removeUrlFromPrompt(value: string, url: string): string {
 
 function buildProductCreativePrompt(product: ProductCapture, originalPrompt: string, productUrl: string): string {
   const userDirection = removeUrlFromPrompt(originalPrompt, productUrl);
-  const productName = product.title ? `"${product.title}"` : 'the product';
-  const brandLine = product.vendor ? `Brand/vendor: ${product.vendor}.` : '';
-  const descriptionLine = product.description ? `Product context: ${product.description.slice(0, 520)}.` : '';
-  const base = [
-    `Create a god-level premium ecommerce creative system using ${productName} as the exact product reference.`,
-    brandLine,
-    descriptionLine,
-    'Analyze all attached Shopify reference images before generating: packaging shape, label layout, logo placement, text branding, colors, material finish, proportions, category cues, and how the product should be presented for a premium brand.',
-    'Preserve the true product identity, packaging geometry, label placement, brand colors, and recognizable details from the references.',
-    'The product package must keep the exact same physical format as the Shopify reference: same box/jar/bottle dimensions, silhouette, height-to-width ratio, cap size, label scale, front-facing layout, and relative product size. Do not resize, stretch, slim, widen, stack, duplicate, or redesign the package unless explicitly requested.',
-    'The creative must be vertical 9:16 for Instagram stories/reels/ads while still feeling premium enough for Shopify product and collection imagery: clean focal point, strong negative space, editorial realism, refined lighting, no clutter.',
-    'If any human model or hand appears, use Indian-origin young adult people, around 20-25 years old, with authentic Indian skin tones, real facial structure, natural body language, believable hands, modern premium styling, and documentary-level realism. Do not make the model look aged, elderly, tired, waxy, or artificial.',
-    'Make humans look photographed, not AI generated: Vogue India editorial meets premium Nykaa campaign, medium-format commercial photography, natural lens compression, real skin texture, subtle imperfections, grounded shadows, believable contact points, realistic eyes, crisp product focus, and no plastic or waxy face.',
-    'No added text: no headlines, captions, slogans, pricing, badges, UI labels, watermarks, fake label copy, or readable typography in the scene. Only real product packaging marks from the reference may remain, and they must not be invented.',
-    'Product is the hero and model is supporting character. The client will reject the image if the package changes by even 1%. Build lighting, background, and pose around a locked, rigid, photo-accurate product anchor.',
-    'Avoid distorted labels, wrong logos, extra products, duplicated containers, messy hands, malformed anatomy, uncanny eyes, aged-looking models, fake AI posing, changed package size, floating/composited product, cheap stock-photo styling, and overdesigned props.',
-  ].filter(Boolean).join(' ');
-
-  if (userDirection) {
-    return `${base} Creative direction: ${userDirection}`;
-  }
-
-  return `${base} Explore four polished product-led visual directions: young Indian model lifestyle, clean exact-package product hero, sensory still life, and hook-worthy Instagram campaign scene.`;
+  const productName = product.title ? `"${product.title}"` : 'this Shopify product';
+  const brand = product.vendor ? ` by ${product.vendor}` : '';
+  return userDirection || `High-Vogue luxury campaign for ${productName}${brand}, preserving the exact canonical product identity.`;
 }
 
 function ProductCreativeProgress({
@@ -447,7 +427,7 @@ let imageIdCounter = 0;
 export function HeroSection() {
   const router = useRouter();
   const { user } = useAuth();
-  const { credits, deductCredits, addCredits, refreshCredits } = useCredits();
+  const { credits, refreshCredits } = useCredits();
 
   const typingTargets = [
     'Paste a Shopify product URL',
@@ -731,13 +711,6 @@ export function HeroSection() {
     setGeneratedResults([]);
     setGeneratedType(generationMode);
 
-    const deducted = await deductCredits(creditCost);
-    if (!deducted) {
-      setIsGenerating(false);
-      toast.error('Failed to deduct credits');
-      return;
-    }
-
     try {
       setStatusMessage(uploadedImages.length > 0 ? 'Preparing reference board...' : 'Preparing product image set...');
       setProgress(26);
@@ -868,12 +841,11 @@ export function HeroSection() {
       const msg = err instanceof Error ? err.message : 'Generation failed';
       setError(msg);
       toast.error(msg);
-      await addCredits(creditCost);
       await refreshCredits();
     } finally {
       setIsGenerating(false);
     }
-  }, [user, uploadedImages, selectedProductUrls, productCapture, promptValue, generationMode, selectedModel, credits, creditCost, deductCredits, addCredits, refreshCredits, router, captureProductImages]);
+  }, [user, uploadedImages, selectedProductUrls, productCapture, promptValue, generationMode, selectedModel, credits, creditCost, refreshCredits, router, captureProductImages]);
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#08080a]">
