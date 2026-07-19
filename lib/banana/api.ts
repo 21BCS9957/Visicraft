@@ -81,6 +81,73 @@ export interface ProductIdentityValidation {
   usage: ProviderUsage;
 }
 
+async function requestGeminiText(
+  parts: GeminiPart[],
+  generationConfig: NonNullable<GeminiRequest['generationConfig']>,
+  operation: string
+): Promise<{ response: { data: GeminiResponse }; providerModel: string }> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
+
+  const modelCandidates = Array.from(new Set([
+    process.env.GEMINI_ANALYSIS_MODEL,
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-3-pro-image',
+  ].filter((model): model is string => Boolean(model))));
+  let lastError: unknown;
+
+  for (const providerModel of modelCandidates) {
+    const apiVersion = providerModel === 'gemini-3-pro-image' ? 'v1beta' : 'v1';
+    try {
+      const response = await axios.post<GeminiResponse>(
+        `https://generativelanguage.googleapis.com/${apiVersion}/models/${providerModel}:generateContent`,
+        {
+          contents: [{ parts }],
+          generationConfig,
+        } satisfies GeminiRequest,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey,
+          },
+          timeout: 60000,
+        }
+      );
+      return { response, providerModel };
+    } catch (error) {
+      lastError = error;
+      if (!axios.isAxiosError(error)) throw error;
+
+      const status = error.response?.status;
+      const responseData = error.response?.data as {
+        error?: { message?: string };
+        message?: string;
+      } | undefined;
+      const upstreamMessage = responseData?.error?.message || responseData?.message || error.message;
+      const unavailableModel = status === 404 || (
+        status === 400 && /model|not found|not supported/i.test(upstreamMessage)
+      );
+
+      console.warn(`${operation} failed with ${providerModel}:`, status, upstreamMessage);
+      if (unavailableModel) continue;
+
+      throw new Error(`Google ${operation.toLowerCase()} failed${status ? ` (${status})` : ''}: ${upstreamMessage}`);
+    }
+  }
+
+  if (axios.isAxiosError(lastError)) {
+    const responseData = lastError.response?.data as {
+      error?: { message?: string };
+      message?: string;
+    } | undefined;
+    const upstreamMessage = responseData?.error?.message || responseData?.message || lastError.message;
+    throw new Error(`Google ${operation.toLowerCase()} is unavailable: ${upstreamMessage}`);
+  }
+
+  throw new Error(`Google ${operation.toLowerCase()} is unavailable.`);
+}
+
 async function loadPreparedReferences(referenceImages: string[]): Promise<{
   images: DownloadedImage[];
   totalBytes: number;
@@ -114,9 +181,6 @@ async function loadPreparedReferences(referenceImages: string[]): Promise<{
 }
 
 export async function analyzeProductIdentity(referenceImages: string[]): Promise<ProductIdentityAnalysis> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
-
   const { images } = await loadPreparedReferences(referenceImages.slice(0, 6));
   const parts: GeminiPart[] = [{
     text: `Act as a forensic packaging and product-identity analyst. Reference image 1 is canonical; later images may only clarify details. Analyze the actual pixels and return a concise PRODUCT IDENTITY MANIFEST for another image model.
@@ -139,22 +203,12 @@ Do not propose a campaign scene. Do not improve or rewrite copy. Keep the respon
     );
   });
 
-  const response = await axios.post<GeminiResponse>(
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+  const { response, providerModel } = await requestGeminiText(
+    parts,
     {
-      contents: [{ parts }],
-      generationConfig: {
-        responseModalities: ['TEXT'],
-        temperature: 0.1,
-      },
-    } satisfies GeminiRequest,
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
-      },
-      timeout: 60000,
-    }
+      temperature: 0.1,
+    },
+    'Product identity analysis'
   );
 
   const manifest = response.data.candidates?.[0]?.content?.parts
@@ -175,7 +229,7 @@ Do not propose a campaign scene. Do not improve or rewrite copy. Keep the respon
       inputTokens,
       outputTokens,
       totalTokens: Number(usageMetadata?.totalTokenCount) || inputTokens + outputTokens,
-      providerModel: 'gemini-2.5-flash',
+      providerModel,
     },
   };
 }
@@ -185,9 +239,6 @@ export async function validateProductIdentity(
   generatedImageUrl: string,
   identityManifest: string
 ): Promise<ProductIdentityValidation> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
-
   const { images } = await loadPreparedReferences([canonicalImageUrl, generatedImageUrl]);
   if (images.length !== 2) {
     throw new Error('Could not load both images for product identity verification.');
@@ -216,23 +267,13 @@ Return JSON only with this exact shape:
     { inlineData: { mimeType: images[1].mimeType, data: images[1].data } },
   ];
 
-  const response = await axios.post<GeminiResponse>(
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+  const { response, providerModel } = await requestGeminiText(
+    parts,
     {
-      contents: [{ parts }],
-      generationConfig: {
-        responseModalities: ['TEXT'],
-        responseMimeType: 'application/json',
-        temperature: 0,
-      },
-    } satisfies GeminiRequest,
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
-      },
-      timeout: 60000,
-    }
+      responseMimeType: 'application/json',
+      temperature: 0,
+    },
+    'Product identity verification'
   );
 
   const raw = response.data.candidates?.[0]?.content?.parts
@@ -262,7 +303,7 @@ Return JSON only with this exact shape:
       inputTokens,
       outputTokens,
       totalTokens: Number(usageMetadata?.totalTokenCount) || inputTokens + outputTokens,
-      providerModel: 'gemini-2.5-flash',
+      providerModel,
     },
   };
 }

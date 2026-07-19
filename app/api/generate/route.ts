@@ -149,16 +149,22 @@ export async function POST(request: NextRequest) {
       const verificationUsage = sumUsage(
         completedVerifications.map((variant) => variant.validation.usage)
       );
+      const validationModel = completedVerifications[0]?.validation.usage.providerModel ||
+        identityAnalysis.usage.providerModel ||
+        'gemini-2.5-flash';
 
       await logUsage({
         user,
-        model: 'gemini-2.5-flash',
+        model: validationModel,
         feature: 'image_generation',
         inputTokens: verificationUsage.inputTokens,
         outputTokens: verificationUsage.outputTokens,
         totalTokens: verificationUsage.totalTokens,
         imageCount: 0,
-        estimatedCostUsd: estimateGoogleProductAnalysisCostUsd(verificationUsage),
+        estimatedCostUsd: estimateGoogleProductAnalysisCostUsd({
+          ...verificationUsage,
+          model: validationModel,
+        }),
         creditCost: 0,
         metadata: {
           operation: 'product_identity_validation',
