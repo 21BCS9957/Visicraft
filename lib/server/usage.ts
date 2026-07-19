@@ -202,11 +202,21 @@ export function estimateGoogleImageCostUsd(options: {
 }
 
 export function estimateGoogleProductAnalysisCostUsd(options: {
+  model?: string;
   inputTokens?: number;
   outputTokens?: number;
 }): number {
-  const inputPerMillion = readNumberEnv('GOOGLE_GEMINI_2_5_FLASH_INPUT_USD_PER_1M', 0.3);
-  const outputPerMillion = readNumberEnv('GOOGLE_GEMINI_2_5_FLASH_OUTPUT_USD_PER_1M', 2.5);
+  const model = options.model || 'gemini-2.5-flash';
+  let inputPerMillion = readNumberEnv('GOOGLE_GEMINI_2_5_FLASH_INPUT_USD_PER_1M', 0.3);
+  let outputPerMillion = readNumberEnv('GOOGLE_GEMINI_2_5_FLASH_OUTPUT_USD_PER_1M', 2.5);
+
+  if (model.includes('flash-lite')) {
+    inputPerMillion = readNumberEnv('GOOGLE_GEMINI_2_5_FLASH_LITE_INPUT_USD_PER_1M', 0.1);
+    outputPerMillion = readNumberEnv('GOOGLE_GEMINI_2_5_FLASH_LITE_OUTPUT_USD_PER_1M', 0.4);
+  } else if (model.includes('gemini-3-pro-image')) {
+    inputPerMillion = readNumberEnv('GOOGLE_GEMINI_3_PRO_IMAGE_INPUT_USD_PER_1M', 2);
+    outputPerMillion = readNumberEnv('GOOGLE_GEMINI_3_PRO_IMAGE_TEXT_OUTPUT_USD_PER_1M', 12);
+  }
 
   return roundCost(
     ((options.inputTokens ?? 0) / 1_000_000) * inputPerMillion +
