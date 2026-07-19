@@ -71,6 +71,7 @@ export interface GeneratedImageData {
 
 export interface ProductIdentityAnalysis {
   manifest: string;
+  canonicalReferenceIndex: number;
   usage: ProviderUsage;
 }
 
@@ -150,12 +151,14 @@ async function requestGeminiText(
 
 async function loadPreparedReferences(referenceImages: string[]): Promise<{
   images: DownloadedImage[];
+  sourceIndexes: number[];
   totalBytes: number;
 }> {
   const downloadResults = await Promise.allSettled(
     referenceImages.map((url) => getPreparedReferenceImage(url))
   );
   const images: DownloadedImage[] = [];
+  const sourceIndexes: number[] = [];
   let totalBytes = 0;
 
   downloadResults.forEach((result, index) => {
@@ -171,19 +174,22 @@ async function loadPreparedReferences(referenceImages: string[]): Promise<{
 
     totalBytes += result.value.byteLength;
     images.push(result.value);
+    sourceIndexes.push(index);
   });
 
   if (images.length === 0) {
     throw new Error('None of the product images could be read. Please retry the link or upload a clear JPG, PNG, or WebP image.');
   }
 
-  return { images, totalBytes };
+  return { images, sourceIndexes, totalBytes };
 }
 
 export async function analyzeProductIdentity(referenceImages: string[]): Promise<ProductIdentityAnalysis> {
-  const { images } = await loadPreparedReferences(referenceImages.slice(0, 6));
+  const { images, sourceIndexes } = await loadPreparedReferences(referenceImages.slice(0, 6));
   const parts: GeminiPart[] = [{
-    text: `Act as a forensic packaging and product-identity analyst. Reference image 1 is canonical; later images may only clarify details. Analyze the actual pixels and return a concise PRODUCT IDENTITY MANIFEST for another image model.
+    text: `Act as a forensic packaging and product-identity analyst. Inspect every supplied reference, determine which single image gives the clearest, largest, most front-facing and least-obstructed view of the actual product, then return a concise PRODUCT IDENTITY MANIFEST for another image model.
+
+The first line must be exactly CANONICAL_REFERENCE_INDEX: N, where N is the one-based reference number you selected. Prefer a clean product-facing image over a lifestyle image. Do not automatically select image 1.
 
 Include:
 1. Exact package/object silhouette, dimensions and front-facing orientation.
@@ -198,7 +204,7 @@ Do not propose a campaign scene. Do not improve or rewrite copy. Keep the respon
 
   images.forEach((image, index) => {
     parts.push(
-      { text: index === 0 ? 'CANONICAL PRODUCT IMAGE:' : `SUPPORTING PRODUCT VIEW ${index + 1}:` },
+      { text: `REFERENCE IMAGE ${index + 1}:` },
       { inlineData: { mimeType: image.mimeType, data: image.data } }
     );
   });
@@ -211,13 +217,24 @@ Do not propose a campaign scene. Do not improve or rewrite copy. Keep the respon
     'Product identity analysis'
   );
 
-  const manifest = response.data.candidates?.[0]?.content?.parts
+  const analysisText = response.data.candidates?.[0]?.content?.parts
     ?.map((part) => part.text)
     .filter((text): text is string => typeof text === 'string' && text.trim().length > 0)
     .join('\n')
     .trim();
 
-  if (!manifest) throw new Error('Product identity analysis returned no usable result.');
+  if (!analysisText) throw new Error('Product identity analysis returned no usable result.');
+
+  const selectedReference = Number(
+    analysisText.match(/CANONICAL_REFERENCE_INDEX\s*:\s*(\d+)/i)?.[1]
+  );
+  const selectedPreparedIndex = Number.isInteger(selectedReference)
+    ? Math.max(0, Math.min(images.length - 1, selectedReference - 1))
+    : 0;
+  const canonicalReferenceIndex = sourceIndexes[selectedPreparedIndex] ?? 0;
+  const manifest = analysisText
+    .replace(/^\s*CANONICAL_REFERENCE_INDEX\s*:\s*\d+\s*/i, '')
+    .trim();
 
   const usageMetadata = response.data.usageMetadata;
   const inputTokens = Number(usageMetadata?.promptTokenCount) || 0;
@@ -225,6 +242,7 @@ Do not propose a campaign scene. Do not improve or rewrite copy. Keep the respon
 
   return {
     manifest: manifest.slice(0, 3200),
+    canonicalReferenceIndex,
     usage: {
       inputTokens,
       outputTokens,
@@ -258,6 +276,8 @@ Reject invented wording, missing wording, approximate logos, redesigned labels, 
 Identity manifest:
 ${identityManifest.slice(0, 3200)}
 
+For packagingTextExact, inspect the visible brand name, product name, variant name, prominent numbers, and prominent symbols. Tiny regulatory or ingredient copy that is genuinely too small to resolve may be treated as unreadable rather than changed. Still reject any clearly invented, misspelled, substituted, or rearranged prominent copy.
+
 Return JSON only with this exact shape:
 {"packagingTextExact":true,"logoExact":true,"artworkLayoutExact":true,"geometryExact":true,"score":0,"reason":"brief factual reason"}`,
     },
@@ -282,7 +302,13 @@ Return JSON only with this exact shape:
     .trim();
   if (!raw) throw new Error('Product identity verification returned no result.');
 
-  const parsed = JSON.parse(raw.replace(/^```json\s*|\s*```$/g, '')) as Record<string, unknown>;
+  const withoutFences = raw.replace(/^```(?:json)?\s*|\s*```$/gi, '').trim();
+  const jsonStart = withoutFences.indexOf('{');
+  const jsonEnd = withoutFences.lastIndexOf('}');
+  if (jsonStart < 0 || jsonEnd <= jsonStart) {
+    throw new Error('Product identity verification returned malformed JSON.');
+  }
+  const parsed = JSON.parse(withoutFences.slice(jsonStart, jsonEnd + 1)) as Record<string, unknown>;
   const score = Math.max(0, Math.min(100, Number(parsed.score) || 0));
   const passed =
     parsed.packagingTextExact === true &&
@@ -313,7 +339,7 @@ export async function generateThumbnail(
   model?: string,
   aspectRatio?: string,
   resolution?: string,
-  referencePolicy: 'balanced' | 'product-lock' = 'balanced'
+  referencePolicy: 'balanced' | 'product-lock' | 'product-repair' = 'balanced'
 ): Promise<GeneratedImageData> {
   const apiKey = process.env.GEMINI_API_KEY!;
 
@@ -378,13 +404,19 @@ export async function generateThumbnail(
       await loadPreparedReferences(referenceImages);
     const fullPrompt = prompt || '';
 
-    const parts: GeminiPart[] = referencePolicy === 'product-lock'
+    const parts: GeminiPart[] = referencePolicy === 'product-lock' || referencePolicy === 'product-repair'
       ? [{
-          text: 'REFERENCE PROTOCOL: Image 1 is the PRIMARY CANONICAL PRODUCT and overrides every other image if details conflict. Images 2 onward are supporting angles of the same product. They are evidence for fidelity, not separate products and not style references.',
+          text: referencePolicy === 'product-repair'
+            ? 'REPAIR PROTOCOL: Image 1 is the PRIMARY CANONICAL PRODUCT and the immutable identity source. Image 2 is a generated campaign composition whose scene may be retained, but whose product failed identity review. Replace only the incorrect product with a faithful copy of Image 1; never blend their packaging.'
+            : 'REFERENCE PROTOCOL: Image 1 is the PRIMARY CANONICAL PRODUCT and overrides every other image if details conflict. Images 2 onward are supporting angles of the same product. They are evidence for fidelity, not separate products and not style references.',
         }]
       : [{ text: fullPrompt }];
     downloadedImages.forEach((image, index) => {
-      const label = referencePolicy === 'product-lock'
+      const label = referencePolicy === 'product-repair'
+        ? index === 0
+          ? 'REFERENCE IMAGE 1 - PRIMARY CANONICAL PRODUCT. Its packaging pixels, shape, logo and artwork are the required final identity.'
+          : 'REFERENCE IMAGE 2 - REJECTED CAMPAIGN COMPOSITION. Preserve only its scene and art direction; discard and replace its incorrect product rendering.'
+        : referencePolicy === 'product-lock'
         ? index === 0
           ? 'REFERENCE IMAGE 1 - PRIMARY CANONICAL PRODUCT IDENTITY. Copy this exact real product; do not redesign or substitute it.'
           : `REFERENCE IMAGE ${index + 1} - SUPPORTING VIEW ONLY. Use it to verify the same product's geometry, material, scale, color, construction, and artwork placement.`
@@ -399,10 +431,12 @@ export async function generateThumbnail(
         }
       );
     });
-    if (referencePolicy === 'product-lock') {
+    if (referencePolicy === 'product-lock' || referencePolicy === 'product-repair') {
       parts.push(
         { text: fullPrompt },
-        { text: 'FINAL IDENTITY REMINDER: the set, model, pose, and lighting may change; the product from reference image 1 may not change.' }
+        { text: referencePolicy === 'product-repair'
+          ? 'FINAL REPAIR CHECK: keep the campaign scene, but ensure the visible product is unmistakably and faithfully the canonical product from image 1. Do not retain any invented package text from image 2.'
+          : 'FINAL IDENTITY REMINDER: the set, model, pose, and lighting may change; the product from reference image 1 may not change.' }
       );
     }
 
