@@ -270,7 +270,6 @@ Return JSON only with this exact shape:
   const { response, providerModel } = await requestGeminiText(
     parts,
     {
-      responseMimeType: 'application/json',
       temperature: 0,
     },
     'Product identity verification'
