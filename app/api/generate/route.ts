@@ -20,6 +20,8 @@ import {
 
 const MODES: ImageGenMode[] = ['generate', 'thumbnail', 'edit', 'upscale', 'unblur'];
 
+export const maxDuration = 300;
+
 function parseMode(raw: unknown): ImageGenMode {
   if (typeof raw === 'string' && MODES.includes(raw as ImageGenMode)) {
     return raw as ImageGenMode;
@@ -75,7 +77,7 @@ export async function POST(request: NextRequest) {
     if (creativeSet) {
       const prompts = buildShopifyCreativePrompts(productContext, prompt);
       const fidelityReferences = referenceImages.slice(0, 6);
-      const generatedSets = await Promise.all(
+      const generatedSettled = await Promise.allSettled(
         prompts.map((variantPrompt) => runImageGeneration({
           mode,
           referenceImages: fidelityReferences,
@@ -88,6 +90,22 @@ export async function POST(request: NextRequest) {
           userId: user.id,
         }))
       );
+      const generatedSets = generatedSettled.flatMap((result) =>
+        result.status === 'fulfilled' ? [result.value] : []
+      );
+
+      if (generatedSets.length === 0) {
+        const firstFailure = generatedSettled.find((result) => result.status === 'rejected');
+        throw firstFailure && firstFailure.status === 'rejected'
+          ? firstFailure.reason
+          : new Error('Gemini did not return any images');
+      }
+
+      generatedSettled.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.error(`Creative variant ${index + 1} failed:`, result.reason);
+        }
+      });
       const images = generatedSets.flatMap((generated) => generated.images.slice(0, 1));
       const usage = sumUsage(generatedSets.map((generated) => generated.usage));
       const providerModel = generatedSets[0]?.usage.providerModel || model || 'nano-banana-pro';
@@ -123,6 +141,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         images,
+        warning: images.length < prompts.length
+          ? `${images.length} of ${prompts.length} creative angles completed. Retry to regenerate the missing angles.`
+          : undefined,
         usage: {
           ...usage,
           imageCount: images.length,

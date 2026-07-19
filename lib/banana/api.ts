@@ -1,4 +1,5 @@
 import axios from 'axios';
+import sharp from 'sharp';
 import type { ProviderUsage } from '@/lib/server/usage';
 
 interface GeminiPart {
@@ -25,7 +26,21 @@ interface GeminiRequest {
 interface DownloadedImage {
   data: string;
   mimeType: string;
+  byteLength: number;
 }
+
+const MAX_REFERENCE_IMAGE_BYTES = 15 * 1024 * 1024;
+const MAX_PREPARED_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_INLINE_REFERENCE_BYTES = 14 * 1024 * 1024;
+const IMAGE_DOWNLOAD_TIMEOUT_MS = 20000;
+const GEMINI_REQUEST_TIMEOUT_MS = 90000;
+const REFERENCE_CACHE_TTL_MS = 5 * 60 * 1000;
+const MAX_REFERENCE_CACHE_ENTRIES = 64;
+
+const preparedReferenceCache = new Map<string, {
+  createdAt: number;
+  promise: Promise<DownloadedImage>;
+}>();
 
 interface GeminiResponse {
   candidates?: Array<{
@@ -119,7 +134,28 @@ export async function generateThumbnail(
       throw new Error('At least one image URL is required');
     }
 
-    const downloadedImages = await Promise.all(referenceImages.map((url) => urlToBase64(url)));
+    const downloadResults = await Promise.allSettled(referenceImages.map((url) => getPreparedReferenceImage(url)));
+    const downloadedImages: Array<DownloadedImage & { referenceIndex: number }> = [];
+    let inlineReferenceBytes = 0;
+
+    downloadResults.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        console.warn(`Skipping unusable reference image ${index + 1}:`, result.reason);
+        return;
+      }
+
+      if (inlineReferenceBytes + result.value.byteLength > MAX_INLINE_REFERENCE_BYTES) {
+        console.warn(`Skipping reference image ${index + 1}: inline image budget reached`);
+        return;
+      }
+
+      inlineReferenceBytes += result.value.byteLength;
+      downloadedImages.push({ ...result.value, referenceIndex: index });
+    });
+
+    if (downloadedImages.length === 0) {
+      throw new Error('None of the product images could be read. Please retry the link or upload a clear JPG, PNG, or WebP image.');
+    }
     const fullPrompt = prompt || '';
 
     const parts: GeminiPart[] = referencePolicy === 'product-lock'
@@ -158,17 +194,18 @@ export async function generateThumbnail(
       }
     };
 
+    console.log(`📦 Prepared ${downloadedImages.length} references (${(inlineReferenceBytes / 1024 / 1024).toFixed(1)} MB)`);
     console.log('📤 Sending request to Gemini API...');
     console.log('📋 Request config:', JSON.stringify(requestData.generationConfig, null, 2));
     
     // Retry logic for transient errors
     let lastError;
-    const maxRetries = 2;
+    const maxAttempts = 2;
     
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         if (attempt > 1) {
-          console.log(`🔄 Retry attempt ${attempt}/${maxRetries}...`);
+          console.log(`🔄 Retry attempt ${attempt}/${maxAttempts}...`);
           // Wait before retry (exponential backoff)
           await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
         }
@@ -181,7 +218,7 @@ export async function generateThumbnail(
               'Content-Type': 'application/json',
               'x-goog-api-key': apiKey,
             },
-            timeout: 120000, // 2 minutes timeout
+            timeout: GEMINI_REQUEST_TIMEOUT_MS,
           }
         );
 
@@ -247,7 +284,7 @@ export async function generateThumbnail(
           }
           
           // Retry on 500, 503, 429, or network errors
-          if (attempt < maxRetries) {
+          if (attempt < maxAttempts) {
             console.warn(`⚠️  Attempt ${attempt} failed:`, errorMessage);
             continue;
           }
@@ -308,6 +345,29 @@ export async function generateThumbnail(
   }
 }
 
+async function getPreparedReferenceImage(imageUrl: string): Promise<DownloadedImage> {
+  const now = Date.now();
+  for (const [key, entry] of preparedReferenceCache) {
+    if (now - entry.createdAt > REFERENCE_CACHE_TTL_MS) preparedReferenceCache.delete(key);
+  }
+
+  const cached = preparedReferenceCache.get(imageUrl);
+  if (cached) return cached.promise;
+
+  while (preparedReferenceCache.size >= MAX_REFERENCE_CACHE_ENTRIES) {
+    const oldestKey = preparedReferenceCache.keys().next().value as string | undefined;
+    if (!oldestKey) break;
+    preparedReferenceCache.delete(oldestKey);
+  }
+
+  const promise = urlToBase64(imageUrl).catch((error) => {
+    preparedReferenceCache.delete(imageUrl);
+    throw error;
+  });
+  preparedReferenceCache.set(imageUrl, { createdAt: now, promise });
+  return promise;
+}
+
 async function urlToBase64(imageUrl: string): Promise<DownloadedImage> {
   try {
     // Handle relative URLs (convert to absolute)
@@ -320,15 +380,30 @@ async function urlToBase64(imageUrl: string): Promise<DownloadedImage> {
     }
     assertDownloadableImageUrl(absoluteUrl);
     
-    const response = await axios.get(absoluteUrl, { 
+    const response = await axios.get<ArrayBuffer>(absoluteUrl, {
       responseType: 'arraybuffer',
-      timeout: 30000
+      timeout: IMAGE_DOWNLOAD_TIMEOUT_MS,
+      maxContentLength: MAX_REFERENCE_IMAGE_BYTES,
+      maxBodyLength: MAX_REFERENCE_IMAGE_BYTES,
+      headers: {
+        Accept: 'image/jpeg,image/png,image/webp,*/*;q=0.5',
+        'User-Agent': 'Mozilla/5.0 (compatible; Visicraft/1.0; +https://visicraft.in)',
+      },
     });
     const contentType = String(response.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
-    const mimeType = contentType.startsWith('image/') ? contentType : inferImageMimeType(absoluteUrl);
+    const bytes = Buffer.from(response.data);
+    if (bytes.byteLength < 64) {
+      throw new Error('The image response was empty');
+    }
+    const mimeType = detectImageMimeType(bytes, contentType, absoluteUrl);
+    if (!mimeType) {
+      throw new Error(`Unsupported or invalid image response (${contentType || 'unknown type'})`);
+    }
+    const preparedBytes = await prepareReferenceImage(bytes);
     return {
-      data: Buffer.from(response.data, 'binary').toString('base64'),
-      mimeType,
+      data: preparedBytes.toString('base64'),
+      mimeType: 'image/webp',
+      byteLength: preparedBytes.byteLength,
     };
   } catch (error) {
     console.error('Failed to download image:', imageUrl);
@@ -336,12 +411,51 @@ async function urlToBase64(imageUrl: string): Promise<DownloadedImage> {
   }
 }
 
-function inferImageMimeType(imageUrl: string): string {
+async function prepareReferenceImage(source: Buffer): Promise<Buffer> {
+  const attempts = [
+    { edge: 2048, quality: 88 },
+    { edge: 1792, quality: 84 },
+    { edge: 1536, quality: 80 },
+  ];
+
+  let prepared: Buffer | null = null;
+  for (const attempt of attempts) {
+    prepared = await sharp(source, { failOn: 'warning' })
+      .rotate()
+      .resize({
+        width: attempt.edge,
+        height: attempt.edge,
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
+      .webp({ quality: attempt.quality, smartSubsample: true, effort: 4 })
+      .toBuffer();
+
+    if (prepared.byteLength <= MAX_PREPARED_IMAGE_BYTES) return prepared;
+  }
+
+  if (!prepared) throw new Error('Could not prepare reference image');
+  return prepared;
+}
+
+function detectImageMimeType(
+  bytes: Buffer,
+  contentType: string,
+  imageUrl: string
+): 'image/jpeg' | 'image/png' | 'image/webp' | null {
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 &&
+    bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a
+  ) return 'image/png';
+  if (bytes.length >= 12 && bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP') {
+    return 'image/webp';
+  }
+
   const pathname = new URL(imageUrl).pathname.toLowerCase();
-  if (pathname.endsWith('.png')) return 'image/png';
-  if (pathname.endsWith('.webp')) return 'image/webp';
-  if (pathname.endsWith('.gif')) return 'image/gif';
-  return 'image/jpeg';
+  console.warn('Image bytes did not match a supported format:', { contentType, pathname });
+  return null;
 }
 
 function assertDownloadableImageUrl(imageUrl: string): void {
