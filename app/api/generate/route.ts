@@ -4,6 +4,7 @@ import {
   runImageGeneration,
   type ImageGenMode,
 } from '@/lib/server/imageGeneration';
+import { analyzeProductIdentity, validateProductIdentity } from '@/lib/banana/api';
 import {
   buildShopifyCreativePrompts,
   type ShopifyProductContext,
@@ -11,6 +12,7 @@ import {
 import {
   deductCreditsForUser,
   estimateGoogleImageCostUsd,
+  estimateGoogleProductAnalysisCostUsd,
   getServerImageCreditCost,
   logUsage,
   refundCreditsForUser,
@@ -75,8 +77,30 @@ export async function POST(request: NextRequest) {
     chargedCredits = creditCost;
 
     if (creativeSet) {
-      const prompts = buildShopifyCreativePrompts(productContext, prompt);
-      const fidelityReferences = referenceImages.slice(0, 6);
+      const identityAnalysis = await analyzeProductIdentity(referenceImages);
+      await logUsage({
+        user,
+        model: identityAnalysis.usage.providerModel || 'gemini-2.5-flash',
+        feature: 'image_generation',
+        inputTokens: identityAnalysis.usage.inputTokens,
+        outputTokens: identityAnalysis.usage.outputTokens,
+        totalTokens: identityAnalysis.usage.totalTokens,
+        imageCount: 0,
+        estimatedCostUsd: estimateGoogleProductAnalysisCostUsd(identityAnalysis.usage),
+        creditCost: 0,
+        metadata: {
+          operation: 'product_identity_analysis',
+          referenceCount: referenceImages.length,
+          chargedServerSide: true,
+        },
+      });
+
+      const prompts = buildShopifyCreativePrompts(
+        productContext,
+        prompt,
+        identityAnalysis.manifest
+      );
+      const fidelityReferences = referenceImages.slice(0, 1);
       const generatedSettled = await Promise.allSettled(
         prompts.map((variantPrompt) => runImageGeneration({
           mode,
@@ -90,11 +114,11 @@ export async function POST(request: NextRequest) {
           userId: user.id,
         }))
       );
-      const generatedSets = generatedSettled.flatMap((result) =>
-        result.status === 'fulfilled' ? [result.value] : []
+      const generatedVariants = generatedSettled.flatMap((result, index) =>
+        result.status === 'fulfilled' ? [{ index, generated: result.value }] : []
       );
 
-      if (generatedSets.length === 0) {
+      if (generatedVariants.length === 0) {
         const firstFailure = generatedSettled.find((result) => result.status === 'rejected');
         throw firstFailure && firstFailure.status === 'rejected'
           ? firstFailure.reason
@@ -106,13 +130,57 @@ export async function POST(request: NextRequest) {
           console.error(`Creative variant ${index + 1} failed:`, result.reason);
         }
       });
-      const images = generatedSets.flatMap((generated) => generated.images.slice(0, 1));
-      const usage = sumUsage(generatedSets.map((generated) => generated.usage));
-      const providerModel = generatedSets[0]?.usage.providerModel || model || 'nano-banana-pro';
+
+      const verifiedVariants = await Promise.all(
+        generatedVariants.map(async (variant) => {
+          const imageUrl = variant.generated.images[0];
+          if (!imageUrl) return null;
+          const validation = await validateProductIdentity(
+            fidelityReferences[0],
+            imageUrl,
+            identityAnalysis.manifest
+          );
+          return { ...variant, imageUrl, validation };
+        })
+      );
+      const completedVerifications = verifiedVariants.filter(
+        (variant): variant is NonNullable<typeof variant> => variant !== null
+      );
+      const verificationUsage = sumUsage(
+        completedVerifications.map((variant) => variant.validation.usage)
+      );
+
+      await logUsage({
+        user,
+        model: 'gemini-2.5-flash',
+        feature: 'image_generation',
+        inputTokens: verificationUsage.inputTokens,
+        outputTokens: verificationUsage.outputTokens,
+        totalTokens: verificationUsage.totalTokens,
+        imageCount: 0,
+        estimatedCostUsd: estimateGoogleProductAnalysisCostUsd(verificationUsage),
+        creditCost: 0,
+        metadata: {
+          operation: 'product_identity_validation',
+          validationCount: completedVerifications.length,
+          chargedServerSide: true,
+        },
+      });
+
+      const acceptedVariants = completedVerifications.filter(
+        (variant) => variant.validation.passed
+      );
+      const images = acceptedVariants.map((variant) => variant.imageUrl);
+      const usage = sumUsage(generatedVariants.map((variant) => variant.generated.usage));
+      const providerModel = generatedVariants[0]?.generated.usage.providerModel || model || 'nano-banana-pro';
+      const billedImageCount = generatedVariants.reduce(
+        (count, variant) => count + variant.generated.images.length,
+        0
+      );
       const estimatedCostUsd = estimateGoogleImageCostUsd({
         model: providerModel,
         resolution: resolution || '2K',
-        imageCount: images.length,
+        imageCount: billedImageCount,
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
       });
@@ -124,9 +192,9 @@ export async function POST(request: NextRequest) {
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
         totalTokens: usage.totalTokens,
-        imageCount: images.length,
+        imageCount: billedImageCount,
         estimatedCostUsd,
-        creditCost,
+        creditCost: images.length === 0 ? 0 : creditCost,
         metadata: {
           mode,
           creativeSet: true,
@@ -134,19 +202,35 @@ export async function POST(request: NextRequest) {
           aspectRatio: aspectRatio || '9:16',
           resolution: resolution || '2K',
           referenceCount: referenceImages.length,
+          generationReferenceCount: fidelityReferences.length,
+          analysisModel: identityAnalysis.usage.providerModel || 'gemini-2.5-flash',
+          acceptedImageCount: images.length,
+          rejectedImageCount: completedVerifications.length - images.length,
+          validationScores: completedVerifications.map((variant) => ({
+            variant: variant.index + 1,
+            score: variant.validation.score,
+            passed: variant.validation.passed,
+            reason: variant.validation.reason,
+          })),
+          appCreditsRefunded: images.length === 0,
           chargedServerSide: true,
         },
       });
+
+      if (images.length === 0) {
+        throw new Error('Packaging fidelity check rejected every generated image because the product artwork changed. App credits were refunded. Use a clear, front-facing product image and retry.');
+      }
 
       return NextResponse.json({
         success: true,
         images,
         warning: images.length < prompts.length
-          ? `${images.length} of ${prompts.length} creative angles completed. Retry to regenerate the missing angles.`
+          ? `${images.length} of ${prompts.length} creative angles passed the packaging fidelity check. The altered versions were withheld.`
           : undefined,
         usage: {
           ...usage,
-          imageCount: images.length,
+          imageCount: billedImageCount,
+          returnedImageCount: images.length,
           estimatedCostUsd,
           creditsDeducted: creditCost,
         },
