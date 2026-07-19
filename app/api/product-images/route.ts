@@ -17,7 +17,9 @@ interface ProductCapture {
 
 const MAX_HTML_BYTES = 1_000_000;
 const MAX_IMAGES = 12;
+const MAX_IMAGE_CANDIDATES = 18;
 const FETCH_TIMEOUT_MS = 12000;
+const IMAGE_PROBE_TIMEOUT_MS = 6000;
 
 export async function POST(request: NextRequest) {
   try {
@@ -29,8 +31,12 @@ export async function POST(request: NextRequest) {
     }
 
     const productUrl = assertPublicHttpUrl(rawUrl);
-    const shopifyData = await tryFetchShopifyProduct(productUrl).catch(() => null);
-    const pageData = await scrapeProductPage(productUrl).catch(() => null);
+    const [shopifyResult, pageResult] = await Promise.allSettled([
+      tryFetchShopifyProduct(productUrl),
+      scrapeProductPage(productUrl),
+    ]);
+    const shopifyData = shopifyResult.status === 'fulfilled' ? shopifyResult.value : null;
+    const pageData = pageResult.status === 'fulfilled' ? pageResult.value : null;
 
     if (!shopifyData && !pageData) {
       return NextResponse.json(
@@ -39,10 +45,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const images = uniqueImages([
+    const imageCandidates = uniqueImages([
       ...(shopifyData?.images ?? []),
       ...(pageData?.images ?? []),
-    ]).slice(0, MAX_IMAGES);
+    ]).slice(0, MAX_IMAGE_CANDIDATES);
+    const images = (await filterUsableImages(imageCandidates)).slice(0, MAX_IMAGES);
 
     if (images.length === 0) {
       return NextResponse.json(
@@ -107,20 +114,28 @@ function assertPublicHttpUrl(rawUrl: string): URL {
   return url;
 }
 
-async function fetchPublicUrl(url: URL, accept: string, redirectCount = 0): Promise<Response> {
+async function fetchPublicUrl(
+  url: URL,
+  accept: string,
+  redirectCount = 0,
+  timeoutMs = FETCH_TIMEOUT_MS,
+  extraHeaders: Record<string, string> = {}
+): Promise<Response> {
   if (redirectCount > 3) {
     throw new Error('Too many redirects while fetching product URL');
   }
 
   assertPublicHttpUrl(url.href);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(url.href, {
       headers: {
         accept,
-        'user-agent': 'VisicraftBot/1.0 (+https://visicraft.ai)',
+        'accept-language': 'en-US,en;q=0.9',
+        'user-agent': 'Mozilla/5.0 (compatible; Visicraft/1.0; +https://visicraft.in)',
+        ...extraHeaders,
       },
       redirect: 'manual',
       signal: controller.signal,
@@ -130,13 +145,66 @@ async function fetchPublicUrl(url: URL, accept: string, redirectCount = 0): Prom
       const location = response.headers.get('location');
       if (!location) throw new Error('Product URL redirected without a location');
       const redirected = new URL(location, url);
-      return fetchPublicUrl(redirected, accept, redirectCount + 1);
+      return fetchPublicUrl(redirected, accept, redirectCount + 1, timeoutMs, extraHeaders);
     }
 
     return response;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function filterUsableImages(images: ProductImage[]): Promise<ProductImage[]> {
+  if (images.length === 0) return [];
+
+  const usable = new Array<boolean>(images.length).fill(false);
+  let cursor = 0;
+  const workerCount = Math.min(4, images.length);
+
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (cursor < images.length) {
+      const index = cursor++;
+      usable[index] = await isUsableImage(images[index].url).catch(() => false);
+    }
+  });
+
+  await Promise.all(workers);
+  return images.filter((_, index) => usable[index]);
+}
+
+async function isUsableImage(imageUrl: string): Promise<boolean> {
+  const response = await fetchPublicUrl(
+    new URL(imageUrl),
+    'image/jpeg,image/png,image/webp,*/*;q=0.5',
+    0,
+    IMAGE_PROBE_TIMEOUT_MS,
+    { range: 'bytes=0-4095' }
+  );
+
+  if (!response.ok && response.status !== 206) return false;
+  const bytes = await readCappedBytes(response, 4096);
+  return detectSupportedImageType(bytes) !== null;
+}
+
+function detectSupportedImageType(bytes: Uint8Array): 'image/jpeg' | 'image/png' | 'image/webp' | null {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 &&
+    bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a
+  ) {
+    return 'image/png';
+  }
+  if (
+    bytes.length >= 12 &&
+    String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF' &&
+    String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP'
+  ) {
+    return 'image/webp';
+  }
+  return null;
 }
 
 async function tryFetchShopifyProduct(productUrl: URL) {
@@ -224,8 +292,12 @@ async function scrapeProductPage(productUrl: URL) {
 }
 
 async function readCappedText(response: Response, maxBytes: number): Promise<string> {
+  return new TextDecoder().decode(await readCappedBytes(response, maxBytes));
+}
+
+async function readCappedBytes(response: Response, maxBytes: number): Promise<Uint8Array> {
   const reader = response.body?.getReader();
-  if (!reader) return response.text();
+  if (!reader) return new Uint8Array(await response.arrayBuffer()).slice(0, maxBytes);
 
   const chunks: Uint8Array[] = [];
   let received = 0;
@@ -236,10 +308,13 @@ async function readCappedText(response: Response, maxBytes: number): Promise<str
     const chunk = value.slice(0, Math.max(0, maxBytes - received));
     chunks.push(chunk);
     received += chunk.byteLength;
-    if (chunk.byteLength < value.byteLength) break;
+    if (chunk.byteLength < value.byteLength) {
+      await reader.cancel();
+      break;
+    }
   }
 
-  return new TextDecoder().decode(Buffer.concat(chunks));
+  return Buffer.concat(chunks);
 }
 
 function extractMetaContent(html: string, names: string[]): string[] {
@@ -361,6 +436,7 @@ function normalizeImageUrl(rawUrl: string, baseUrl: URL): string | undefined {
       : new URL(cleaned, baseUrl).href;
 
     const url = assertPublicHttpUrl(absolute);
+    if (url.protocol === 'http:') url.protocol = 'https:';
     url.searchParams.delete('width');
     url.searchParams.delete('height');
     url.searchParams.delete('crop');
@@ -375,7 +451,12 @@ function uniqueImages(images: ProductImage[]): ProductImage[] {
   const out: ProductImage[] = [];
 
   for (const image of images) {
-    const key = image.url.replace(/([?&])(v|_pos|variant)=\d+/g, '');
+    const url = new URL(image.url);
+    const deduplicatedPath = url.pathname.replace(
+      /_(?:\d+x\d*|\d*x\d+|pico|icon|thumb|small|compact|medium|large|grande|master)(?=\.[a-z0-9]+$)/i,
+      ''
+    );
+    const key = `${url.hostname.toLowerCase()}${deduplicatedPath.toLowerCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(image);

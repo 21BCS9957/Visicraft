@@ -626,6 +626,21 @@ function removeUrlFromPrompt(value: string, url: string): string {
   return value.replace(url, '').replace(/\s+/g, ' ').trim();
 }
 
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 function buildProductCreativePrompt(product: ProductCapture, originalPrompt: string, productUrl: string): string {
   const userDirection = removeUrlFromPrompt(originalPrompt, productUrl);
   const productName = product.title ? `"${product.title}"` : 'this Shopify product';
@@ -794,6 +809,16 @@ export function HeroSection() {
   }, []);
 
   useEffect(() => {
+    if (!isGenerating || generationMode !== 'image') return;
+
+    const timer = window.setInterval(() => {
+      setProgress((current) => current >= 94 ? current : current + 1);
+    }, 2400);
+
+    return () => window.clearInterval(timer);
+  }, [generationMode, isGenerating]);
+
+  useEffect(() => {
     const currentTarget = typingTargets[typingIndex];
     const nextDelay = isDeleting ? 40 : 85;
     const pauseAtEdge = isDeleting ? 250 : 1000;
@@ -924,13 +949,13 @@ export function HeroSection() {
     setProgress(12);
 
     try {
-      const res = await fetch('/api/product-images', {
+      const res = await fetchWithTimeout('/api/product-images', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
-      });
+      }, 30000);
 
-      const result = await res.json() as {
+      const result = await res.json().catch(() => ({})) as {
         product?: ProductCapture;
         error?: string;
       };
@@ -973,7 +998,11 @@ export function HeroSection() {
         promptForGeneration = buildProductCreativePrompt(capture.product, promptValue, activeProductUrl);
         setPromptValue(promptForGeneration);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Could not capture product images';
+        const msg = err instanceof Error && err.name === 'AbortError'
+          ? 'That store took too long to respond. Please retry the product link once.'
+          : err instanceof Error
+            ? err.message
+            : 'Could not capture product images';
         setError(msg);
         toast.error(msg);
         return;
@@ -1043,9 +1072,9 @@ export function HeroSection() {
       if (generationMode === 'image') {
         const isProductCreativeSet = productReferenceUrls.length > 0;
         setStatusMessage(isProductCreativeSet ? 'Generating four tailored premium images for Instagram and Shopify...' : 'Generating tailored image...');
-        setProgress(68);
+        setProgress(78);
 
-        const res = await fetch('/api/generate', {
+        const res = await fetchWithTimeout('/api/generate', {
           method: 'POST',
           headers: await getAuthenticatedHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
@@ -1064,16 +1093,17 @@ export function HeroSection() {
                 }
               : undefined,
           }),
-        });
+        }, 210000);
 
         setProgress(86);
 
-        const result = await res.json();
+        const result = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(result.error || 'Generation failed');
 
         setProgress(100);
         setStatusMessage('Tailored images ready.');
         setGeneratedResults(result.images ?? []);
+        if (result.warning) toast.success(result.warning);
       } else {
         setStatusMessage('Starting tailored video generation...');
 
@@ -1150,7 +1180,11 @@ export function HeroSection() {
         resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }, 100);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Generation failed';
+      const msg = err instanceof Error && err.name === 'AbortError'
+        ? 'Generation is taking longer than expected. Check your creations before retrying so you do not start a duplicate job.'
+        : err instanceof Error
+          ? err.message
+          : 'Generation failed';
       setError(msg);
       toast.error(msg);
       await refreshCredits();
