@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
   let chargedUserId: string | null = null;
   let chargedCredits = 0;
   try {
-    const user = await requireAuthenticatedUser();
+    const user = await requireAuthenticatedUser(request);
     const body = await request.json();
     const { imageUrl, prompt, duration, aspectRatio, style, mood, model } = body;
 

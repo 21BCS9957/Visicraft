@@ -5,6 +5,7 @@ import {
   isVideoUrl,
   SEEDANCE_MAX_INPUT_VIDEO_SECONDS,
 } from './seedance';
+import { getAuthenticatedHeaders } from '@/lib/supabase/auth';
 
 const VIDEO_CREDIT_COST = 120;
 
@@ -95,7 +96,7 @@ export async function executeVideoGeneration(params: VideoGenerateNodeParams): P
   try {
     const response = await fetch(isSeedanceModel(model) ? '/api/seedance-video' : '/api/img2vid', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthenticatedHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(isSeedanceModel(model)
         ? {
           referenceUrls: referenceImageUrls,

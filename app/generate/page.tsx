@@ -16,6 +16,7 @@ import { ChevronDown } from 'lucide-react';
 import toast from '@/lib/toast';
 import { useRouter } from 'next/navigation';
 import { uploadFileWithSignedUrl } from '@/lib/supabase/storage';
+import { getAuthenticatedHeaders } from '@/lib/supabase/auth';
 import { getCreditCost } from '@/lib/credits/calculator';
 
 type FeatureMode = 'generate' | 'upscale' | 'unblur' | 'edit' | 'img2vid' | 'vid2vid';
@@ -207,7 +208,7 @@ export default function GeneratePage() {
 
         const generateResponse = await fetch('/api/generate', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: await getAuthenticatedHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
             mode: 'generate',
             referenceImages: referenceUrls,
@@ -250,7 +251,7 @@ export default function GeneratePage() {
 
         const apiResponse = await fetch(apiEndpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: await getAuthenticatedHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(payload),
         });
 
@@ -317,7 +318,7 @@ export default function GeneratePage() {
 
         const apiResponse = await fetch('/api/generate', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: await getAuthenticatedHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
             mode: selectedFeature.id,
             referenceImages: [imageUrl],

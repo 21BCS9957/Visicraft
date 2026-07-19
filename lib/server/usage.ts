@@ -1,5 +1,6 @@
 import 'server-only';
 
+import type { NextRequest } from 'next/server';
 import type { User } from '@supabase/supabase-js';
 import { getCreditCost } from '@/lib/credits/calculator';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
@@ -30,15 +31,20 @@ export interface UsageLogInput {
   metadata?: Record<string, unknown>;
 }
 
-export async function requireAuthenticatedUser(): Promise<User> {
+export async function requireAuthenticatedUser(request?: NextRequest): Promise<User> {
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.getUser();
+  const authorization = request?.headers.get('authorization');
+  const bearerMatch = authorization?.match(/^Bearer\s+(.+)$/i);
 
-  if (error || !data.user) {
-    throw new Error('Authentication required');
+  if (bearerMatch?.[1]) {
+    const { data: bearerData } = await supabase.auth.getUser(bearerMatch[1]);
+    if (bearerData.user) return bearerData.user;
   }
 
-  return data.user;
+  const { data } = await supabase.auth.getUser();
+  if (data.user) return data.user;
+
+  throw new Error('Authentication required');
 }
 
 export async function deductCreditsForUser(userId: string, amount: number): Promise<boolean> {

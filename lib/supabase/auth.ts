@@ -57,6 +57,19 @@ export async function getSession() {
     console.error('Error getting session:', error);
     return null;
   }
-  
+
   return session;
+}
+
+export async function getAuthenticatedHeaders(
+  headers: Record<string, string> = {}
+): Promise<Record<string, string>> {
+  const { data: { session } } = await supabase.auth.getSession();
+
+  if (!session?.access_token) return headers;
+
+  return {
+    ...headers,
+    Authorization: `Bearer ${session.access_token}`,
+  };
 }
