@@ -201,6 +201,19 @@ export function estimateGoogleImageCostUsd(options: {
   );
 }
 
+export function estimateGoogleProductAnalysisCostUsd(options: {
+  inputTokens?: number;
+  outputTokens?: number;
+}): number {
+  const inputPerMillion = readNumberEnv('GOOGLE_GEMINI_2_5_FLASH_INPUT_USD_PER_1M', 0.3);
+  const outputPerMillion = readNumberEnv('GOOGLE_GEMINI_2_5_FLASH_OUTPUT_USD_PER_1M', 2.5);
+
+  return roundCost(
+    ((options.inputTokens ?? 0) / 1_000_000) * inputPerMillion +
+    ((options.outputTokens ?? 0) / 1_000_000) * outputPerMillion
+  );
+}
+
 export function estimateGoogleVideoCostUsd(options: {
   model?: string;
   duration?: string | number;

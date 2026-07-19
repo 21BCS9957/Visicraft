@@ -16,6 +16,8 @@ interface GeminiRequest {
   }>;
   generationConfig?: {
     responseModalities?: string[];
+    responseMimeType?: string;
+    temperature?: number;
     imageConfig?: {
       aspectRatio?: string;
       imageSize?: string;
@@ -65,6 +67,204 @@ interface GeminiResponse {
 export interface GeneratedImageData {
   images: string[];
   usage: ProviderUsage;
+}
+
+export interface ProductIdentityAnalysis {
+  manifest: string;
+  usage: ProviderUsage;
+}
+
+export interface ProductIdentityValidation {
+  passed: boolean;
+  score: number;
+  reason: string;
+  usage: ProviderUsage;
+}
+
+async function loadPreparedReferences(referenceImages: string[]): Promise<{
+  images: DownloadedImage[];
+  totalBytes: number;
+}> {
+  const downloadResults = await Promise.allSettled(
+    referenceImages.map((url) => getPreparedReferenceImage(url))
+  );
+  const images: DownloadedImage[] = [];
+  let totalBytes = 0;
+
+  downloadResults.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      console.warn(`Skipping unusable reference image ${index + 1}:`, result.reason);
+      return;
+    }
+
+    if (totalBytes + result.value.byteLength > MAX_INLINE_REFERENCE_BYTES) {
+      console.warn(`Skipping reference image ${index + 1}: inline image budget reached`);
+      return;
+    }
+
+    totalBytes += result.value.byteLength;
+    images.push(result.value);
+  });
+
+  if (images.length === 0) {
+    throw new Error('None of the product images could be read. Please retry the link or upload a clear JPG, PNG, or WebP image.');
+  }
+
+  return { images, totalBytes };
+}
+
+export async function analyzeProductIdentity(referenceImages: string[]): Promise<ProductIdentityAnalysis> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
+
+  const { images } = await loadPreparedReferences(referenceImages.slice(0, 6));
+  const parts: GeminiPart[] = [{
+    text: `Act as a forensic packaging and product-identity analyst. Reference image 1 is canonical; later images may only clarify details. Analyze the actual pixels and return a concise PRODUCT IDENTITY MANIFEST for another image model.
+
+Include:
+1. Exact package/object silhouette, dimensions and front-facing orientation.
+2. Exact material, finish, seams, closures and color fields.
+3. Logo geometry and exact position.
+4. Every legible word, number and symbol transcribed exactly with capitalization and line order. Write [unreadable] instead of guessing.
+5. Label blocks, illustrations, certification marks and their relative positions.
+6. A short list of forbidden changes that would make it a different product.
+
+Do not propose a campaign scene. Do not improve or rewrite copy. Keep the response below 2,500 characters.`,
+  }];
+
+  images.forEach((image, index) => {
+    parts.push(
+      { text: index === 0 ? 'CANONICAL PRODUCT IMAGE:' : `SUPPORTING PRODUCT VIEW ${index + 1}:` },
+      { inlineData: { mimeType: image.mimeType, data: image.data } }
+    );
+  });
+
+  const response = await axios.post<GeminiResponse>(
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+    {
+      contents: [{ parts }],
+      generationConfig: {
+        responseModalities: ['TEXT'],
+        temperature: 0.1,
+      },
+    } satisfies GeminiRequest,
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
+      timeout: 60000,
+    }
+  );
+
+  const manifest = response.data.candidates?.[0]?.content?.parts
+    ?.map((part) => part.text)
+    .filter((text): text is string => typeof text === 'string' && text.trim().length > 0)
+    .join('\n')
+    .trim();
+
+  if (!manifest) throw new Error('Product identity analysis returned no usable result.');
+
+  const usageMetadata = response.data.usageMetadata;
+  const inputTokens = Number(usageMetadata?.promptTokenCount) || 0;
+  const outputTokens = Number(usageMetadata?.candidatesTokenCount) || 0;
+
+  return {
+    manifest: manifest.slice(0, 3200),
+    usage: {
+      inputTokens,
+      outputTokens,
+      totalTokens: Number(usageMetadata?.totalTokenCount) || inputTokens + outputTokens,
+      providerModel: 'gemini-2.5-flash',
+    },
+  };
+}
+
+export async function validateProductIdentity(
+  canonicalImageUrl: string,
+  generatedImageUrl: string,
+  identityManifest: string
+): Promise<ProductIdentityValidation> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
+
+  const { images } = await loadPreparedReferences([canonicalImageUrl, generatedImageUrl]);
+  if (images.length !== 2) {
+    throw new Error('Could not load both images for product identity verification.');
+  }
+
+  const parts: GeminiPart[] = [
+    {
+      text: `You are a strict visual quality-control inspector. Compare the generated campaign image against the canonical product image. Ignore the scene, person, props, scale, lighting, and background. Inspect only the physical product and its printed packaging.
+
+The generated product passes only when all of these remain faithful:
+- every visible brand word, product word, number, symbol, and capitalization;
+- logo geometry, label layout, illustration, certification marks, and color fields;
+- package silhouette, proportions, seams, closure, material, and product count.
+
+Reject invented wording, missing wording, approximate logos, redesigned labels, changed illustrations, changed package color, or a generic substitute. Slight perspective or lighting changes are acceptable only when identity remains unmistakably the same.
+
+Identity manifest:
+${identityManifest.slice(0, 3200)}
+
+Return JSON only with this exact shape:
+{"packagingTextExact":true,"logoExact":true,"artworkLayoutExact":true,"geometryExact":true,"score":0,"reason":"brief factual reason"}`,
+    },
+    { text: 'CANONICAL PRODUCT:' },
+    { inlineData: { mimeType: images[0].mimeType, data: images[0].data } },
+    { text: 'GENERATED CAMPAIGN IMAGE:' },
+    { inlineData: { mimeType: images[1].mimeType, data: images[1].data } },
+  ];
+
+  const response = await axios.post<GeminiResponse>(
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+    {
+      contents: [{ parts }],
+      generationConfig: {
+        responseModalities: ['TEXT'],
+        responseMimeType: 'application/json',
+        temperature: 0,
+      },
+    } satisfies GeminiRequest,
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
+      timeout: 60000,
+    }
+  );
+
+  const raw = response.data.candidates?.[0]?.content?.parts
+    ?.map((part) => part.text)
+    .filter((text): text is string => typeof text === 'string')
+    .join('')
+    .trim();
+  if (!raw) throw new Error('Product identity verification returned no result.');
+
+  const parsed = JSON.parse(raw.replace(/^```json\s*|\s*```$/g, '')) as Record<string, unknown>;
+  const score = Math.max(0, Math.min(100, Number(parsed.score) || 0));
+  const passed =
+    parsed.packagingTextExact === true &&
+    parsed.logoExact === true &&
+    parsed.artworkLayoutExact === true &&
+    parsed.geometryExact === true &&
+    score >= 85;
+  const usageMetadata = response.data.usageMetadata;
+  const inputTokens = Number(usageMetadata?.promptTokenCount) || 0;
+  const outputTokens = Number(usageMetadata?.candidatesTokenCount) || 0;
+
+  return {
+    passed,
+    score,
+    reason: typeof parsed.reason === 'string' ? parsed.reason.slice(0, 500) : 'Identity mismatch detected.',
+    usage: {
+      inputTokens,
+      outputTokens,
+      totalTokens: Number(usageMetadata?.totalTokenCount) || inputTokens + outputTokens,
+      providerModel: 'gemini-2.5-flash',
+    },
+  };
 }
 
 export async function generateThumbnail(
@@ -134,28 +334,8 @@ export async function generateThumbnail(
       throw new Error('At least one image URL is required');
     }
 
-    const downloadResults = await Promise.allSettled(referenceImages.map((url) => getPreparedReferenceImage(url)));
-    const downloadedImages: DownloadedImage[] = [];
-    let inlineReferenceBytes = 0;
-
-    downloadResults.forEach((result, index) => {
-      if (result.status === 'rejected') {
-        console.warn(`Skipping unusable reference image ${index + 1}:`, result.reason);
-        return;
-      }
-
-      if (inlineReferenceBytes + result.value.byteLength > MAX_INLINE_REFERENCE_BYTES) {
-        console.warn(`Skipping reference image ${index + 1}: inline image budget reached`);
-        return;
-      }
-
-      inlineReferenceBytes += result.value.byteLength;
-      downloadedImages.push(result.value);
-    });
-
-    if (downloadedImages.length === 0) {
-      throw new Error('None of the product images could be read. Please retry the link or upload a clear JPG, PNG, or WebP image.');
-    }
+    const { images: downloadedImages, totalBytes: inlineReferenceBytes } =
+      await loadPreparedReferences(referenceImages);
     const fullPrompt = prompt || '';
 
     const parts: GeminiPart[] = referencePolicy === 'product-lock'
@@ -418,14 +598,15 @@ async function urlToBase64(imageUrl: string): Promise<DownloadedImage> {
 
 async function prepareReferenceImage(source: Buffer): Promise<Buffer> {
   const attempts = [
+    { edge: 2560, quality: 93 },
+    { edge: 2304, quality: 90 },
     { edge: 2048, quality: 88 },
     { edge: 1792, quality: 84 },
-    { edge: 1536, quality: 80 },
   ];
 
   let prepared: Buffer | null = null;
   for (const attempt of attempts) {
-    prepared = await sharp(source, { failOn: 'warning' })
+    prepared = await sharp(source, { failOn: 'none' })
       .rotate()
       .resize({
         width: attempt.edge,

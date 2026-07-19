@@ -6,13 +6,13 @@ export interface ShopifyProductContext {
 
 const PRODUCT_LOCK = `
 PRODUCT IDENTITY LOCK - HIGHEST PRIORITY
-Reference image 1 is the canonical product and the single source of truth. References 2 onward are supporting views of that same product and may only clarify details hidden in reference 1. If references conflict, reference 1 wins.
+Reference image 1 is the canonical product and the single source of truth. It is an immutable product asset, not inspiration and not a design brief.
 
-Treat the product as an immutable photographed asset, not an object to redesign. Reproduce the same real product from the references. Preserve its exact category, silhouette, construction, dimensions, height-to-width ratio, volume, scale, color, material, finish, closures, cap or lid, seams, hardware, pattern, print, logo position, label shape, label proportions, artwork placement, and every distinctive feature. For apparel, preserve the exact cut, neckline, sleeve, hem, drape, fabric, stitching, print scale, and color blocking. For packaging, preserve the exact bottle, jar, tube, pouch, carton, cap, dispenser, label, and pack proportions. For jewelry or accessories, preserve the exact geometry, stone setting, links, hardware, and relative scale.
+Perform an IMAGE EDIT / OUTPAINT operation around the canonical product. Do not redraw, re-render, reinterpret, typeset, reconstruct, or regenerate the product or its front artwork. Treat every logo, letter, numeral, icon, illustration, certification mark, border, color field, and spacing relationship on the product as one frozen photographic texture copied from reference image 1. Existing package text must remain exactly as photographed, including spelling, capitalization, line breaks, type style, hierarchy, placement, and relative size.
 
-Do not reinterpret, improve, simplify, restyle, relabel, rebrand, recolor, resize, stretch, slim, widen, duplicate, stack, crop, hide, or invent any part of the product. Do not substitute a generic product from the same category. Do not invent label copy. Existing packaging artwork must remain visually faithful to the reference; add no new text anywhere in the scene.
+Keep the product in the same front-facing camera orientation and aspect proportions as reference image 1. You may scale and position the whole product uniformly, but may not perspective-warp, rotate, bend, crop, hide, relight destructively, or cover any identity-defining surface. Do not improve, simplify, restyle, relabel, rebrand, recolor, stretch, duplicate, stack, or substitute the product. Add no new text anywhere in the scene.
 
-The product must be fully visible, physically believable, correctly scaled, in sharp focus, and share the same perspective, light direction, contact shadows, reflections, and depth of field as the scene. Hands may support the product naturally but must not cover identity-defining details. The product is the hero; people and scenery are supporting elements.
+The complete product must be fully visible, tack-sharp, correctly scaled, and integrated using realistic contact shadows and environmental reflections around its perimeter. Never place fingers over the package or put the product into a pose that requires changing its perspective. The product is the hero; people and scenery are supporting elements.
 `.trim();
 
 const PHOTOGRAPHY_STANDARD = `
@@ -47,26 +47,29 @@ function normalizeDirection(direction?: string): string {
 
 export function buildShopifyCreativePrompts(
   context: ShopifyProductContext | undefined,
-  userDirection?: string
+  userDirection?: string,
+  identityManifest?: string
 ): string[] {
+  const forensicManifest = clean(identityManifest, 3200);
   const shared = `
-You are the creative director and senior product photographer for an international luxury campaign. First inspect every attached reference and form one consistent product identity. Then create exactly one finished standalone 9:16 photograph for this direction.
+You are the creative director and senior product photographer for an international luxury campaign. Create exactly one finished standalone 9:16 photograph by preserving the canonical product asset and building the campaign scene around it.
 
 ${productBrief(context)}
 User art direction: ${normalizeDirection(userDirection)}
+${forensicManifest ? `\nFORENSIC PRODUCT IDENTITY MANIFEST - use this only to verify the preserved pixels; never re-typeset from it:\n${forensicManifest}\n` : ''}
 
 ${PRODUCT_LOCK}
 
 ${PHOTOGRAPHY_STANDARD}
 
 FINAL PRE-FLIGHT CHECK - perform silently before rendering
-Compare the product in the proposed frame against reference image 1. Reject and correct the frame if the product category, shape, proportions, color, construction, artwork placement, label geometry, logo position, material, scale, or count differs. Reject any generic substitute or invented packaging. Output only the final photograph: one frame, one scene, no explanation.
+Compare the product in the proposed frame against reference image 1 at high magnification. Reject and correct the frame if any visible character, logo, icon, illustration, label geometry, artwork placement, package seam, silhouette, proportion, material, or color differs. If a creative composition would require redrawing the product, simplify the composition instead. Output only the final photograph: one frame, one scene, no explanation.
 `.trim();
 
   return [
-    `${shared}\n\nDIRECTION 1 - HIGH-VOGUE HUMAN EDITORIAL\nCreate a commanding magazine campaign frame with a young Indian model and the exact real product. Adapt the interaction to the product category: wear wearable products correctly, hold handheld products naturally, or stage larger products beside the model. Use sculptural wardrobe, poised body language, directional studio light, a restrained set, and rich tonal depth. Keep the entire product unobstructed and tack-sharp; the frame should feel like a global Vogue beauty or fashion commission, never influencer content.`,
+    `${shared}\n\nDIRECTION 1 - HIGH-VOGUE HUMAN EDITORIAL\nCreate a commanding magazine campaign frame with a young Indian model and the exact canonical product standing upright on a foreground plinth or table beside the model. The model must not hold or overlap packaged goods; preserving the front artwork matters more than interaction. For wearable products, keep the canonical logo and construction unchanged. Use sculptural wardrobe, poised body language, directional studio light, a restrained set, and rich tonal depth. The frame should feel like a global Vogue beauty or fashion commission, never influencer content.`,
     `${shared}\n\nDIRECTION 2 - LUXURY PRODUCT PORTRAIT\nCreate a model-free hero portrait of the exact real product. Build a museum-grade set from one or two category-relevant premium materials, with sculpted light, elegant reflections, precise contact shadow, generous negative space, and immaculate color fidelity. The result should feel like a luxury fragrance, beauty, fashion-accessory, or design campaign photographed in-camera, not a basic white-background listing and not a 3D render.`,
-    `${shared}\n\nDIRECTION 3 - CINEMATIC IN-USE MOMENT\nCreate a believable editorial moment showing the exact real product in use by a young Indian model only when appropriate for its category. Capture a candid micro-expression or purposeful gesture with cinematic environmental light and tactile detail. Preserve an unobstructed hero view of the product; the interaction, anatomy, scale, reflections, and shadows must be physically convincing. Make it emotionally magnetic, sophisticated, and premium rather than posed or commercial-looking.`,
+    `${shared}\n\nDIRECTION 3 - CINEMATIC RITUAL MOMENT\nCreate a believable editorial ritual with a young Indian model using the product category while the exact canonical packaged product remains upright, front-facing, unobstructed, and separate in the foreground. The person may interact with the product's outcome, such as a prepared drink or applied result, but must not grip, bend, rotate, or cover the package itself. Capture a candid micro-expression with cinematic environmental light and tactile detail. Make it emotionally magnetic, sophisticated, and premium rather than posed or commercial-looking.`,
     `${shared}\n\nDIRECTION 4 - AVANT-GARDE STILL LIFE\nCreate a bold high-fashion still life around the exact real product using disciplined composition, an unexpected but category-relevant material contrast, dramatic controlled light, and editorial negative space. The art direction may be surprising; the product may not change. Keep the canonical product singular, fully visible, perfectly scaled, photo-real, and sharply resolved. The result should feel suitable for a Vogue India inside cover or a global luxury launch campaign.`,
   ];
 }
