@@ -135,7 +135,7 @@ export async function generateThumbnail(
     }
 
     const downloadResults = await Promise.allSettled(referenceImages.map((url) => getPreparedReferenceImage(url)));
-    const downloadedImages: Array<DownloadedImage & { referenceIndex: number }> = [];
+    const downloadedImages: DownloadedImage[] = [];
     let inlineReferenceBytes = 0;
 
     downloadResults.forEach((result, index) => {
@@ -150,7 +150,7 @@ export async function generateThumbnail(
       }
 
       inlineReferenceBytes += result.value.byteLength;
-      downloadedImages.push({ ...result.value, referenceIndex: index });
+      downloadedImages.push(result.value);
     });
 
     if (downloadedImages.length === 0) {
@@ -171,7 +171,12 @@ export async function generateThumbnail(
         : `Reference image ${index + 1} of ${downloadedImages.length}:`;
       parts.push(
         { text: label },
-        { inlineData: image }
+        {
+          inlineData: {
+            mimeType: image.mimeType,
+            data: image.data,
+          },
+        }
       );
     });
     if (referencePolicy === 'product-lock') {
