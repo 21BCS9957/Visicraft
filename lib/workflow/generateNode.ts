@@ -1,4 +1,5 @@
 import { getCreditCost } from '@/lib/credits/calculator';
+import { getAuthenticatedHeaders } from '@/lib/supabase/auth';
 
 /** Shared validation - used by Create, Run This Node, and Run Selected */
 export function validateGenerateNode(
@@ -61,7 +62,7 @@ export async function executeGeneration(params: GenerateNodeParams): Promise<str
   try {
     const response = await fetch('/api/generate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthenticatedHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         mode: 'generate',
         referenceImages: referenceImageUrls,
