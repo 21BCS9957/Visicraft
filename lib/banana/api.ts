@@ -749,5 +749,10 @@ function assertDownloadableImageUrl(imageUrl: string): void {
 
 export async function imageToBase64(imageUrl: string): Promise<string> {
   const image = await urlToBase64(imageUrl);
-  return `data:${image.mimeType};base64,${image.data}`;
+  const jpegBytes = await sharp(Buffer.from(image.data, 'base64'), { failOn: 'none' })
+    .rotate()
+    .flatten({ background: '#ffffff' })
+    .jpeg({ quality: 95, chromaSubsampling: '4:4:4' })
+    .toBuffer();
+  return `data:image/jpeg;base64,${jpegBytes.toString('base64')}`;
 }
