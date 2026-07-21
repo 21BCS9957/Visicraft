@@ -49,23 +49,12 @@ const VIDEO_MODELS = [
     iconType: 'icon',
     color: '#4285F4',
   },
-  {
-    id: 'veo-1.0',
-    name: 'Google Veo 1.0',
-    provider: 'Google AI',
-    icon: 'simple-icons:google',
-    iconType: 'icon',
-    color: '#4285F4',
-  },
-  {
-    id: 'runway-gen3',
-    name: 'Runway Gen-3 Alpha',
-    provider: 'Runway AI',
-    icon: 'ph:video-camera-fill',
-    iconType: 'icon',
-    color: '#000000',
-  }
 ];
+
+const VEO3_DURATIONS = ['4s', '6s', '8s'];
+const VEO2_DURATIONS = ['5s', '6s', '7s', '8s'];
+const VEO3_RESOLUTIONS = ['720p', '1080p'];
+const VEO2_RESOLUTIONS = ['720p'];
 
 export function GenerationForm({ 
   onGenerate, 
@@ -97,6 +86,35 @@ export function GenerationForm({
     videoResolution, setVideoResolution,
     videoNegativePrompt, setVideoNegativePrompt
   } = useGenerateState();
+  const isVeo3 = selectedModel.id.startsWith('veo-3');
+  const supportedDurations = isVeo3 ? VEO3_DURATIONS : VEO2_DURATIONS;
+  const supportedResolutions = featureMode === 'img2vid' && isVeo3
+    ? VEO3_RESOLUTIONS
+    : VEO2_RESOLUTIONS;
+
+  useEffect(() => {
+    if (!isVideoMode) return;
+    if (!supportedDurations.includes(videoDuration)) {
+      setVideoDuration(isVeo3 ? '8s' : '5s');
+    }
+    if (!supportedResolutions.includes(videoResolution)) {
+      setVideoResolution('720p');
+    }
+    if (videoAspectRatio !== '16:9' && videoAspectRatio !== '9:16') {
+      setVideoAspectRatio('16:9');
+    }
+  }, [
+    isVideoMode,
+    isVeo3,
+    setVideoAspectRatio,
+    setVideoDuration,
+    setVideoResolution,
+    supportedDurations,
+    supportedResolutions,
+    videoAspectRatio,
+    videoDuration,
+    videoResolution,
+  ]);
   
   const { register, handleSubmit, formState: { errors }, watch } = useForm<GenerationFormData>({
     resolver: zodResolver(generationFormSchema),
@@ -258,7 +276,6 @@ export function GenerationForm({
               >
                 <option value="16:9">16:9 (Landscape)</option>
                 <option value="9:16">9:16 (Portrait)</option>
-                <option value="1:1">1:1 (Square)</option>
               </select>
             </div>
             
@@ -269,9 +286,11 @@ export function GenerationForm({
                 onChange={(e) => setVideoDuration(e.target.value)}
                 className="w-full bg-[#1a1d18] border border-[#c8b4a0]/20 rounded-lg p-2.5 text-sm text-[#f8f7f5] focus:outline-none focus:border-[#c8b4a0]/40"
               >
-                <option value="4s">4 Seconds</option>
-                <option value="6s">6 Seconds</option>
-                <option value="8s">8 Seconds</option>
+                {supportedDurations.map((duration) => (
+                  <option key={duration} value={duration}>
+                    {duration.replace('s', '')} Seconds
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -282,9 +301,11 @@ export function GenerationForm({
                 onChange={(e) => setVideoResolution(e.target.value)}
                 className="w-full bg-[#1a1d18] border border-[#c8b4a0]/20 rounded-lg p-2.5 text-sm text-[#f8f7f5] focus:outline-none focus:border-[#c8b4a0]/40"
               >
-                <option value="720p">720p HD</option>
-                <option value="1080p">1080p Full HD</option>
-                <option value="4K">4K Ultra HD</option>
+                {supportedResolutions.map((resolution) => (
+                  <option key={resolution} value={resolution}>
+                    {resolution === '1080p' ? '1080p Full HD' : '720p HD'}
+                  </option>
+                ))}
               </select>
             </div>
 

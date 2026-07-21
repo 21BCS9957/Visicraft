@@ -73,3 +73,15 @@ Compare the product in the proposed frame against reference image 1 at high magn
     `${shared}\n\nDIRECTION 4 - AVANT-GARDE STILL LIFE\nCreate a bold high-fashion still life around the exact real product using disciplined composition, an unexpected but category-relevant material contrast, dramatic controlled light, and editorial negative space. The art direction may be surprising; the product may not change. Keep the canonical product singular, fully visible, perfectly scaled, photo-real, and sharply resolved. The result should feel suitable for a Vogue India inside cover or a global luxury launch campaign.`,
   ];
 }
+
+export function buildShopifyPackagingRepairPrompt(identityManifest: string): string {
+  const forensicManifest = clean(identityManifest, 2400);
+  return `You are performing a surgical product-identity repair on a finished luxury campaign photograph.
+
+Image 1 is the canonical real product. Image 2 is the rejected campaign composition. Preserve the environment, model, lighting language, framing, and overall art direction from image 2, but remove its incorrect product rendering and replace it with the exact product from image 1.
+
+Treat the complete product surface from image 1 as one immutable photographic asset. Preserve its silhouette, proportions, material, closure, seams, logo, every prominent word and number, illustration, label layout, colors, and spacing. Do not redraw, re-typeset, improve, reinterpret, or invent packaging. Keep the canonical product front-facing, fully visible, unobstructed, and large enough for its identity to remain readable. Integrate it only with physically plausible scale, contact shadow, reflections, and scene lighting around its perimeter.
+
+${forensicManifest ? `Identity evidence:\n${forensicManifest}\n` : ''}
+Do not add promotional text, badges, borders, watermarks, duplicate products, or a new composition. Output only the repaired 9:16 campaign photograph.`;
+}

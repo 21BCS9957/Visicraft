@@ -117,7 +117,7 @@ export async function executeVideoGeneration(params: VideoGenerateNodeParams): P
         }),
     });
 
-    let result: { error?: string; operationId?: string; taskId?: string; images?: string[]; videoUrl?: string };
+    let result: { error?: string; operationId?: string; taskId?: string; videoUrl?: string };
     try {
       result = await response.json();
     } catch {
@@ -194,13 +194,12 @@ export async function executeVideoGeneration(params: VideoGenerateNodeParams): P
           updateNodeData(nodeId, { videoProgress: p });
         }
       }
-    } else if (result.images?.[0]) {
-      videoUrl = result.images[0];
     }
 
     if (!videoUrl) {
       throw new Error('No video returned from API');
     }
+    assertVideoOutput(videoUrl);
 
     updateNodeData(nodeId, { generatedVideo: videoUrl, status: 'complete', videoProgress: 100 });
 
@@ -212,6 +211,21 @@ export async function executeVideoGeneration(params: VideoGenerateNodeParams): P
 
     updateNodeData(nodeId, { status: 'error', videoProgress: 0 });
     throw error;
+  }
+}
+
+function assertVideoOutput(url: string): void {
+  const normalized = url.trim().toLowerCase();
+  const isImage = normalized.startsWith('data:image/')
+    || /\.(avif|gif|jpe?g|png|webp)(?:[?#]|$)/i.test(normalized);
+  const isSupportedLocation = normalized.startsWith('data:video/')
+    || normalized.startsWith('blob:')
+    || normalized.startsWith('https://')
+    || normalized.startsWith('http://')
+    || /\.(m4v|mov|mp4|webm)(?:[?#]|$)/i.test(normalized);
+
+  if (isImage || !isSupportedLocation) {
+    throw new Error('The video provider returned an invalid media result instead of a video. No image was saved.');
   }
 }
 

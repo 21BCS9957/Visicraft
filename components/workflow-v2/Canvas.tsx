@@ -277,12 +277,14 @@ function FlowCanvas() {
           if (sourceNode.type === 'generate' && updatedNode.type === 'output') {
             if (sourceNode.data.generatedImage) {
               updatedNode.data.images = [sourceNode.data.generatedImage];
+              updatedNode.data.mediaType = 'image';
             }
           }
 
           if (sourceNode.type === 'videoGenerate' && updatedNode.type === 'output') {
             if (sourceNode.data.generatedVideo) {
               updatedNode.data.images = [sourceNode.data.generatedVideo];
+              updatedNode.data.mediaType = 'video';
             }
           }
 

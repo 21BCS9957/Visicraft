@@ -6,7 +6,6 @@ import { ReferenceUpload } from '@/components/thumbnail-generator/reference-uplo
 import { VideoUpload } from '@/components/thumbnail-generator/video-upload';
 import { GenerationForm } from '@/components/thumbnail-generator/generation-form';
 import { ThumbnailGallery } from '@/components/thumbnail-generator/thumbnail-gallery';
-import { UploadedImage } from '@/types';
 import { Card } from '@/components/ui/card';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { useAuth } from '@/lib/contexts/AuthContext';
@@ -89,10 +88,8 @@ const CREDIT_COSTS: Record<FeatureMode, number> = {
 export default function GeneratePage() {
   const {
     selectedFeatureId,
-    referenceImage,
     sourceImages,
     singleImage,
-    referenceVideo,
     sourceVideo,
     prompt,
     setSelectedFeatureId,
@@ -126,7 +123,7 @@ export default function GeneratePage() {
       return getCreditCost('nano-banana-pro', '2K');
     }
 
-    let base = CREDIT_COSTS[selectedFeature.id] || 50;
+    const base = CREDIT_COSTS[selectedFeature.id] || 50;
     
     if (selectedFeature.id === 'img2vid' || selectedFeature.id === 'vid2vid') {
       let multiplier = videoNumResults;
@@ -233,9 +230,9 @@ export default function GeneratePage() {
 
         const apiEndpoint = `/api/${selectedFeature.id}`;
         
-        const payload: Record<string, any> = {
+        const payload: Record<string, unknown> = {
           prompt,
-          model: selectedModel || 'nano-banana-pro',
+          model: selectedModel || 'veo-3.1-generate-001',
           numResults: videoNumResults,
           aspectRatio: videoAspectRatio,
           duration: videoDuration,
@@ -268,49 +265,55 @@ export default function GeneratePage() {
           setGenerationProgress(5);
           
           let isDone = false;
-          let failed = false;
-          let finalImages: string[] = [];
+          let finalVideos: string[] = [];
+          let pollAttempts = 0;
+          let consecutiveFailures = 0;
 
-          while (!isDone) {
+          while (!isDone && pollAttempts < 120) {
             await new Promise((res) => setTimeout(res, 10000)); // Poll every 10 seconds
-            
-            try {
-              const statusRes = await fetch('/api/video-status', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ operationId: result.operationId })
-              });
-              
-              if (statusRes.ok) {
-                const statusData = await statusRes.json();
-                
-                if (statusData.error) {
-                  failed = true;
-                  isDone = true;
-                  throw new Error(statusData.error);
-                }
-                
-                if (statusData.done) {
-                  isDone = true;
-                  // If we get a valid URI back
-                  finalImages = statusData.url ? [statusData.url] : [];
-                  setGenerationProgress(100);
-                  setStatusMessage('Finalizing...');
-                } else {
-                  // Some models don't return accurate progress percentages, so we safeguard with 10%
-                  const currentProgress = typeof statusData.progress === 'number' && statusData.progress > 0 ? statusData.progress : 15;
-                  setGenerationProgress(currentProgress);
-                  setStatusMessage(`Rendering video... ${currentProgress}%`);
-                }
+            pollAttempts += 1;
+
+            const statusRes = await fetch('/api/video-status', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ operationId: result.operationId })
+            });
+            const statusData = await statusRes.json().catch(() => ({}));
+
+            if (!statusRes.ok) {
+              consecutiveFailures += 1;
+              if (statusRes.status < 500 || consecutiveFailures >= 3) {
+                throw new Error(statusData.error || `Video status check failed (${statusRes.status})`);
               }
-            } catch (e) {
-               console.error("Polling error:", e);
-               // We don't break the loop on transient network errors, just keep waiting.
+              continue;
+            }
+
+            consecutiveFailures = 0;
+            if (statusData.error) {
+              throw new Error(statusData.error);
+            }
+
+            if (statusData.done) {
+              if (!statusData.url || String(statusData.url).startsWith('data:image/')) {
+                throw new Error('The video provider completed without returning a playable video.');
+              }
+              isDone = true;
+              finalVideos = [statusData.url];
+              setGenerationProgress(100);
+              setStatusMessage('Finalizing video...');
+            } else {
+              const currentProgress = typeof statusData.progress === 'number' && statusData.progress > 0
+                ? statusData.progress
+                : 15;
+              setGenerationProgress(currentProgress);
+              setStatusMessage(`Rendering video... ${currentProgress}%`);
             }
           }
-          
-          if (failed) throw new Error('Generation failed during Google Vertex polling.');
-          result.images = finalImages;
+
+          if (!isDone) {
+            throw new Error('Video generation timed out after 20 minutes. Please retry.');
+          }
+          result.images = finalVideos;
         }
       } else {
         // Upload single image for other operations

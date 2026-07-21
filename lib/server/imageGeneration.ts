@@ -38,7 +38,7 @@ function resolveEffectivePrompt(
   mode: ImageGenMode,
   prompt: string | undefined,
   referenceCount: number,
-  referencePolicy: 'balanced' | 'product-lock'
+  referencePolicy: 'balanced' | 'product-lock' | 'product-repair'
 ): string {
   const p = (prompt ?? '').trim();
   switch (mode) {
@@ -55,7 +55,7 @@ function resolveEffectivePrompt(
         ? `Sharpen and deblur this image. ${p}`
         : 'Sharpen and deblur this image. Remove blur, enhance details, improve clarity and focus. Make the image crystal clear.';
     default:
-      if (referencePolicy === 'product-lock') return p;
+      if (referencePolicy === 'product-lock' || referencePolicy === 'product-repair') return p;
       if (referenceCount > 1) {
         const instruction = `Use all ${referenceCount} attached reference images. Treat each reference as important input, preserve the key subject/style/details from every reference where possible, and do not ignore any attached reference image.`;
         return p ? `${instruction}\n\nUser request: ${p}` : instruction;
@@ -72,7 +72,7 @@ export interface RunImageGenerationOptions {
   aspectRatio?: string;
   resolution?: string;
   persistToGenerationsTable?: boolean;
-  referencePolicy?: 'balanced' | 'product-lock';
+  referencePolicy?: 'balanced' | 'product-lock' | 'product-repair';
   userId?: string;
 }
 

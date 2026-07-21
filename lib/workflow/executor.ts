@@ -262,17 +262,20 @@ function executeOutputNode(
   if (!sourceNodeId) {
     throw new Error('Output node has no input connected');
   }
-  const imageUrl = getFirstString([
-    graph[sourceNodeId].outputs['generatedImage'],
+  const generatedVideo = getFirstString([
     graph[sourceNodeId].outputs['generatedVideo'],
-    graph[sourceNodeId].outputs['image'],
     graph[sourceNodeId].outputs['video'],
   ]);
-  if (!imageUrl) {
+  const mediaUrl = generatedVideo || getFirstString([
+    graph[sourceNodeId].outputs['generatedImage'],
+    graph[sourceNodeId].outputs['image'],
+  ]);
+  if (!mediaUrl) {
     throw new Error('No generated image or video available');
   }
   updateNodeData(node.id, {
-    images: [imageUrl],
+    images: [mediaUrl],
+    mediaType: generatedVideo ? 'video' : 'image',
     metadata: graph[sourceNodeId].outputs['metadata'] || {},
     status: 'complete',
   });

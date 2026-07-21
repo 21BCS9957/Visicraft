@@ -74,28 +74,11 @@ const VIDEO_MODELS = [
     iconType: 'icon' as const,
     color: '#4285F4',
   },
-  {
-    id: 'veo-1.0',
-    name: 'Google Veo 1.0',
-    provider: 'Google AI',
-    icon: 'simple-icons:google',
-    iconType: 'icon' as const,
-    color: '#4285F4',
-  },
-  {
-    id: 'runway-gen3',
-    name: 'Runway Gen-3 Alpha',
-    provider: 'Runway AI',
-    icon: 'ph:video-camera-fill',
-    iconType: 'icon' as const,
-    color: '#000000',
-  },
 ];
 
 const VIDEO_ASPECT_RATIOS = [
   { id: '16:9', name: '16:9 (Landscape)', emoji: '⬜' },
   { id: '9:16', name: '9:16 (Portrait)', emoji: '📱' },
-  { id: '1:1', name: '1:1 (Square)', emoji: '🟦' },
 ];
 
 const VIDEO_SEEDANCE_ASPECT_RATIOS = SEEDANCE_ASPECT_RATIOS.map((aspect) => ({
@@ -110,9 +93,16 @@ const VIDEO_SEEDANCE_FIRST_LAST_ASPECT_RATIOS = SEEDANCE_FIRST_LAST_ASPECT_RATIO
   emoji: aspect.emoji,
 }));
 
-const VIDEO_DURATIONS = [
+const VIDEO_VEO3_DURATIONS = [
   { id: '4s', name: '4 Seconds' },
   { id: '6s', name: '6 Seconds' },
+  { id: '8s', name: '8 Seconds' },
+];
+
+const VIDEO_VEO2_DURATIONS = [
+  { id: '5s', name: '5 Seconds' },
+  { id: '6s', name: '6 Seconds' },
+  { id: '7s', name: '7 Seconds' },
   { id: '8s', name: '8 Seconds' },
 ];
 
@@ -121,10 +111,13 @@ const VIDEO_SEEDANCE_DURATIONS = SEEDANCE_DURATIONS.map((duration) => ({
   name: duration.name,
 }));
 
-const VIDEO_RESOLUTIONS = [
+const VIDEO_VEO3_RESOLUTIONS = [
   { id: '720p', name: '720p HD', emoji: '📷' },
   { id: '1080p', name: '1080p Full HD', emoji: '🎥' },
-  { id: '4K', name: '4K Ultra HD', emoji: '🎬' },
+];
+
+const VIDEO_VEO2_RESOLUTIONS = [
+  { id: '720p', name: '720p HD', emoji: '📷' },
 ];
 
 const VIDEO_SEEDANCE_RESOLUTIONS = SEEDANCE_RESOLUTIONS.map((resolution) => ({
@@ -181,13 +174,42 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
       const nextModel = models.some((model) => model.id === selectedNode.data.model)
         ? selectedNode.data.model
         : fallbackModel;
+      const requestedResolution = selectedNode.data.resolution || (isVideo ? '720p' : '1080p');
+      const allowedResolutionIds = !isVideo
+        ? RESOLUTIONS.map((item) => item.id)
+        : isSeedanceModel(nextModel)
+          ? (nextModel === 'seedance-2-fast' ? VIDEO_SEEDANCE_FAST_RESOLUTIONS : VIDEO_SEEDANCE_RESOLUTIONS)
+            .map((item) => item.id)
+          : (String(nextModel).startsWith('veo-3') ? VIDEO_VEO3_RESOLUTIONS : VIDEO_VEO2_RESOLUTIONS)
+            .map((item) => item.id);
+      const nextResolution = allowedResolutionIds.includes(requestedResolution)
+        ? requestedResolution
+        : '720p';
+      const requestedDuration = selectedNode.data.duration || '5s';
+      const allowedDurationIds = isSeedanceModel(nextModel)
+        ? VIDEO_SEEDANCE_DURATIONS.map((item) => item.id)
+        : (String(nextModel).startsWith('veo-3') ? VIDEO_VEO3_DURATIONS : VIDEO_VEO2_DURATIONS)
+          .map((item) => item.id);
+      const nextDuration = !isVideo || allowedDurationIds.includes(requestedDuration)
+        ? requestedDuration
+        : String(nextModel).startsWith('veo-3') ? '8s' : '5s';
       setSelectedModel(nextModel);
+      const normalizedData: Record<string, unknown> = {};
       if (selectedNode.data.model && selectedNode.data.model !== nextModel) {
-        contextUpdateNodeData(selectedNode.id, { model: nextModel });
+        normalizedData.model = nextModel;
+      }
+      if (selectedNode.data.resolution !== nextResolution) {
+        normalizedData.resolution = nextResolution;
+      }
+      if (isVideo && selectedNode.data.duration !== nextDuration) {
+        normalizedData.duration = nextDuration;
+      }
+      if (Object.keys(normalizedData).length > 0) {
+        contextUpdateNodeData(selectedNode.id, normalizedData);
       }
       setSelectedAspect(selectedNode.data.aspectRatio || '16:9');
-      setSelectedResolution(selectedNode.data.resolution || (isVideo ? '720p' : '1080p'));
-      setSelectedDuration(selectedNode.data.duration || '5s');
+      setSelectedResolution(nextResolution);
+      setSelectedDuration(nextDuration);
       setSelectedVideoMode(selectedNode.data.mode || 'omni_reference');
     }
   }, [selectedNode?.id, selectedNode?.type, selectedNode?.data?.model, selectedNode?.data?.aspectRatio, selectedNode?.data?.resolution, selectedNode?.data?.duration, selectedNode?.data?.mode, contextUpdateNodeData]);
@@ -378,9 +400,15 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
       ? selectedModel === 'seedance-2-fast'
         ? VIDEO_SEEDANCE_FAST_RESOLUTIONS
         : VIDEO_SEEDANCE_RESOLUTIONS
-      : VIDEO_RESOLUTIONS
+      : selectedModel.startsWith('veo-3')
+        ? VIDEO_VEO3_RESOLUTIONS
+        : VIDEO_VEO2_RESOLUTIONS
     : RESOLUTIONS;
-  const activeDurations = seedanceSelected ? VIDEO_SEEDANCE_DURATIONS : VIDEO_DURATIONS;
+  const activeDurations = seedanceSelected
+    ? VIDEO_SEEDANCE_DURATIONS
+    : selectedModel.startsWith('veo-3')
+      ? VIDEO_VEO3_DURATIONS
+      : VIDEO_VEO2_DURATIONS;
   const currentAspectData = activeAspectRatios.find(a => a.id === selectedAspect);
   const currentResolutionData = activeResolutions.find(r => r.id === selectedResolution);
   const currentDurationData = activeDurations.find(d => d.id === selectedDuration);

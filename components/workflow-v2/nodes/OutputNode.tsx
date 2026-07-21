@@ -8,9 +8,32 @@ import toast from '@/lib/toast';
 import { SmartHandle } from '../SmartHandle';
 import { ImageActionToolbar } from '../ImageActionToolbar';
 
+function isVideoMedia(url: string): boolean {
+  const normalized = url.toLowerCase();
+  return normalized.startsWith('data:video/')
+    || /\.(m4v|mov|mp4|webm)(?:[?#]|$)/i.test(normalized);
+}
+
+function getDownloadExtension(url: string, mimeType: string): string {
+  const mimeExtensions: Record<string, string> = {
+    'video/mp4': 'mp4',
+    'video/quicktime': 'mov',
+    'video/webm': 'webm',
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+  };
+  if (mimeExtensions[mimeType]) return mimeExtensions[mimeType];
+
+  const pathExtension = url.match(/\.(m4v|mov|mp4|webm|avif|gif|jpe?g|png|webp)(?:[?#]|$)/i)?.[1];
+  if (pathExtension) return pathExtension.toLowerCase() === 'jpeg' ? 'jpg' : pathExtension.toLowerCase();
+  return isVideoMedia(url) ? 'mp4' : 'png';
+}
+
 export function OutputNode({ data, selected, id }: NodeProps) {
   const { setNodes, getNodes, setEdges, getEdges } = useReactFlow();
-  const images = data.images || [];
+  const media: string[] = Array.isArray(data.images) ? data.images : [];
+  const isVideoOutput = data.mediaType === 'video' || (media[0] ? isVideoMedia(media[0]) : false);
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -35,7 +58,7 @@ export function OutputNode({ data, selected, id }: NodeProps) {
       const downloadUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = downloadUrl;
-      a.download = `thumbnail-${index + 1}.png`;
+      a.download = `visicraft-output-${index + 1}.${getDownloadExtension(url, blob.type)}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -46,15 +69,15 @@ export function OutputNode({ data, selected, id }: NodeProps) {
   };
 
   const handleDownloadAll = async () => {
-    if (images.length === 0) {
-      toast.error('No images to download');
+    if (media.length === 0) {
+      toast.error('No results to download');
       return;
     }
 
-    for (let i = 0; i < images.length; i++) {
-      await handleDownload(images[i], i);
+    for (let i = 0; i < media.length; i++) {
+      await handleDownload(media[i], i);
     }
-    toast.success(`Downloaded ${images.length} image(s)!`);
+    toast.success(`Downloaded ${media.length} result(s)!`);
     setShowMenu(false);
   };
 
@@ -181,7 +204,7 @@ export function OutputNode({ data, selected, id }: NodeProps) {
                 >
                   <button
                     onClick={handleDownloadAll}
-                    disabled={images.length === 0}
+                    disabled={media.length === 0}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Download className="w-4 h-4" />
@@ -198,7 +221,7 @@ export function OutputNode({ data, selected, id }: NodeProps) {
 
                   <button
                     onClick={handleReset}
-                    disabled={images.length === 0}
+                    disabled={media.length === 0}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm text-white hover:bg-[#2a2a2a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <RefreshCw className="w-4 h-4" />
@@ -221,31 +244,41 @@ export function OutputNode({ data, selected, id }: NodeProps) {
         </div>
       </div>
 
-      {images[0] && (
+      {media[0] && !isVideoOutput && (
         <ImageActionToolbar
           nodeId={id}
           sourceHandle="image"
-          imageUrl={images[0]}
+          imageUrl={media[0]}
           onDownload={handleDownloadAll}
         />
       )}
 
       {/* Output Display */}
       <div className="p-4 flex-1 min-h-0 flex flex-col">
-        {images.length === 0 ? (
+        {media.length === 0 ? (
           <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg h-full flex-1 flex flex-col items-center justify-center min-h-[160px]">
             <MonitorPlay className="w-8 h-8 text-gray-600 mb-2" />
             <span className="text-xs text-gray-600">Waiting for results...</span>
           </div>
         ) : (
           <div className="space-y-3 flex-1 overflow-y-auto min-h-0 pr-1">
-            {images.map((url: string, index: number) => (
+            {media.map((url: string, index: number) => (
               <div key={index} className="relative group flex-shrink-0">
-                <img
-                  src={url}
-                  alt={`Output ${index + 1}`}
-                  className="w-full h-auto object-cover rounded-lg"
-                />
+                {(data.mediaType === 'video' || isVideoMedia(url)) ? (
+                  <video
+                    src={url}
+                    controls
+                    playsInline
+                    preload="metadata"
+                    className="w-full h-auto bg-black object-contain rounded-lg"
+                  />
+                ) : (
+                  <img
+                    src={url}
+                    alt={`Output ${index + 1}`}
+                    className="w-full h-auto object-cover rounded-lg"
+                  />
+                )}
                 <button
                   onClick={() => handleDownload(url, index)}
                   className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"

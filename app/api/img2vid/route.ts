@@ -23,6 +23,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Image URL is required' }, { status: 400 });
     }
 
+    const supportedModels = new Set(['veo-2.0-generate-001', 'veo-3.1-generate-001']);
+    if (typeof model === 'string' && !supportedModels.has(model)) {
+      return NextResponse.json(
+        { error: `Unsupported video model: ${model}. Choose Veo 3.1 or Veo 2.` },
+        { status: 400 }
+      );
+    }
+    const targetModel = typeof model === 'string' ? model : 'veo-3.1-generate-001';
+    const isVeo3 = targetModel.startsWith('veo-3');
+    const requestedResolution = typeof resolution === 'string' ? resolution : '720p';
+    if (requestedResolution === '4K') {
+      return NextResponse.json(
+        { error: 'Direct 4K generation is not supported by the Vertex Veo API. Choose 1080p with Veo 3.1.' },
+        { status: 400 }
+      );
+    }
+    if (!isVeo3 && requestedResolution !== '720p') {
+      return NextResponse.json(
+        { error: 'Veo 2 supports 720p output only. Choose Veo 3.1 for 1080p.' },
+        { status: 400 }
+      );
+    }
+
+    const selectedResolution = isVeo3 && requestedResolution === '1080p' ? '1080p' : '720p';
+    const selectedAspectRatio = aspectRatio === '9:16' ? '9:16' : '16:9';
+    const requestedDuration = Math.round(parseDurationSeconds(duration, isVeo3 ? 8 : 5));
+    const selectedDuration = isVeo3
+      ? ([4, 6, 8].includes(requestedDuration) ? requestedDuration : 8)
+      : Math.min(8, Math.max(5, requestedDuration));
+    const sampleCount = Math.min(4, Math.max(1, Math.round(Number(numResults) || 1)));
+
     const serviceAccountJsonStr = process.env.GOOGLE_VIDEO_SERVICE_ACCOUNT_JSON;
     if (!serviceAccountJsonStr) {
       return NextResponse.json({ error: 'Video generation is not configured yet (missing GOOGLE_VIDEO_SERVICE_ACCOUNT_JSON).' }, { status: 500 });
@@ -44,7 +75,12 @@ export async function POST(request: NextRequest) {
       throw new Error('Failed to obtain access token from Google Auth.');
     }
 
-    const creditCost = getServerVideoCreditCost({ model, duration, resolution, numResults });
+    const creditCost = getServerVideoCreditCost({
+      model: targetModel,
+      duration: selectedDuration,
+      resolution: selectedResolution,
+      numResults: sampleCount,
+    });
     const deducted = await deductCreditsForUser(user.id, creditCost);
     if (!deducted) {
       return NextResponse.json(
@@ -56,30 +92,33 @@ export async function POST(request: NextRequest) {
     chargedCredits = creditCost;
 
     const dataUrl = await imageToBase64(imageUrl);
-    const base64Data = dataUrl.split(',')[1];
+    const imageMatch = dataUrl.match(/^data:(image\/(?:jpeg|png));base64,([\s\S]+)$/);
+    if (!imageMatch) {
+      throw new Error('Could not prepare the source image as JPEG or PNG for Veo.');
+    }
+    const [, imageMimeType, base64Data] = imageMatch;
 
     const location = 'us-central1';
-    
-    // Check if the requested model is a Veo engine variant, fallback to Veo 2.0
-    const targetModel = model && model.includes('veo') ? model : 'veo-2.0-generate-001';
-    const endpoint = `https://${location}-aiplatform.googleapis.com/v1beta1/projects/${projectId}/locations/${location}/publishers/google/models/${targetModel}:predictLongRunning`;
+    const endpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${targetModel}:predictLongRunning`;
 
     const payload = {
       instances: [
         {
           prompt: prompt || "A smooth cinematic tracking shot",
-          negativePrompt: negativePrompt || undefined,
           image: {
              bytesBase64Encoded: base64Data,
-             mimeType: 'image/jpeg'
+             mimeType: imageMimeType
           }
         }
       ],
       parameters: {
-        sampleCount: numResults || 1,
-        duration: duration || '5s',
-        resolution: '720p', // Locked to 720p as per standard Veo preview limitations
-        aspectRatio: aspectRatio || '16:9'
+        sampleCount,
+        durationSeconds: selectedDuration,
+        aspectRatio: selectedAspectRatio,
+        negativePrompt: typeof negativePrompt === 'string' && negativePrompt.trim()
+          ? negativePrompt.trim()
+          : undefined,
+        ...(isVeo3 ? { resolution: selectedResolution, resizeMode: 'crop' } : {}),
       }
     };
 
@@ -102,8 +141,12 @@ export async function POST(request: NextRequest) {
     const data = await response.json();
     const operationName = data.name; // e.g. "projects/.../locations/.../operations/..."
     console.log(`✅ LRO Job created successfully! Operation ID: ${operationName}`);
-    const videoSeconds = parseDurationSeconds(duration, 5) * Math.max(1, Number(numResults) || 1);
-    const estimatedCostUsd = estimateGoogleVideoCostUsd({ model: targetModel, duration, numResults });
+    const videoSeconds = selectedDuration * sampleCount;
+    const estimatedCostUsd = estimateGoogleVideoCostUsd({
+      model: targetModel,
+      duration: selectedDuration,
+      numResults: sampleCount,
+    });
 
     await logUsage({
       user,
@@ -115,8 +158,9 @@ export async function POST(request: NextRequest) {
       metadata: {
         mode: 'img2vid',
         operationId: operationName,
-        aspectRatio: aspectRatio || '16:9',
-        resolution: resolution || '720p',
+        aspectRatio: selectedAspectRatio,
+        resolution: selectedResolution,
+        sourceImageMimeType: imageMimeType,
         chargedServerSide: true,
       },
     });
@@ -127,6 +171,7 @@ export async function POST(request: NextRequest) {
       operationId: operationName,
       usage: {
         videoSeconds,
+        resolution: selectedResolution,
         estimatedCostUsd,
         creditsDeducted: creditCost,
       },

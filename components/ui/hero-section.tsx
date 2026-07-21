@@ -1093,7 +1093,7 @@ export function HeroSection() {
                 }
               : undefined,
           }),
-        }, 210000);
+        }, 285000);
 
         setProgress(86);
 

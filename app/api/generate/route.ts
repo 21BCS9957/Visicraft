@@ -6,6 +6,7 @@ import {
 } from '@/lib/server/imageGeneration';
 import { analyzeProductIdentity, validateProductIdentity } from '@/lib/banana/api';
 import {
+  buildShopifyPackagingRepairPrompt,
   buildShopifyCreativePrompts,
   type ShopifyProductContext,
 } from '@/lib/prompts/shopifyCreative';
@@ -91,6 +92,7 @@ export async function POST(request: NextRequest) {
         metadata: {
           operation: 'product_identity_analysis',
           referenceCount: referenceImages.length,
+          canonicalReferenceIndex: identityAnalysis.canonicalReferenceIndex,
           chargedServerSide: true,
         },
       });
@@ -100,7 +102,11 @@ export async function POST(request: NextRequest) {
         prompt,
         identityAnalysis.manifest
       );
-      const fidelityReferences = referenceImages.slice(0, 1);
+      const canonicalReference = referenceImages[identityAnalysis.canonicalReferenceIndex] || referenceImages[0];
+      const fidelityReferences = [
+        canonicalReference,
+        ...referenceImages.filter((_, index) => index !== identityAnalysis.canonicalReferenceIndex).slice(0, 2),
+      ];
       const generatedSettled = await Promise.allSettled(
         prompts.map((variantPrompt) => runImageGeneration({
           mode,
@@ -131,25 +137,97 @@ export async function POST(request: NextRequest) {
         }
       });
 
-      const verifiedVariants = await Promise.all(
+      const initialVerificationSettled = await Promise.allSettled(
         generatedVariants.map(async (variant) => {
           const imageUrl = variant.generated.images[0];
           if (!imageUrl) return null;
           const validation = await validateProductIdentity(
-            fidelityReferences[0],
+            canonicalReference,
             imageUrl,
             identityAnalysis.manifest
           );
           return { ...variant, imageUrl, validation };
         })
       );
-      const completedVerifications = verifiedVariants.filter(
-        (variant): variant is NonNullable<typeof variant> => variant !== null
+      const initialVerifications = initialVerificationSettled.flatMap((result, index) => {
+        if (result.status === 'rejected') {
+          console.error(`Creative validation ${index + 1} failed:`, result.reason);
+          return [];
+        }
+        return result.value ? [result.value] : [];
+      });
+      const verifiedIndexes = new Set(initialVerifications.map((variant) => variant.index));
+      const repairCandidates = [
+        ...initialVerifications
+          .filter((variant) => !variant.validation.passed)
+          .map((variant) => ({ index: variant.index, imageUrl: variant.imageUrl })),
+        ...generatedVariants
+          .filter((variant) => !verifiedIndexes.has(variant.index))
+          .flatMap((variant) => variant.generated.images[0]
+            ? [{ index: variant.index, imageUrl: variant.generated.images[0] }]
+            : []),
+      ];
+
+      const repairPrompt = buildShopifyPackagingRepairPrompt(identityAnalysis.manifest);
+      const repairGenerationSettled = await Promise.allSettled(
+        repairCandidates.map((variant) => runImageGeneration({
+          mode,
+          referenceImages: [canonicalReference, variant.imageUrl],
+          prompt: repairPrompt,
+          model,
+          aspectRatio,
+          resolution,
+          persistToGenerationsTable: false,
+          referencePolicy: 'product-repair',
+          userId: user.id,
+        }))
       );
+      const repairGeneratedVariants = repairGenerationSettled.flatMap((result, repairIndex) => {
+        if (result.status === 'rejected') {
+          console.error(`Packaging repair ${repairIndex + 1} failed:`, result.reason);
+          return [];
+        }
+        return [{
+          index: repairCandidates[repairIndex].index,
+          generated: result.value,
+        }];
+      });
+      const repairVerificationSettled = await Promise.allSettled(
+        repairGeneratedVariants.map(async (variant) => {
+          const imageUrl = variant.generated.images[0];
+          if (!imageUrl) throw new Error('Packaging repair returned no image.');
+          const validation = await validateProductIdentity(
+            canonicalReference,
+            imageUrl,
+            identityAnalysis.manifest
+          );
+          return { ...variant, imageUrl, validation };
+        })
+      );
+      const repairedVerifications = repairVerificationSettled.flatMap((result, index) => {
+        if (result.status === 'rejected') {
+          console.error(`Packaging repair validation ${index + 1} failed:`, result.reason);
+          return [];
+        }
+        return [result.value];
+      });
+
+      const bestVerificationByVariant = new Map(
+        initialVerifications.map((variant) => [variant.index, variant])
+      );
+      repairedVerifications.forEach((variant) => {
+        const original = bestVerificationByVariant.get(variant.index);
+        if (!original || variant.validation.passed || variant.validation.score > original.validation.score) {
+          bestVerificationByVariant.set(variant.index, variant);
+        }
+      });
+      const completedVerifications = Array.from(bestVerificationByVariant.values())
+        .sort((a, b) => a.index - b.index);
+      const allValidationResults = [...initialVerifications, ...repairedVerifications];
       const verificationUsage = sumUsage(
-        completedVerifications.map((variant) => variant.validation.usage)
+        allValidationResults.map((variant) => variant.validation.usage)
       );
-      const validationModel = completedVerifications[0]?.validation.usage.providerModel ||
+      const validationModel = allValidationResults[0]?.validation.usage.providerModel ||
         identityAnalysis.usage.providerModel ||
         'gemini-2.5-flash';
 
@@ -168,7 +246,8 @@ export async function POST(request: NextRequest) {
         creditCost: 0,
         metadata: {
           operation: 'product_identity_validation',
-          validationCount: completedVerifications.length,
+          validationCount: allValidationResults.length,
+          repairAttemptCount: repairGeneratedVariants.length,
           chargedServerSide: true,
         },
       });
@@ -177,9 +256,10 @@ export async function POST(request: NextRequest) {
         (variant) => variant.validation.passed
       );
       const images = acceptedVariants.map((variant) => variant.imageUrl);
-      const usage = sumUsage(generatedVariants.map((variant) => variant.generated.usage));
-      const providerModel = generatedVariants[0]?.generated.usage.providerModel || model || 'nano-banana-pro';
-      const billedImageCount = generatedVariants.reduce(
+      const allGeneratedVariants = [...generatedVariants, ...repairGeneratedVariants];
+      const usage = sumUsage(allGeneratedVariants.map((variant) => variant.generated.usage));
+      const providerModel = allGeneratedVariants[0]?.generated.usage.providerModel || model || 'nano-banana-pro';
+      const billedImageCount = allGeneratedVariants.reduce(
         (count, variant) => count + variant.generated.images.length,
         0
       );
@@ -209,7 +289,9 @@ export async function POST(request: NextRequest) {
           resolution: resolution || '2K',
           referenceCount: referenceImages.length,
           generationReferenceCount: fidelityReferences.length,
+          canonicalReferenceIndex: identityAnalysis.canonicalReferenceIndex,
           analysisModel: identityAnalysis.usage.providerModel || 'gemini-2.5-flash',
+          repairAttemptCount: repairGeneratedVariants.length,
           acceptedImageCount: images.length,
           rejectedImageCount: completedVerifications.length - images.length,
           validationScores: completedVerifications.map((variant) => ({
