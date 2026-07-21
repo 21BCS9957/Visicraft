@@ -64,7 +64,8 @@ export function SmartHandle({
 
 function getHandleLabel(handleId: string, type: 'source' | 'target') {
   if (type === 'source') {
-    if (handleId === 'generatedImage' || handleId === 'generatedVideo') return 'Image';
+    if (handleId === 'generatedVideo') return 'Video';
+    if (handleId === 'generatedImage') return 'Image';
     return null;
   }
 

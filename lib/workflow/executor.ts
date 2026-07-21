@@ -60,6 +60,12 @@ export async function executeWorkflow(
     throw new Error(`Insufficient credits! Need ${totalCreditCost}, have ${options.credits}`);
   }
 
+  nodes.forEach((node) => {
+    if (node.type === 'output') {
+      updateNodeData(node.id, { images: [], mediaType: null, status: 'idle' });
+    }
+  });
+
   const executionOrder = topologicalSort(graph);
 
   for (const nodeId of executionOrder) {

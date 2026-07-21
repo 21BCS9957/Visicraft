@@ -268,8 +268,11 @@ export function OutputNode({ data, selected, id }: NodeProps) {
                   <video
                     src={url}
                     controls
+                    autoPlay
+                    muted
+                    loop
                     playsInline
-                    preload="metadata"
+                    preload="auto"
                     className="w-full h-auto bg-black object-contain rounded-lg"
                   />
                 ) : (

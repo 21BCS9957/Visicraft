@@ -91,7 +91,12 @@ export async function executeVideoGeneration(params: VideoGenerateNodeParams): P
     validateVideoGenerateNode(referenceImageUrls, promptText);
   }
 
-  updateNodeData(nodeId, { status: 'processing', videoProgress: 0 });
+  updateNodeData(nodeId, {
+    status: 'processing',
+    videoProgress: 0,
+    generatedVideo: null,
+    mediaType: 'video',
+  });
 
   try {
     const response = await fetch(isSeedanceModel(model) ? '/api/seedance-video' : '/api/img2vid', {
@@ -201,7 +206,12 @@ export async function executeVideoGeneration(params: VideoGenerateNodeParams): P
     }
     assertVideoOutput(videoUrl);
 
-    updateNodeData(nodeId, { generatedVideo: videoUrl, status: 'complete', videoProgress: 100 });
+    updateNodeData(nodeId, {
+      generatedVideo: videoUrl,
+      mediaType: 'video',
+      status: 'complete',
+      videoProgress: 100,
+    });
 
     if (refreshCredits) await refreshCredits();
 
@@ -209,7 +219,7 @@ export async function executeVideoGeneration(params: VideoGenerateNodeParams): P
   } catch (error) {
     console.error('❌ Video generation error:', error);
 
-    updateNodeData(nodeId, { status: 'error', videoProgress: 0 });
+    updateNodeData(nodeId, { generatedVideo: null, status: 'error', videoProgress: 0 });
     throw error;
   }
 }

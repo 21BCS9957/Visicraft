@@ -131,6 +131,12 @@ export function VideoGenerateNode({ data, selected, id }: NodeProps) {
 
     const currentNodes = getLatestNodes();
     const currentEdges = getLatestEdges();
+    const connectedOutputIds = new Set(
+      currentEdges
+        .filter((edge) => edge.source === id)
+        .map((edge) => edge.target)
+        .filter((targetId) => currentNodes.some((node) => node.id === targetId && node.type === 'output'))
+    );
     let referenceImageUrls: string[];
     let actualPromptText: string | null;
     try {
@@ -150,7 +156,13 @@ export function VideoGenerateNode({ data, selected, id }: NodeProps) {
     }
 
     try {
-      await executeVideoGeneration({
+      if (connectedOutputIds.size > 0) {
+        setNodes((nodes) => nodes.map((node) => connectedOutputIds.has(node.id)
+          ? { ...node, data: { ...node.data, images: [], mediaType: 'video', status: 'processing' } }
+          : node));
+      }
+
+      const generatedVideo = await executeVideoGeneration({
         nodeId: id,
         referenceImageUrls,
         promptText: actualPromptText,
@@ -165,8 +177,27 @@ export function VideoGenerateNode({ data, selected, id }: NodeProps) {
         addCredits,
         refreshCredits,
       });
+
+      if (connectedOutputIds.size > 0) {
+        setNodes((nodes) => nodes.map((node) => connectedOutputIds.has(node.id)
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                images: [generatedVideo],
+                mediaType: 'video',
+                status: 'complete',
+              },
+            }
+          : node));
+      }
       toast.success('Video generated!', { id: `videogen-${id}` });
     } catch (error) {
+      if (connectedOutputIds.size > 0) {
+        setNodes((nodes) => nodes.map((node) => connectedOutputIds.has(node.id)
+          ? { ...node, data: { ...node.data, images: [], mediaType: 'video', status: 'error' } }
+          : node));
+      }
       const msg = error instanceof Error ? error.message : 'Video generation failed';
       toast.error(msg, { id: `videogen-${id}` });
     }
@@ -274,6 +305,11 @@ export function VideoGenerateNode({ data, selected, id }: NodeProps) {
             <video
               src={result}
               controls
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="auto"
               className="absolute inset-0 w-full h-full object-cover cursor-pointer"
               onClick={(e) => { e.stopPropagation(); setShowFullscreen(true); }}
             />
