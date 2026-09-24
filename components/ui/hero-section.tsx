@@ -70,6 +70,7 @@ interface AdResearch {
   keywords: string[];
   ads: WinningAd[];
   patterns: string;
+  mock?: boolean;
 }
 
 interface CreativeSlot {
@@ -1915,6 +1916,11 @@ export function HeroSection() {
                 <div className="mx-auto mt-6 w-full max-w-[1280px] text-left">
                   <p className="mb-3 text-xs font-medium uppercase tracking-[0.2em] text-white/40">
                     Based on the longest-running {adResearch.niche} ads on Meta India
+                    {adResearch.mock && (
+                      <span className="ml-2 rounded-full bg-[#fff05a]/15 px-2 py-0.5 normal-case tracking-normal text-[#fbf2a0]">
+                        Test mode: sample ads
+                      </span>
+                    )}
                   </p>
                   <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
                     {adResearch.ads.map((ad) => (

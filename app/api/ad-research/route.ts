@@ -46,6 +46,7 @@ export async function POST(request: NextRequest) {
         niche: result.niche,
         keywords: result.keywords,
         adCount: result.ads.length,
+        mock: result.mock,
       },
     });
 
@@ -56,6 +57,7 @@ export async function POST(request: NextRequest) {
       country: result.country,
       ads: result.ads,
       patterns: result.patterns,
+      mock: result.mock,
     });
   } catch (error) {
     console.error('Ad research error:', error);

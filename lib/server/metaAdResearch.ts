@@ -25,6 +25,8 @@ export interface AdResearchResult {
   mediaType: AdMediaType;
   ads: WinningAd[];
   patterns: string;
+  /** True when sample ads were used instead of a live Ad Library scrape (AD_RESEARCH_MOCK). */
+  mock: boolean;
   usage: ProviderUsage;
 }
 
@@ -120,6 +122,35 @@ function adLibrarySearchUrl(keyword: string, country: string, mediaType: AdMedia
 
 type RawAd = Record<string, unknown>;
 
+/**
+ * Test mode: AD_RESEARCH_MOCK=true skips Apify and feeds sample ads shaped like the
+ * scraper output, so ranking, Gemini analysis and generation still run end to end.
+ */
+function sampleAdLibraryItems(niche: string, mediaType: AdMediaType): RawAd[] {
+  const now = Math.floor(Date.now() / 1000);
+  const samples = [
+    { page: 'Sample Brand A', days: 412, title: `India's favourite ${niche}`, body: `Loved by 1 lakh+ customers. Try the ${niche} everyone is switching to. Free shipping across India.`, cta: 'Shop now' },
+    { page: 'Sample Brand B', days: 287, title: 'Before vs after in 14 days', body: `Tired of ${niche} that does nothing? See real results in two weeks or your money back.`, cta: 'Learn more' },
+    { page: 'Sample Brand C', days: 190, title: 'Made in India, made for you', body: `Clean, honest ${niche} with no nasties. Rated 4.6 by verified buyers.`, cta: 'Shop now' },
+    { page: 'Sample Brand D', days: 121, title: 'Buy 2 get 1 free', body: `Stock up on your daily ${niche}. Limited time combo offer.`, cta: 'Get offer' },
+    { page: 'Sample Brand E', days: 64, title: 'Why doctors recommend it', body: `The science-backed ${niche} built for Indian weather and routines.`, cta: 'Shop now' },
+    { page: 'Sample Brand D', days: 20, title: 'New launch', body: 'Newer ad from the same advertiser, should be ranked out.', cta: 'Shop now' },
+  ];
+  return samples.map((sample, index) => ({
+    ad_archive_id: `sample-${mediaType}-${index + 1}`,
+    page_name: sample.page,
+    is_active: true,
+    start_date: now - sample.days * 86_400,
+    snapshot: {
+      title: sample.title,
+      body: { text: sample.body },
+      cta_text: sample.cta,
+      images: mediaType === 'image' ? [{ original_image_url: '' }] : [],
+      videos: mediaType === 'video' ? [{ video_sd_url: 'sample', video_preview_image_url: '' }] : [],
+    },
+  }));
+}
+
 async function scrapeAdLibrary(keywords: string[], country: string, mediaType: AdMediaType): Promise<RawAd[]> {
   const token = process.env.APIFY_API_TOKEN;
   if (!token) throw new Error('Winning-ad research is not configured (missing APIFY_API_TOKEN).');
@@ -178,6 +209,10 @@ function firstMedia(snapshot: RawAd | undefined): { imageUrl?: string; videoUrl?
   };
 }
 
+function hasMedia(url: string | undefined): boolean {
+  return typeof url === 'string';
+}
+
 /** Winning = still active and running the longest. One ad per advertiser for variety. */
 export function rankWinningAds(rawAds: RawAd[], mediaType: AdMediaType, limit = TOP_ADS): WinningAd[] {
   const now = Date.now();
@@ -189,7 +224,7 @@ export function rankWinningAds(rawAds: RawAd[], mediaType: AdMediaType, limit = 
     if (!start) continue;
     const snapshot = pick(raw, 'snapshot') as RawAd | undefined;
     const media = firstMedia(snapshot);
-    if (mediaType === 'video' ? !media.videoUrl : !media.imageUrl || media.videoUrl) continue;
+    if (mediaType === 'video' ? !hasMedia(media.videoUrl) : !hasMedia(media.imageUrl) || hasMedia(media.videoUrl)) continue;
 
     const id = String(pick(raw, 'ad_archive_id', 'adArchiveID', 'adArchiveId', 'id') ?? '');
     if (!id) continue;
@@ -204,7 +239,8 @@ export function rankWinningAds(rawAds: RawAd[], mediaType: AdMediaType, limit = 
       body: clean(typeof body === 'string' ? body : pick(body as RawAd, 'text'), 600) || undefined,
       title: clean(pick(snapshot, 'title'), 160) || undefined,
       ctaText: clean(pick(snapshot, 'cta_text'), 40) || undefined,
-      ...media,
+      imageUrl: media.imageUrl || undefined,
+      videoUrl: media.videoUrl || undefined,
       libraryUrl: `https://www.facebook.com/ads/library/?id=${encodeURIComponent(id)}`,
     };
 
@@ -263,7 +299,7 @@ ${mediaType === 'video' ? '6. Video pacing: what happens in the first 2 seconds,
   const videoByAd = new Map<string, { mimeType: string; data: string }>();
   if (mediaType === 'video') {
     const videos = await Promise.all(
-      ads.slice(0, 2).map(async (ad) => [ad.id, ad.videoUrl ? await loadVideoInline(ad.videoUrl) : null] as const)
+      ads.slice(0, 2).map(async (ad) => [ad.id, ad.videoUrl?.startsWith('http') ? await loadVideoInline(ad.videoUrl) : null] as const)
     );
     videos.forEach(([id, video]) => { if (video) videoByAd.set(id, video); });
   }
@@ -291,13 +327,16 @@ export async function researchWinningAds(
   country = 'IN'
 ): Promise<AdResearchResult> {
   const { niche, keywords, usage: keywordUsage } = await deriveNicheKeywords(product);
-  const cacheKey = `${country}|${mediaType}|${keywords.join(',').toLowerCase()}`;
+  const cacheKey = `${process.env.AD_RESEARCH_MOCK === 'true' ? 'mock|' : ''}${country}|${mediaType}|${keywords.join(',').toLowerCase()}`;
   const cached = researchCache.get(cacheKey);
   if (cached && Date.now() - cached.createdAt < CACHE_TTL_MS) {
     return { ...cached.result, usage: keywordUsage };
   }
 
-  const rawAds = await scrapeAdLibrary(keywords, country, mediaType);
+  const mock = process.env.AD_RESEARCH_MOCK === 'true';
+  const rawAds = mock
+    ? sampleAdLibraryItems(niche, mediaType)
+    : await scrapeAdLibrary(keywords, country, mediaType);
   const ads = rankWinningAds(rawAds, mediaType);
   if (ads.length === 0) {
     throw new Error(`No active ${mediaType} ads found on Meta for "${keywords.join('", "')}" in ${country}.`);
@@ -311,6 +350,7 @@ export async function researchWinningAds(
     mediaType,
     ads,
     patterns: analysis.patterns,
+    mock,
     usage: {
       inputTokens: keywordUsage.inputTokens + analysis.usage.inputTokens,
       outputTokens: keywordUsage.outputTokens + analysis.usage.outputTokens,
