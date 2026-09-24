@@ -54,6 +54,36 @@ interface ProductImageCandidate {
   source: 'shopify' | 'metadata' | 'page';
 }
 
+interface WinningAd {
+  id: string;
+  pageName: string;
+  daysRunning: number;
+  title?: string;
+  body?: string;
+  imageUrl?: string;
+  videoUrl?: string;
+  libraryUrl: string;
+}
+
+interface AdResearch {
+  niche: string;
+  keywords: string[];
+  ads: WinningAd[];
+  patterns: string;
+}
+
+interface CreativeSlot {
+  angle?: string;
+  withText?: boolean;
+  url?: string;
+  failed?: boolean;
+  retrying?: boolean;
+}
+
+type ProductFlowStep = 'none' | 'format' | 'research';
+
+const PRODUCT_SET_SIZE = 4;
+
 interface ProductCapture {
   requestedUrl: string;
   finalUrl: string;
@@ -653,22 +683,31 @@ function ProductCreativeProgress({
   progress,
   referenceUrls,
   productCapture,
+  researching = false,
 }: {
   statusMessage: string;
   progress: number;
   referenceUrls: string[];
   productCapture: ProductCapture | null;
+  researching?: boolean;
 }) {
   const displayUrls = referenceUrls.length
     ? referenceUrls
     : productCapture?.images.map((image) => image.url) ?? [];
   const placeholderCount = Math.max(8, productCapture?.images.length ?? 8);
-  const steps = [
-    'Analyzing reference images',
-    'Reading branding and packaging',
-    'Mapping Instagram and Shopify crops',
-    'Generating tailored images',
-  ];
+  const steps = researching
+    ? [
+        'Finding longest-running Meta ads in India',
+        'Breaking down what makes them win',
+        'Locking the exact product',
+        'Generating ad creatives',
+      ]
+    : [
+        'Analyzing reference images',
+        'Locking the exact product',
+        'Planning ad angles',
+        'Generating ad creatives',
+      ];
   const activeStep = progress < 30 ? 0 : progress < 54 ? 1 : progress < 74 ? 2 : 3;
 
   return (
@@ -710,7 +749,9 @@ function ProductCreativeProgress({
         <div className="flex flex-col justify-center">
           <div className="mb-4">
             <p className="text-2xl font-light leading-tight text-white sm:text-3xl">
-              {activeStep < 3 ? 'Analyzing your product system' : 'Generating tailored images'}
+              {activeStep < 3
+                ? researching && activeStep < 2 ? 'Studying winning Meta ads' : 'Analyzing your product system'
+                : 'Generating ad creatives'}
             </p>
             <p className="mt-2 text-sm font-light leading-relaxed text-white/50">
               {statusMessage || 'Reading visual identity, packaging, color, and product context from the references.'}
@@ -778,6 +819,10 @@ export function HeroSection() {
   const [isCapturingProduct, setIsCapturingProduct] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedResults, setGeneratedResults] = useState<string[]>([]);
+  const [creativeSlots, setCreativeSlots] = useState<CreativeSlot[]>([]);
+  const [productFlowStep, setProductFlowStep] = useState<ProductFlowStep>('none');
+  const [adResearch, setAdResearch] = useState<AdResearch | null>(null);
+  const [isResearching, setIsResearching] = useState(false);
   const [generatedType, setGeneratedType] = useState<'image' | 'video'>('image');
   const [generationReferenceUrls, setGenerationReferenceUrls] = useState<string[]>([]);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
@@ -894,8 +939,10 @@ export function HeroSection() {
   const selectedModelName =
     currentModels.find((model) => model.id === selectedModel)?.name ?? currentModels[0].name;
 
+  const imageCreditCost = getCreditCost(selectedModel, '2K');
+  const isProductImageSet = Boolean(productCapture && selectedProductUrls.length > 0);
   const creditCost = generationMode === 'image'
-    ? getCreditCost(selectedModel, '2K')
+    ? imageCreditCost * (isProductImageSet ? PRODUCT_SET_SIZE : 1)
     : VIDEO_CREDIT_COST;
 
   const handleTrustCtaClick = useCallback(() => {
@@ -941,6 +988,7 @@ export function HeroSection() {
   const clearProductCapture = useCallback(() => {
     setProductCapture(null);
     setSelectedProductUrls([]);
+    setProductFlowStep('none');
   }, []);
 
   const captureProductImages = useCallback(async (url: string) => {
@@ -975,28 +1023,28 @@ export function HeroSection() {
     }
   }, []);
 
-  const handleGenerate = useCallback(async () => {
+  /**
+   * Product-link flow: first call captures the product and asks format + research
+   * questions; the answer buttons call back in with `options` to actually generate.
+   */
+  const handleGenerate = useCallback(async (options?: { research: boolean }) => {
     setError('');
     setProgress(0);
     setStatusMessage('');
     const activeProductUrl = extractFirstPublicUrl(promptValue);
 
-    let productReferenceUrls =
+    const productReferenceUrls =
       activeProductUrl && productCapture?.requestedUrl !== activeProductUrl
         ? []
         : selectedProductUrls;
     let promptForGeneration = promptValue;
-    let activeProductCapture = productCapture;
-    let capturedThisRun = false;
+    const activeProductCapture = productCapture;
 
     if (activeProductUrl && uploadedImages.length === 0 && productReferenceUrls.length === 0) {
       try {
         const capture = await captureProductImages(activeProductUrl);
-        capturedThisRun = true;
-        productReferenceUrls = capture.selected;
-        activeProductCapture = capture.product;
-        promptForGeneration = buildProductCreativePrompt(capture.product, promptValue, activeProductUrl);
-        setPromptValue(promptForGeneration);
+        setPromptValue(buildProductCreativePrompt(capture.product, promptValue, activeProductUrl));
+        setProductFlowStep('format');
       } catch (err) {
         const msg = err instanceof Error && err.name === 'AbortError'
           ? 'That store took too long to respond. Please retry the product link once.'
@@ -1005,9 +1053,17 @@ export function HeroSection() {
             : 'Could not capture product images';
         setError(msg);
         toast.error(msg);
-        return;
       }
-    } else if (activeProductUrl && productCapture && productReferenceUrls.length > 0) {
+      return;
+    }
+
+    const isProductFlow = Boolean(productCapture && productReferenceUrls.length > 0 && uploadedImages.length === 0);
+    if (isProductFlow && !options) {
+      setProductFlowStep('format');
+      return;
+    }
+
+    if (activeProductUrl && productCapture && productReferenceUrls.length > 0) {
       const promptWithoutUrl = removeUrlFromPrompt(promptValue, activeProductUrl);
       if (!promptWithoutUrl || promptWithoutUrl === promptValue) {
         promptForGeneration = buildProductCreativePrompt(productCapture, promptValue, activeProductUrl);
@@ -1022,18 +1078,16 @@ export function HeroSection() {
 
     if (!user) {
       toast.error('Sign up to generate creatives from these product images');
-      if (!capturedThisRun) {
-        setTimeout(() => router.push('/login?redirectTo=/'), 1500);
-      }
+      setTimeout(() => router.push('/login?redirectTo=/'), 1500);
       return;
     }
 
-    if (generationMode === 'image' && referenceCount === 1 && !promptForGeneration.trim()) {
+    if (generationMode === 'image' && referenceCount === 1 && !promptForGeneration.trim() && !isProductFlow) {
       toast.error('Add a prompt when using a single image');
       return;
     }
 
-    if (generationMode === 'video' && !promptForGeneration.trim()) {
+    if (generationMode === 'video' && !promptForGeneration.trim() && !isProductFlow) {
       toast.error('A prompt is required for video generation');
       return;
     }
@@ -1043,78 +1097,159 @@ export function HeroSection() {
       return;
     }
 
+    const productContext = activeProductCapture
+      ? {
+          title: activeProductCapture.title,
+          vendor: activeProductCapture.vendor,
+          description: activeProductCapture.description,
+        }
+      : undefined;
+    const wantsResearch = Boolean(isProductFlow && options?.research);
+
+    setProductFlowStep('none');
     setGenerationReferenceUrls([...productReferenceUrls, ...uploadedImages.map((img) => img.preview)]);
-    setStatusMessage(productReferenceUrls.length > 0
-      ? 'Analyzing Shopify references, text branding, packaging, and product identity...'
-      : 'Analyzing uploaded product references...');
-    setProgress(18);
+    setIsResearching(wantsResearch);
+    setAdResearch(null);
     setIsGenerating(true);
     setGeneratedResults([]);
+    setCreativeSlots([]);
     setGeneratedType(generationMode);
 
     try {
-      setStatusMessage(uploadedImages.length > 0 ? 'Preparing reference board...' : 'Preparing product image set...');
-      setProgress(26);
+      let adPatterns: string | undefined;
+      if (wantsResearch) {
+        setStatusMessage(`Finding the longest-running ${generationMode} ads in this niche on Meta India...`);
+        setProgress(8);
+        try {
+          const res = await fetchWithTimeout('/api/ad-research', {
+            method: 'POST',
+            headers: await getAuthenticatedHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ productContext, mediaType: generationMode, country: 'IN' }),
+          }, 230000);
+          const research = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(research.error || 'Ad research failed');
+          setAdResearch(research as AdResearch);
+          adPatterns = research.patterns;
+          setStatusMessage(`Studied ${research.ads?.length ?? 0} winning ${research.niche} ads. Building your creatives...`);
+          setProgress(52);
+        } catch (researchError) {
+          const msg = researchError instanceof Error ? researchError.message : 'Ad research failed';
+          toast.error(`${msg} Continuing without research.`);
+          setIsResearching(false);
+        }
+      } else {
+        setProgress(18);
+      }
 
+      setStatusMessage(uploadedImages.length > 0 ? 'Preparing reference board...' : 'Preparing product image set...');
       const uploadedImageUrls = uploadedImages.length > 0
         ? await Promise.all(
             uploadedImages.map((img) => uploadFileWithSignedUrl(img.file, 'source-images'))
           )
         : [];
       const imageUrls = [...productReferenceUrls, ...uploadedImageUrls];
-      setGenerationReferenceUrls([...productReferenceUrls, ...uploadedImageUrls]);
-
-      console.log(`📎 Sending ${imageUrls.length} reference image(s) to model:`, imageUrls);
-
-      setStatusMessage('Reading brand colors, product shape, labels, and ecommerce context...');
-      setProgress(42);
+      setGenerationReferenceUrls(imageUrls);
 
       if (generationMode === 'image') {
-        const isProductCreativeSet = productReferenceUrls.length > 0;
-        setStatusMessage(isProductCreativeSet ? 'Generating four tailored premium images for Instagram and Shopify...' : 'Generating tailored image...');
-        setProgress(78);
-
+        setProgress((p) => Math.max(p, 60));
         const res = await fetchWithTimeout('/api/generate', {
           method: 'POST',
           headers: await getAuthenticatedHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
             mode: 'generate',
             referenceImages: imageUrls,
-            prompt: promptForGeneration || '',
+            prompt: isProductFlow && activeProductUrl
+              ? removeUrlFromPrompt(promptValue, activeProductUrl)
+              : promptForGeneration || '',
             model: selectedModel,
-            creativeSet: isProductCreativeSet,
-            aspectRatio: isProductCreativeSet ? '9:16' : undefined,
+            creativeSet: isProductFlow,
+            aspectRatio: isProductFlow ? '9:16' : undefined,
             resolution: '2K',
-            productContext: activeProductCapture
-              ? {
-                  title: activeProductCapture.title,
-                  vendor: activeProductCapture.vendor,
-                  description: activeProductCapture.description,
-                }
-              : undefined,
+            productContext,
+            adPatterns,
           }),
-        }, 210000);
+        }, 295000);
 
-        setProgress(86);
+        if (!res.ok) {
+          const result = await res.json().catch(() => ({}));
+          throw new Error(result.error || 'Generation failed');
+        }
 
-        const result = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(result.error || 'Generation failed');
+        if (isProductFlow && res.body) {
+          setCreativeSlots(Array.from({ length: PRODUCT_SET_SIZE }, () => ({})));
+          setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let done = false;
+          let finished = false;
+          while (!done) {
+            const chunk = await reader.read();
+            done = chunk.done;
+            buffer += decoder.decode(chunk.value ?? new Uint8Array(), { stream: !done });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() ?? '';
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              const event = JSON.parse(line) as Record<string, unknown>;
+              const index = typeof event.index === 'number' ? event.index : -1;
+              if (event.type === 'status' && typeof event.message === 'string') {
+                setStatusMessage(event.message);
+                setProgress((p) => Math.min(94, p + 6));
+              } else if (event.type === 'angles' && Array.isArray(event.angles)) {
+                setCreativeSlots((event.angles as Array<{ name: string; withText: boolean }>).map((angle) => ({
+                  angle: angle.name,
+                  withText: angle.withText,
+                })));
+              } else if (event.type === 'creative' && index >= 0) {
+                setCreativeSlots((slots) => slots.map((slot, i) => i === index
+                  ? { ...slot, url: String(event.url), retrying: false }
+                  : slot));
+                setProgress((p) => Math.min(96, p + 8));
+              } else if (event.type === 'retry' && index >= 0) {
+                setCreativeSlots((slots) => slots.map((slot, i) => i === index ? { ...slot, retrying: true } : slot));
+              } else if (event.type === 'slot_failed' && index >= 0) {
+                setCreativeSlots((slots) => slots.map((slot, i) => i === index ? { ...slot, failed: true, retrying: false } : slot));
+              } else if (event.type === 'done') {
+                finished = true;
+                if (typeof event.warning === 'string') {
+                  if (event.acceptedCount === 0) throw new Error(event.warning);
+                  toast.success(event.warning);
+                }
+              } else if (event.type === 'error') {
+                throw new Error(typeof event.message === 'string' ? event.message : 'Generation failed');
+              }
+            }
+          }
+          if (!finished) throw new Error('Generation stopped before finishing. Check your creations before retrying.');
+        } else {
+          const result = await res.json().catch(() => ({}));
+          setCreativeSlots(((result.images ?? []) as string[]).map((url) => ({ url })));
+          if (result.warning) toast.success(result.warning);
+        }
 
         setProgress(100);
-        setStatusMessage('Tailored images ready.');
-        setGeneratedResults(result.images ?? []);
-        if (result.warning) toast.success(result.warning);
+        setStatusMessage('Creatives ready.');
       } else {
-        setStatusMessage('Starting tailored video generation...');
+        setStatusMessage('Starting video generation...');
 
         const res = await fetch('/api/img2vid', {
           method: 'POST',
           headers: await getAuthenticatedHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({
-            imageUrl: imageUrls[0],
-            prompt: promptForGeneration || '',
-            model: selectedModel,
-          }),
+          body: JSON.stringify(isProductFlow
+            ? {
+                referenceImages: imageUrls,
+                prompt: activeProductUrl ? removeUrlFromPrompt(promptValue, activeProductUrl) : promptForGeneration,
+                model: selectedModel,
+                aspectRatio: '9:16',
+                productContext,
+                adPatterns,
+              }
+            : {
+                imageUrl: imageUrls[0],
+                prompt: promptForGeneration || '',
+                model: selectedModel,
+              }),
         });
 
         const result = await res.json();
@@ -1190,6 +1325,7 @@ export function HeroSection() {
       await refreshCredits();
     } finally {
       setIsGenerating(false);
+      setIsResearching(false);
     }
   }, [user, uploadedImages, selectedProductUrls, productCapture, promptValue, generationMode, selectedModel, credits, creditCost, refreshCredits, router, captureProductImages]);
 
@@ -1245,6 +1381,7 @@ export function HeroSection() {
                   progress={progress}
                   referenceUrls={generationReferenceUrls}
                   productCapture={productCapture}
+                  researching={isResearching}
                 />
               </div>
             ) : (
@@ -1353,6 +1490,90 @@ export function HeroSection() {
                         </div>
                       </div>
                     ) : null}
+                  </div>
+                )}
+
+                {productCapture && productFlowStep !== 'none' && selectedProductUrls.length > 0 && (
+                  <div className="px-3 pb-3 text-left sm:px-4">
+                    <div className="rounded-2xl border border-[#fff05a]/20 bg-[#fff05a]/[0.06] p-3 sm:p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <p className="text-sm font-light text-white sm:text-base">
+                          {productFlowStep === 'format'
+                            ? 'What should we make from this product?'
+                            : `Study winning Meta ${generationMode} ads in this niche first?`}
+                        </p>
+                        {productFlowStep === 'research' && (
+                          <button
+                            type="button"
+                            onClick={() => setProductFlowStep('format')}
+                            className="shrink-0 text-xs text-white/50 transition-colors hover:text-white"
+                          >
+                            Back
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {productFlowStep === 'format' ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setGenerationMode('image');
+                                setProductFlowStep('research');
+                              }}
+                              className="rounded-xl border border-white/10 bg-black/30 p-3 text-left transition-colors hover:border-[#fff05a]/50 hover:bg-black/45"
+                            >
+                              <span className="flex items-center gap-2 text-sm text-white">
+                                <ImageIcon className="h-4 w-4 text-[#fff05a]" />
+                                {PRODUCT_SET_SIZE} image ads
+                              </span>
+                              <span className="mt-1 block text-xs font-light text-white/50">
+                                2 with ad copy, 2 clean · {imageCreditCost * PRODUCT_SET_SIZE} credits
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setGenerationMode('video');
+                                setProductFlowStep('research');
+                              }}
+                              className="rounded-xl border border-white/10 bg-black/30 p-3 text-left transition-colors hover:border-[#fff05a]/50 hover:bg-black/45"
+                            >
+                              <span className="flex items-center gap-2 text-sm text-white">
+                                <Clapperboard className="h-4 w-4 text-[#fff05a]" />
+                                Video ad
+                              </span>
+                              <span className="mt-1 block text-xs font-light text-white/50">
+                                9:16 Reels video · {VIDEO_CREDIT_COST} credits
+                              </span>
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleGenerate({ research: true })}
+                              className="rounded-xl border border-white/10 bg-black/30 p-3 text-left transition-colors hover:border-[#fff05a]/50 hover:bg-black/45"
+                            >
+                              <span className="text-sm text-white">Yes, research winning ads</span>
+                              <span className="mt-1 block text-xs font-light text-white/50">
+                                Finds the longest-running active {generationMode} ads in India and models them · adds 1-2 min
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleGenerate({ research: false })}
+                              className="rounded-xl border border-white/10 bg-black/30 p-3 text-left transition-colors hover:border-[#fff05a]/50 hover:bg-black/45"
+                            >
+                              <span className="text-sm text-white">No, generate now</span>
+                              <span className="mt-1 block text-xs font-light text-white/50">
+                                Skip research and save time
+                              </span>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -1568,7 +1789,7 @@ export function HeroSection() {
                     <button
                       type="button"
                       disabled={isGenerating || isCapturingProduct}
-                      onClick={handleGenerate}
+                      onClick={() => handleGenerate()}
                       className={cn(
                         'flex h-10 shrink-0 items-center justify-center gap-2 rounded-full px-4 text-sm font-light shadow-lg transition-all',
                         isGenerating || isCapturingProduct
@@ -1602,7 +1823,7 @@ export function HeroSection() {
           </div>
 
           {/* Results / Progress Section */}
-          {(generatedResults.length > 0 || error) && (
+          {(generatedResults.length > 0 || creativeSlots.length > 0 || adResearch || error) && (
             <div ref={resultsRef} className="mx-auto w-full max-w-[1780px] pt-6">
               {/* Error */}
               {error && (
@@ -1610,46 +1831,70 @@ export function HeroSection() {
               )}
 
               {/* Generated Images */}
-              {!isGenerating && generatedResults.length > 0 && generatedType === 'image' && (
+              {creativeSlots.length > 0 && generatedType === 'image' && (
                 <div className="mx-auto w-full overflow-x-auto pb-2 scrollbar-hide">
                   <div className="mx-auto grid min-w-[920px] max-w-[1280px] grid-cols-4 gap-3 sm:gap-4">
-                  {generatedResults.map((url, i) => (
+                  {creativeSlots.map((slot, i) => (
                     <div
                       key={i}
                       className="group relative aspect-[9/16] w-full overflow-hidden rounded-[22px] border border-white/10 bg-[#151519] opacity-0 shadow-[0_22px_70px_rgba(0,0,0,0.34)] animate-word-appear"
                       style={{ animationDelay: `${i * 0.1}s`, animationFillMode: 'forwards' }}
                     >
-                      <button
-                        type="button"
-                        onClick={() => setPreviewImageUrl(url)}
-                        className="block h-full w-full cursor-zoom-in"
-                      >
-                        <img
-                          src={url}
-                          alt={`Generated ${i + 1}`}
-                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.025]"
-                        />
-                      </button>
-                      <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/72 via-black/20 to-transparent p-3 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                        <div className="flex gap-1.5">
-                          <span className="rounded-full border border-white/10 bg-white/10 px-2.5 py-1 text-[10px] font-medium text-white/76 backdrop-blur">
-                            Instagram
+                      {slot.url ? (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewImageUrl(slot.url ?? null)}
+                          className="block h-full w-full cursor-zoom-in"
+                        >
+                          <img
+                            src={slot.url}
+                            alt={slot.angle ? `${slot.angle} ad creative` : `Generated ${i + 1}`}
+                            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.025]"
+                          />
+                        </button>
+                      ) : (
+                        <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-4 text-center">
+                          {slot.failed ? (
+                            <>
+                              <X className="h-5 w-5 text-white/40" />
+                              <p className="text-xs font-light text-white/50">
+                                Didn&apos;t pass the product check. Credits refunded.
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <div className="absolute inset-0 animate-pulse bg-gradient-to-b from-white/[0.06] to-transparent" />
+                              <span className="relative h-2 w-2 animate-pulse rounded-full bg-[#fff05a] shadow-[0_0_18px_rgba(255,240,90,0.55)]" />
+                              <p className="relative text-xs font-light text-white/60">
+                                {slot.retrying ? 'Fixing product details...' : slot.angle ? `Creating "${slot.angle}"` : 'Planning angle...'}
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      )}
+                      {slot.angle && (
+                        <div className="pointer-events-none absolute left-3 top-3 flex gap-1.5">
+                          <span className="rounded-full border border-white/10 bg-black/55 px-2.5 py-1 text-[10px] font-medium text-white/80 backdrop-blur">
+                            {slot.angle}
                           </span>
-                          <span className="rounded-full border border-white/10 bg-white/10 px-2.5 py-1 text-[10px] font-medium text-white/76 backdrop-blur">
-                            Shopify
+                          <span className="rounded-full border border-white/10 bg-black/55 px-2.5 py-1 text-[10px] font-medium text-white/60 backdrop-blur">
+                            {slot.withText ? 'Ad copy' : 'Clean'}
                           </span>
                         </div>
+                      )}
+                      {slot.url && (
+                      <div className="absolute inset-x-0 bottom-0 flex items-center justify-end bg-gradient-to-t from-black/72 via-black/20 to-transparent p-3 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
                         <div className="flex gap-2">
                           <button
                             type="button"
-                            onClick={() => setPreviewImageUrl(url)}
+                            onClick={() => setPreviewImageUrl(slot.url ?? null)}
                             className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-black shadow-lg backdrop-blur-sm transition-transform hover:scale-110"
                             aria-label="Preview generated image"
                           >
                             <Eye className="h-4 w-4" />
                           </button>
                         <a
-                          href={url}
+                          href={slot.url}
                           download={`visicraft-${i + 1}.png`}
                           className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-black shadow-lg backdrop-blur-sm transition-transform hover:scale-110"
                           aria-label="Download generated image"
@@ -1658,14 +1903,54 @@ export function HeroSection() {
                         </a>
                         </div>
                       </div>
+                      )}
                     </div>
                   ))}
                   </div>
                 </div>
               )}
 
+              {/* Winning ads used as research */}
+              {adResearch && adResearch.ads.length > 0 && (
+                <div className="mx-auto mt-6 w-full max-w-[1280px] text-left">
+                  <p className="mb-3 text-xs font-medium uppercase tracking-[0.2em] text-white/40">
+                    Based on the longest-running {adResearch.niche} ads on Meta India
+                  </p>
+                  <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                    {adResearch.ads.map((ad) => (
+                      <a
+                        key={ad.id}
+                        href={ad.libraryUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group w-40 flex-shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-[#151519] transition-colors hover:border-white/25"
+                      >
+                        <div className="aspect-square w-full overflow-hidden bg-white/5">
+                          {ad.imageUrl ? (
+                            <img
+                              src={ad.imageUrl}
+                              alt={`${ad.pageName} ad`}
+                              referrerPolicy="no-referrer"
+                              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center">
+                              <Clapperboard className="h-5 w-5 text-white/30" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="p-2.5">
+                          <p className="truncate text-xs text-white/80">{ad.pageName}</p>
+                          <p className="mt-0.5 text-[11px] text-[#fff05a]/80">Running {ad.daysRunning} days</p>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Generated Video */}
-              {!isGenerating && generatedResults.length > 0 && generatedType === 'video' && (
+              {generatedResults.length > 0 && generatedType === 'video' && (
                 <div className="space-y-3">
                   {generatedResults.map((url, i) => (
                     <video

@@ -3,6 +3,8 @@ import type { ProviderUsage } from '@/lib/server/usage';
 import { uploadDataUrlToBucket } from '@/lib/server/supabaseStorage';
 import { supabase } from '@/lib/supabase/client';
 
+export type ReferencePolicy = 'balanced' | 'product-lock' | 'product-repair';
+
 export type ImageGenMode = 'generate' | 'thumbnail' | 'edit' | 'upscale' | 'unblur';
 
 export function normalizeReferenceImages(body: Record<string, unknown>): string[] {
@@ -38,7 +40,7 @@ function resolveEffectivePrompt(
   mode: ImageGenMode,
   prompt: string | undefined,
   referenceCount: number,
-  referencePolicy: 'balanced' | 'product-lock'
+  referencePolicy: ReferencePolicy
 ): string {
   const p = (prompt ?? '').trim();
   switch (mode) {
@@ -55,7 +57,7 @@ function resolveEffectivePrompt(
         ? `Sharpen and deblur this image. ${p}`
         : 'Sharpen and deblur this image. Remove blur, enhance details, improve clarity and focus. Make the image crystal clear.';
     default:
-      if (referencePolicy === 'product-lock') return p;
+      if (referencePolicy !== 'balanced') return p;
       if (referenceCount > 1) {
         const instruction = `Use all ${referenceCount} attached reference images. Treat each reference as important input, preserve the key subject/style/details from every reference where possible, and do not ignore any attached reference image.`;
         return p ? `${instruction}\n\nUser request: ${p}` : instruction;
@@ -72,7 +74,7 @@ export interface RunImageGenerationOptions {
   aspectRatio?: string;
   resolution?: string;
   persistToGenerationsTable?: boolean;
-  referencePolicy?: 'balanced' | 'product-lock';
+  referencePolicy?: ReferencePolicy;
   userId?: string;
 }
 

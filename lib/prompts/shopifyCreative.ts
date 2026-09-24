@@ -4,31 +4,45 @@ export interface ShopifyProductContext {
   description?: string;
 }
 
+export interface AdAngle {
+  name: string;
+  scene: string;
+  /** Present only for text-overlay slots. */
+  headline?: string;
+  subline?: string;
+}
+
+/** Slots 1-2 carry Meta-style text overlays, slots 3-4 are clean. */
+export const CREATIVE_SLOTS = [
+  { withText: true },
+  { withText: true },
+  { withText: false },
+  { withText: false },
+] as const;
+
 const PRODUCT_LOCK = `
 PRODUCT IDENTITY LOCK - HIGHEST PRIORITY
 Reference image 1 is the canonical product and the single source of truth. It is an immutable product asset, not inspiration and not a design brief.
 
 Perform an IMAGE EDIT / OUTPAINT operation around the canonical product. Do not redraw, re-render, reinterpret, typeset, reconstruct, or regenerate the product or its front artwork. Treat every logo, letter, numeral, icon, illustration, certification mark, border, color field, and spacing relationship on the product as one frozen photographic texture copied from reference image 1. Existing package text must remain exactly as photographed, including spelling, capitalization, line breaks, type style, hierarchy, placement, and relative size.
 
-Keep the product in the same front-facing camera orientation and aspect proportions as reference image 1. You may scale and position the whole product uniformly, but may not perspective-warp, rotate, bend, crop, hide, relight destructively, or cover any identity-defining surface. Do not improve, simplify, restyle, relabel, rebrand, recolor, stretch, duplicate, stack, or substitute the product. Add no new text anywhere in the scene.
+Keep the product in the same front-facing camera orientation and aspect proportions as reference image 1. You may scale and position the whole product uniformly, but may not perspective-warp, rotate, bend, crop, hide, relight destructively, or cover any identity-defining surface. Do not improve, simplify, restyle, relabel, rebrand, recolor, stretch, duplicate, stack, or substitute the product. Never add or alter text on the product itself.
 
 The complete product must be fully visible, tack-sharp, correctly scaled, and integrated using realistic contact shadows and environmental reflections around its perimeter. Never place fingers over the package or put the product into a pose that requires changing its perspective. The product is the hero; people and scenery are supporting elements.
 `.trim();
 
-const PHOTOGRAPHY_STANDARD = `
-PHOTOGRAPHY STANDARD
-Create a genuine luxury fashion and beauty campaign photograph, not an AI illustration and not a 3D render. Visual language: Vogue India cover story, high-end global beauty campaign, and contemporary Indian luxury editorial. Phase One XF IQ4 medium-format realism, refined 80mm lens compression, disciplined art direction, cinematic but physically plausible lighting, nuanced color separation, real optical depth, precise product highlights, natural grain, and premium retouching that retains texture.
+const PERFORMANCE_STANDARD = `
+PERFORMANCE AD STANDARD
+This is a paid Meta ad (Instagram/Facebook feed, Stories and Reels) for Indian shoppers. Its job is to stop the scroll in under one second and make the product instantly understood. Photoreal, in-camera look, never an AI illustration or 3D render. Bright, clean, high-contrast lighting with the product as the unmistakable focal point; the product should occupy roughly 35-55% of the frame. Use real, relatable Indian settings and people when a person fits the angle: adults 21-35, authentic skin texture, natural anatomy, believable expressions, anatomically correct hands. Keep the top 14% and bottom 20% of the 9:16 frame free of key product detail so Meta's UI never covers it.
 
-When a person is appropriate, cast a striking Indian-origin adult aged 21-28 with authentic facial structure and skin tone, real pores and fine facial detail, natural asymmetry, believable eyes, anatomically correct hands, confident contemporary styling, and an unforced editorial pose. Avoid plastic skin, waxy faces, uncanny symmetry, beauty-filter smoothness, stiff stock-photo posing, malformed anatomy, or an aged/tired appearance.
-
-The frame must feel art-directed, expensive, modern, and culturally current. Use material-rich sets, intentional negative space, controlled highlights, believable shadows, subtle imperfections, and a strong visual hook. No cheap props, visual clutter, neon overload, generic ecommerce staging, fake bokeh, floating objects, collage layouts, borders, UI, captions, badges, watermarks, or promotional typography.
+Avoid: clutter, cheap props, fake bokeh, floating objects, collage borders, UI chrome, watermarks, platform logos, price tags, invented discounts, star ratings, or claims not supported by the product context.
 `.trim();
 
 function clean(value: string | undefined, maxLength: number): string {
   return (value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
 }
 
-function productBrief(context?: ShopifyProductContext): string {
+export function productBrief(context?: ShopifyProductContext): string {
   if (!context) return 'Product metadata is unavailable; derive identity only from the attached references.';
   const title = clean(context.title, 180);
   const vendor = clean(context.vendor, 120);
@@ -40,36 +54,81 @@ function productBrief(context?: ShopifyProductContext): string {
   ].filter(Boolean).join(' ');
 }
 
-function normalizeDirection(direction?: string): string {
-  const value = clean(direction, 1800);
-  return value || 'No additional user direction. Choose the strongest art direction for the real product.';
+export const DEFAULT_AD_ANGLES: AdAngle[] = [
+  {
+    name: 'Core benefit',
+    scene: 'Bold product hero on a clean, colour-blocked set that echoes the packaging palette, with one category-relevant prop that signals the main benefit.',
+    headline: 'Made for everyday you',
+    subline: 'See why people switch',
+  },
+  {
+    name: 'Problem to solution',
+    scene: 'Relatable Indian person in a real home setting at the moment the problem is solved, product standing upright and unobstructed in the foreground.',
+    headline: 'Finally, one that works',
+    subline: 'Your daily routine, upgraded',
+  },
+  {
+    name: 'Lifestyle moment',
+    scene: 'Candid, warm lifestyle scene with a young Indian adult enjoying the result of the product, the exact product placed upright and front-facing beside them.',
+  },
+  {
+    name: 'Premium still life',
+    scene: 'Scroll-stopping still life with dramatic, controlled light and one striking category-relevant material contrast; the product is the single hero.',
+  },
+];
+
+function textOverlayBlock(angle: AdAngle): string {
+  const headline = clean(angle.headline, 60);
+  const subline = clean(angle.subline, 70);
+  if (!headline) return 'TEXT: none. Add no text anywhere in the scene.';
+  return `
+TEXT OVERLAY - render exactly this ad copy, spelled exactly, nothing else:
+- Headline: "${headline}"
+${subline ? `- Supporting line: "${subline}"\n` : ''}Set it in bold, modern, highly legible sans-serif type with strong contrast against the background, as a native Meta ad would. Place it in clear negative space in the upper-middle or lower-middle area, never overlapping the product and never inside the top 14% or bottom 20% of the frame. No other words, prices, badges, logos or buttons.`.trim();
 }
 
-export function buildShopifyCreativePrompts(
-  context: ShopifyProductContext | undefined,
-  userDirection?: string,
-  identityManifest?: string
-): string[] {
-  const forensicManifest = clean(identityManifest, 3200);
-  const shared = `
-You are the creative director and senior product photographer for an international luxury campaign. Create exactly one finished standalone 9:16 photograph by preserving the canonical product asset and building the campaign scene around it.
+export function buildMetaAdCreativePrompt(options: {
+  context?: ShopifyProductContext;
+  userDirection?: string;
+  identityManifest?: string;
+  angle: AdAngle;
+  withText: boolean;
+}): string {
+  const manifest = clean(options.identityManifest, 3200);
+  const direction = clean(options.userDirection, 1200);
+  const angle = options.withText ? options.angle : { ...options.angle, headline: undefined, subline: undefined };
 
-${productBrief(context)}
-User art direction: ${normalizeDirection(userDirection)}
-${forensicManifest ? `\nFORENSIC PRODUCT IDENTITY MANIFEST - use this only to verify the preserved pixels; never re-typeset from it:\n${forensicManifest}\n` : ''}
+  return `
+You are the creative director of a top Indian D2C performance agency. Create exactly one finished standalone 9:16 Meta ad image by preserving the canonical product asset and building the scene around it.
+
+${productBrief(options.context)}
+${direction ? `User art direction: ${direction}` : ''}
+${manifest ? `\nFORENSIC PRODUCT IDENTITY MANIFEST - use this only to verify the preserved pixels; never re-typeset from it:\n${manifest}\n` : ''}
+CREATIVE ANGLE - ${clean(angle.name, 60)}
+Scene: ${clean(angle.scene, 600)}
+
+${textOverlayBlock(angle)}
 
 ${PRODUCT_LOCK}
 
-${PHOTOGRAPHY_STANDARD}
+${PERFORMANCE_STANDARD}
 
 FINAL PRE-FLIGHT CHECK - perform silently before rendering
-Compare the product in the proposed frame against reference image 1 at high magnification. Reject and correct the frame if any visible character, logo, icon, illustration, label geometry, artwork placement, package seam, silhouette, proportion, material, or color differs. If a creative composition would require redrawing the product, simplify the composition instead. Output only the final photograph: one frame, one scene, no explanation.
+Compare the product in the proposed frame against reference image 1 at high magnification. Reject and correct the frame if any visible character, logo, icon, illustration, label geometry, artwork placement, package seam, silhouette, proportion, material, or color on the product differs. If the composition would require redrawing the product, simplify the composition instead. Output only the final image.
 `.trim();
+}
 
-  return [
-    `${shared}\n\nDIRECTION 1 - HIGH-VOGUE HUMAN EDITORIAL\nCreate a commanding magazine campaign frame with a young Indian model and the exact canonical product standing upright on a foreground plinth or table beside the model. The model must not hold or overlap packaged goods; preserving the front artwork matters more than interaction. For wearable products, keep the canonical logo and construction unchanged. Use sculptural wardrobe, poised body language, directional studio light, a restrained set, and rich tonal depth. The frame should feel like a global Vogue beauty or fashion commission, never influencer content.`,
-    `${shared}\n\nDIRECTION 2 - LUXURY PRODUCT PORTRAIT\nCreate a model-free hero portrait of the exact real product. Build a museum-grade set from one or two category-relevant premium materials, with sculpted light, elegant reflections, precise contact shadow, generous negative space, and immaculate color fidelity. The result should feel like a luxury fragrance, beauty, fashion-accessory, or design campaign photographed in-camera, not a basic white-background listing and not a 3D render.`,
-    `${shared}\n\nDIRECTION 3 - CINEMATIC RITUAL MOMENT\nCreate a believable editorial ritual with a young Indian model using the product category while the exact canonical packaged product remains upright, front-facing, unobstructed, and separate in the foreground. The person may interact with the product's outcome, such as a prepared drink or applied result, but must not grip, bend, rotate, or cover the package itself. Capture a candid micro-expression with cinematic environmental light and tactile detail. Make it emotionally magnetic, sophisticated, and premium rather than posed or commercial-looking.`,
-    `${shared}\n\nDIRECTION 4 - AVANT-GARDE STILL LIFE\nCreate a bold high-fashion still life around the exact real product using disciplined composition, an unexpected but category-relevant material contrast, dramatic controlled light, and editorial negative space. The art direction may be surprising; the product may not change. Keep the canonical product singular, fully visible, perfectly scaled, photo-real, and sharply resolved. The result should feel suitable for a Vogue India inside cover or a global luxury launch campaign.`,
-  ];
+export function buildMetaVideoPrompt(options: {
+  context?: ShopifyProductContext;
+  userDirection?: string;
+  adPatterns?: string;
+}): string {
+  const direction = clean(options.userDirection, 800);
+  const patterns = clean(options.adPatterns, 1500);
+  return `
+Vertical 9:16 Meta Reels ad for ${clean(options.context?.title, 140) || 'this product'}${options.context?.vendor ? ` by ${clean(options.context.vendor, 80)}` : ''}.
+Open with a scroll-stopping first second: immediate motion toward the product, bright clean light, product fully visible and unchanged from the reference frame. One smooth, purposeful camera move (slow push-in or orbit), product stays sharp and front-facing, packaging text and logo never warp or change. Realistic Indian setting, photoreal, no on-screen text.
+${patterns ? `Borrow the pacing and hook structure of the longest-running ads in this niche (never their branding):\n${patterns}` : ''}
+${direction ? `User direction: ${direction}` : ''}
+`.trim();
 }

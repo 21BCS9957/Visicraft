@@ -6,9 +6,12 @@ import {
 } from '@/lib/server/imageGeneration';
 import { analyzeProductIdentity, validateProductIdentity } from '@/lib/banana/api';
 import {
-  buildShopifyCreativePrompts,
+  buildMetaAdCreativePrompt,
+  CREATIVE_SLOTS,
   type ShopifyProductContext,
 } from '@/lib/prompts/shopifyCreative';
+import { planAdAngles } from '@/lib/server/adAngles';
+import type { ProviderUsage } from '@/lib/server/usage';
 import {
   deductCreditsForUser,
   estimateGoogleImageCostUsd,
@@ -19,6 +22,10 @@ import {
   requireAuthenticatedUser,
   sumUsage,
 } from '@/lib/server/usage';
+
+const MAX_ATTEMPTS_PER_SLOT = 3;
+const REQUEST_BUDGET_MS = 280_000;
+const MIN_TIME_FOR_ATTEMPT_MS = 75_000;
 
 const MODES: ImageGenMode[] = ['generate', 'thumbnail', 'edit', 'upscale', 'unblur'];
 
@@ -63,7 +70,8 @@ export async function POST(request: NextRequest) {
     const resolution = typeof body.resolution === 'string' ? body.resolution : undefined;
     const creativeSet = body.creativeSet === true && mode === 'generate';
     const productContext = readProductContext(body.productContext);
-    const creditCost = getServerImageCreditCost(mode, model, resolution);
+    const perImageCost = getServerImageCreditCost(mode, model, resolution);
+    const creditCost = creativeSet ? perImageCost * CREATIVE_SLOTS.length : perImageCost;
     const deducted = await deductCreditsForUser(user.id, creditCost);
 
     if (!deducted) {
@@ -77,169 +85,20 @@ export async function POST(request: NextRequest) {
     chargedCredits = creditCost;
 
     if (creativeSet) {
-      const identityAnalysis = await analyzeProductIdentity(referenceImages);
-      await logUsage({
+      // Ownership of the charge moves into the stream, which refunds unfilled slots itself.
+      chargedUserId = null;
+      chargedCredits = 0;
+      return streamCreativeSet({
         user,
-        model: identityAnalysis.usage.providerModel || 'gemini-2.5-flash',
-        feature: 'image_generation',
-        inputTokens: identityAnalysis.usage.inputTokens,
-        outputTokens: identityAnalysis.usage.outputTokens,
-        totalTokens: identityAnalysis.usage.totalTokens,
-        imageCount: 0,
-        estimatedCostUsd: estimateGoogleProductAnalysisCostUsd(identityAnalysis.usage),
-        creditCost: 0,
-        metadata: {
-          operation: 'product_identity_analysis',
-          referenceCount: referenceImages.length,
-          chargedServerSide: true,
-        },
-      });
-
-      const prompts = buildShopifyCreativePrompts(
+        mode,
+        referenceImages,
+        userDirection: prompt,
+        model,
+        resolution,
         productContext,
-        prompt,
-        identityAnalysis.manifest
-      );
-      const fidelityReferences = referenceImages.slice(0, 1);
-      const generatedSettled = await Promise.allSettled(
-        prompts.map((variantPrompt) => runImageGeneration({
-          mode,
-          referenceImages: fidelityReferences,
-          prompt: variantPrompt,
-          model,
-          aspectRatio,
-          resolution,
-          persistToGenerationsTable: false,
-          referencePolicy: 'product-lock',
-          userId: user.id,
-        }))
-      );
-      const generatedVariants = generatedSettled.flatMap((result, index) =>
-        result.status === 'fulfilled' ? [{ index, generated: result.value }] : []
-      );
-
-      if (generatedVariants.length === 0) {
-        const firstFailure = generatedSettled.find((result) => result.status === 'rejected');
-        throw firstFailure && firstFailure.status === 'rejected'
-          ? firstFailure.reason
-          : new Error('Gemini did not return any images');
-      }
-
-      generatedSettled.forEach((result, index) => {
-        if (result.status === 'rejected') {
-          console.error(`Creative variant ${index + 1} failed:`, result.reason);
-        }
-      });
-
-      const verifiedVariants = await Promise.all(
-        generatedVariants.map(async (variant) => {
-          const imageUrl = variant.generated.images[0];
-          if (!imageUrl) return null;
-          const validation = await validateProductIdentity(
-            fidelityReferences[0],
-            imageUrl,
-            identityAnalysis.manifest
-          );
-          return { ...variant, imageUrl, validation };
-        })
-      );
-      const completedVerifications = verifiedVariants.filter(
-        (variant): variant is NonNullable<typeof variant> => variant !== null
-      );
-      const verificationUsage = sumUsage(
-        completedVerifications.map((variant) => variant.validation.usage)
-      );
-      const validationModel = completedVerifications[0]?.validation.usage.providerModel ||
-        identityAnalysis.usage.providerModel ||
-        'gemini-2.5-flash';
-
-      await logUsage({
-        user,
-        model: validationModel,
-        feature: 'image_generation',
-        inputTokens: verificationUsage.inputTokens,
-        outputTokens: verificationUsage.outputTokens,
-        totalTokens: verificationUsage.totalTokens,
-        imageCount: 0,
-        estimatedCostUsd: estimateGoogleProductAnalysisCostUsd({
-          ...verificationUsage,
-          model: validationModel,
-        }),
-        creditCost: 0,
-        metadata: {
-          operation: 'product_identity_validation',
-          validationCount: completedVerifications.length,
-          chargedServerSide: true,
-        },
-      });
-
-      const acceptedVariants = completedVerifications.filter(
-        (variant) => variant.validation.passed
-      );
-      const images = acceptedVariants.map((variant) => variant.imageUrl);
-      const usage = sumUsage(generatedVariants.map((variant) => variant.generated.usage));
-      const providerModel = generatedVariants[0]?.generated.usage.providerModel || model || 'nano-banana-pro';
-      const billedImageCount = generatedVariants.reduce(
-        (count, variant) => count + variant.generated.images.length,
-        0
-      );
-      const estimatedCostUsd = estimateGoogleImageCostUsd({
-        model: providerModel,
-        resolution: resolution || '2K',
-        imageCount: billedImageCount,
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-      });
-
-      await logUsage({
-        user,
-        model: providerModel,
-        feature: 'image_generation',
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-        totalTokens: usage.totalTokens,
-        imageCount: billedImageCount,
-        estimatedCostUsd,
-        creditCost: images.length === 0 ? 0 : creditCost,
-        metadata: {
-          mode,
-          creativeSet: true,
-          uiModel: model || 'nano-banana-pro',
-          aspectRatio: aspectRatio || '9:16',
-          resolution: resolution || '2K',
-          referenceCount: referenceImages.length,
-          generationReferenceCount: fidelityReferences.length,
-          analysisModel: identityAnalysis.usage.providerModel || 'gemini-2.5-flash',
-          acceptedImageCount: images.length,
-          rejectedImageCount: completedVerifications.length - images.length,
-          validationScores: completedVerifications.map((variant) => ({
-            variant: variant.index + 1,
-            score: variant.validation.score,
-            passed: variant.validation.passed,
-            reason: variant.validation.reason,
-          })),
-          appCreditsRefunded: images.length === 0,
-          chargedServerSide: true,
-        },
-      });
-
-      if (images.length === 0) {
-        throw new Error('Packaging fidelity check rejected every generated image because the product artwork changed. App credits were refunded. Use a clear, front-facing product image and retry.');
-      }
-
-      return NextResponse.json({
-        success: true,
-        images,
-        warning: images.length < prompts.length
-          ? `${images.length} of ${prompts.length} creative angles passed the packaging fidelity check. The altered versions were withheld.`
-          : undefined,
-        usage: {
-          ...usage,
-          imageCount: billedImageCount,
-          returnedImageCount: images.length,
-          estimatedCostUsd,
-          creditsDeducted: creditCost,
-        },
+        adPatterns: typeof body.adPatterns === 'string' ? body.adPatterns.slice(0, 2500) : undefined,
+        perImageCost,
+        creditCost,
       });
     }
 
@@ -304,4 +163,254 @@ export async function POST(request: NextRequest) {
         : 500;
     return NextResponse.json({ error: message }, { status });
   }
+}
+
+type AuthenticatedUser = Awaited<ReturnType<typeof requireAuthenticatedUser>>;
+
+interface CreativeSetOptions {
+  user: AuthenticatedUser;
+  mode: ImageGenMode;
+  referenceImages: string[];
+  userDirection?: string;
+  model?: string;
+  resolution?: string;
+  productContext?: ShopifyProductContext;
+  adPatterns?: string;
+  perImageCost: number;
+  creditCost: number;
+}
+
+/**
+ * Generates the 4-slot Meta ad set and streams NDJSON events as each slot passes
+ * the product-identity check. Failed slots are repaired, then regenerated, before
+ * giving up; unfilled slots are refunded.
+ */
+function streamCreativeSet(options: CreativeSetOptions): Response {
+  const { user, mode, referenceImages, userDirection, model, resolution, productContext, adPatterns, perImageCost, creditCost } = options;
+  const deadline = Date.now() + REQUEST_BUDGET_MS;
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: Record<string, unknown>) => {
+        controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+      };
+      const generationUsages: ProviderUsage[] = [];
+      const analysisUsages: ProviderUsage[] = [];
+      const validationScores: Array<{ slot: number; attempt: number; score: number; passed: boolean; reason: string }> = [];
+      let billedImageCount = 0;
+      let acceptedCount = 0;
+
+      try {
+        send({ type: 'status', message: 'Locking the exact product from your store images...' });
+        const identity = await analyzeProductIdentity(referenceImages);
+        analysisUsages.push(identity.usage);
+        const canonicalImage = referenceImages[identity.canonicalReferenceIndex] ?? referenceImages[0];
+
+        send({ type: 'status', message: 'Planning four ad angles...', canonicalImage });
+        const plan = await planAdAngles({
+          context: productContext,
+          identityManifest: identity.manifest,
+          userDirection,
+          adPatterns,
+        });
+        if (plan.usage) analysisUsages.push(plan.usage);
+        send({
+          type: 'angles',
+          angles: plan.angles.map((angle, index) => ({
+            name: angle.name,
+            withText: CREATIVE_SLOTS[index].withText,
+          })),
+        });
+        send({ type: 'status', message: 'Generating four Meta ad creatives...' });
+
+        const produceSlot = async (index: number) => {
+          const slot = CREATIVE_SLOTS[index];
+          const angle = plan.angles[index];
+          const slotPrompt = buildMetaAdCreativePrompt({
+            context: productContext,
+            userDirection,
+            identityManifest: identity.manifest,
+            angle,
+            withText: slot.withText,
+          });
+          let rejectedUrl: string | null = null;
+
+          for (let attempt = 0; attempt < MAX_ATTEMPTS_PER_SLOT; attempt++) {
+            if (attempt > 0 && deadline - Date.now() < MIN_TIME_FOR_ATTEMPT_MS) break;
+            // Attempt 2 repairs the rejected composition; attempt 3 starts fresh.
+            const repair = attempt === 1 && rejectedUrl !== null;
+            try {
+              const generated = await runImageGeneration({
+                mode,
+                referenceImages: repair ? [canonicalImage, rejectedUrl as string] : [canonicalImage],
+                prompt: slotPrompt,
+                model,
+                aspectRatio: '9:16',
+                resolution,
+                persistToGenerationsTable: false,
+                referencePolicy: repair ? 'product-repair' : 'product-lock',
+                userId: user.id,
+              });
+              generationUsages.push(generated.usage);
+              billedImageCount += generated.images.length;
+              const imageUrl = generated.images[0];
+              if (!imageUrl) continue;
+
+              const validation = await validateProductIdentity(
+                canonicalImage,
+                imageUrl,
+                identity.manifest,
+                { overlayTextExpected: slot.withText }
+              ).catch((error) => {
+                console.error(`Slot ${index + 1} verification failed:`, error);
+                return null;
+              });
+              if (validation) {
+                analysisUsages.push(validation.usage);
+                validationScores.push({
+                  slot: index + 1,
+                  attempt: attempt + 1,
+                  score: validation.score,
+                  passed: validation.passed,
+                  reason: validation.reason,
+                });
+              }
+
+              if (validation?.passed) {
+                acceptedCount += 1;
+                send({
+                  type: 'creative',
+                  index,
+                  url: imageUrl,
+                  angle: angle.name,
+                  withText: slot.withText,
+                  attempts: attempt + 1,
+                });
+                return imageUrl;
+              }
+              rejectedUrl = imageUrl;
+              send({ type: 'retry', index, attempt: attempt + 1 });
+            } catch (error) {
+              console.error(`Slot ${index + 1} attempt ${attempt + 1} failed:`, error);
+            }
+          }
+
+          send({ type: 'slot_failed', index });
+          return null;
+        };
+
+        await Promise.all(CREATIVE_SLOTS.map((_, index) => produceSlot(index)));
+
+        const failedSlots = CREATIVE_SLOTS.length - acceptedCount;
+        if (failedSlots > 0) await refundCreditsForUser(user.id, perImageCost * failedSlots);
+
+        send({
+          type: 'done',
+          acceptedCount,
+          creditsDeducted: perImageCost * acceptedCount,
+          warning: acceptedCount === 0
+            ? 'Every attempt changed the product packaging, so nothing was kept and your credits were refunded. Try a clearer front-facing product image.'
+            : failedSlots > 0
+              ? `${acceptedCount} of ${CREATIVE_SLOTS.length} ads passed the product check. Credits for the other ${failedSlots} were refunded.`
+              : undefined,
+        });
+      } catch (error) {
+        console.error('Creative set error:', error);
+        const unfilled = CREATIVE_SLOTS.length - acceptedCount;
+        await refundCreditsForUser(user.id, perImageCost * unfilled).catch(() => undefined);
+        send({ type: 'error', message: error instanceof Error ? error.message : 'Generation failed' });
+      } finally {
+        await logCreativeSetUsage({
+          user,
+          model,
+          resolution,
+          mode,
+          referenceCount: referenceImages.length,
+          generationUsages,
+          analysisUsages,
+          billedImageCount,
+          acceptedCount,
+          perImageCost,
+          creditCost,
+          validationScores,
+          researched: Boolean(adPatterns),
+        }).catch((error) => console.error('Usage logging failed:', error));
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'X-Accel-Buffering': 'no',
+    },
+  });
+}
+
+async function logCreativeSetUsage(input: {
+  user: AuthenticatedUser;
+  model?: string;
+  resolution?: string;
+  mode: ImageGenMode;
+  referenceCount: number;
+  generationUsages: ProviderUsage[];
+  analysisUsages: ProviderUsage[];
+  billedImageCount: number;
+  acceptedCount: number;
+  perImageCost: number;
+  creditCost: number;
+  validationScores: unknown[];
+  researched: boolean;
+}) {
+  const analysis = sumUsage(input.analysisUsages);
+  const analysisModel = input.analysisUsages[0]?.providerModel || 'gemini-2.5-flash';
+  await logUsage({
+    user: input.user,
+    model: analysisModel,
+    feature: 'image_generation',
+    ...analysis,
+    imageCount: 0,
+    estimatedCostUsd: estimateGoogleProductAnalysisCostUsd({ ...analysis, model: analysisModel }),
+    creditCost: 0,
+    metadata: {
+      operation: 'creative_set_analysis_and_validation',
+      calls: input.analysisUsages.length,
+      chargedServerSide: true,
+    },
+  });
+
+  const usage = sumUsage(input.generationUsages);
+  const providerModel = input.generationUsages[0]?.providerModel || input.model || 'nano-banana-pro';
+  await logUsage({
+    user: input.user,
+    model: providerModel,
+    feature: 'image_generation',
+    ...usage,
+    imageCount: input.billedImageCount,
+    estimatedCostUsd: estimateGoogleImageCostUsd({
+      model: providerModel,
+      resolution: input.resolution || '2K',
+      imageCount: input.billedImageCount,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+    }),
+    creditCost: input.perImageCost * input.acceptedCount,
+    metadata: {
+      mode: input.mode,
+      creativeSet: true,
+      metaAdResearch: input.researched,
+      uiModel: input.model || 'nano-banana-pro',
+      aspectRatio: '9:16',
+      resolution: input.resolution || '2K',
+      referenceCount: input.referenceCount,
+      acceptedImageCount: input.acceptedCount,
+      creditsCharged: input.creditCost,
+      creditsRefunded: input.creditCost - input.perImageCost * input.acceptedCount,
+      validationScores: input.validationScores,
+      chargedServerSide: true,
+    },
+  });
 }

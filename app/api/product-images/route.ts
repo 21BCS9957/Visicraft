@@ -45,10 +45,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const imageCandidates = uniqueImages([
-      ...(shopifyData?.images ?? []),
-      ...(pageData?.images ?? []),
-    ]).slice(0, MAX_IMAGE_CANDIDATES);
+    // Shopify's product JSON lists only this product's own media. Page <img> tags also
+    // include "you may also like" and upsell products, which is how other products leaked
+    // into the references. Use page data only when the store JSON is unavailable, and
+    // then prefer product-schema/metadata images over raw <img> tags.
+    const pageImages = pageData?.images ?? [];
+    const metadataImages = pageImages.filter((image) => image.source === 'metadata');
+    const sourceImages = shopifyData?.images.length
+      ? shopifyData.images
+      : metadataImages.length > 0
+        ? metadataImages
+        : pageImages;
+    const imageCandidates = uniqueImages(sourceImages).slice(0, MAX_IMAGE_CANDIDATES);
     const images = (await filterUsableImages(imageCandidates)).slice(0, MAX_IMAGES);
 
     if (images.length === 0) {

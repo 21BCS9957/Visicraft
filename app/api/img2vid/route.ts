@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleAuth } from 'google-auth-library';
-import { imageToBase64 } from '@/lib/banana/api';
+import { analyzeProductIdentity, imageToBase64 } from '@/lib/banana/api';
+import { buildMetaVideoPrompt } from '@/lib/prompts/shopifyCreative';
 import {
   deductCreditsForUser,
   estimateGoogleVideoCostUsd,
@@ -17,7 +18,12 @@ export async function POST(request: NextRequest) {
   try {
     const user = await requireAuthenticatedUser(request);
     const body = await request.json();
-    const { imageUrl, prompt, model, numResults, aspectRatio, duration, resolution, negativePrompt } = body;
+    const { model, numResults, aspectRatio, duration, resolution, negativePrompt } = body;
+    let { imageUrl, prompt } = body;
+    const referenceImages: string[] = Array.isArray(body.referenceImages)
+      ? body.referenceImages.filter((url: unknown): url is string => typeof url === 'string' && url.length > 0)
+      : [];
+    if (!imageUrl && referenceImages.length > 0) imageUrl = referenceImages[0];
 
     if (!imageUrl) {
       return NextResponse.json({ error: 'Image URL is required' }, { status: 400 });
@@ -54,6 +60,25 @@ export async function POST(request: NextRequest) {
     }
     chargedUserId = user.id;
     chargedCredits = creditCost;
+
+    // Product-link videos: lock onto the clearest front-facing product image, not just the first one.
+    if (referenceImages.length > 1) {
+      const identity = await analyzeProductIdentity(referenceImages).catch((error) => {
+        console.warn('Canonical product selection failed, using first image:', error);
+        return null;
+      });
+      if (identity) imageUrl = referenceImages[identity.canonicalReferenceIndex] ?? imageUrl;
+    }
+    if (body.productContext && typeof body.productContext === 'object') {
+      prompt = buildMetaVideoPrompt({
+        context: {
+          title: typeof body.productContext.title === 'string' ? body.productContext.title : undefined,
+          vendor: typeof body.productContext.vendor === 'string' ? body.productContext.vendor : undefined,
+        },
+        userDirection: typeof prompt === 'string' ? prompt : undefined,
+        adPatterns: typeof body.adPatterns === 'string' ? body.adPatterns : undefined,
+      });
+    }
 
     const dataUrl = await imageToBase64(imageUrl);
     const base64Data = dataUrl.split(',')[1];

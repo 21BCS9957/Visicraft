@@ -82,7 +82,7 @@ export interface ProductIdentityValidation {
   usage: ProviderUsage;
 }
 
-async function requestGeminiText(
+export async function requestGeminiText(
   parts: GeminiPart[],
   generationConfig: NonNullable<GeminiRequest['generationConfig']>,
   operation: string
@@ -149,7 +149,7 @@ async function requestGeminiText(
   throw new Error(`Google ${operation.toLowerCase()} is unavailable.`);
 }
 
-async function loadPreparedReferences(referenceImages: string[]): Promise<{
+export async function loadPreparedReferences(referenceImages: string[]): Promise<{
   images: DownloadedImage[];
   sourceIndexes: number[];
   totalBytes: number;
@@ -255,7 +255,8 @@ Do not propose a campaign scene. Do not improve or rewrite copy. Keep the respon
 export async function validateProductIdentity(
   canonicalImageUrl: string,
   generatedImageUrl: string,
-  identityManifest: string
+  identityManifest: string,
+  options: { overlayTextExpected?: boolean } = {}
 ): Promise<ProductIdentityValidation> {
   const { images } = await loadPreparedReferences([canonicalImageUrl, generatedImageUrl]);
   if (images.length !== 2) {
@@ -271,7 +272,7 @@ The generated product passes only when all of these remain faithful:
 - logo geometry, label layout, illustration, certification marks, and color fields;
 - package silhouette, proportions, seams, closure, material, and product count.
 
-Reject invented wording, missing wording, approximate logos, redesigned labels, changed illustrations, changed package color, or a generic substitute. Slight perspective or lighting changes are acceptable only when identity remains unmistakably the same.
+${options.overlayTextExpected ? 'The generated image is a paid-social ad and is expected to contain headline or benefit text set in the scene, outside the product. Ignore that overlay text entirely; judge only text printed on the physical product.\n\n' : ''}Reject invented wording, missing wording, approximate logos, redesigned labels, changed illustrations, changed package color, or a generic substitute. Slight perspective or lighting changes are acceptable only when identity remains unmistakably the same.
 
 Identity manifest:
 ${identityManifest.slice(0, 3200)}
