@@ -76,6 +76,8 @@ interface AdResearch {
 interface CreativeSlot {
   angle?: string;
   withText?: boolean;
+  /** Advertiser whose long-running ad this creative's layout was modelled on. */
+  modelledOn?: string;
   url?: string;
   failed?: boolean;
   retrying?: boolean;
@@ -873,7 +875,9 @@ function CreativeSlotSkeleton({ index, slot }: { index: number; slot: CreativeSl
                   ? 'Product check failed · refunded'
                   : slot.retrying
                     ? 'Matching your packaging'
-                    : `Ad ${index + 1} of ${PRODUCT_SET_SIZE}`}
+                    : slot.modelledOn
+                      ? `Modelled on ${slot.modelledOn}`
+                      : `Ad ${index + 1} of ${PRODUCT_SET_SIZE}`}
               </p>
             </div>
           </div>
@@ -1246,7 +1250,7 @@ export function HeroSection() {
 
     try {
       let adPatterns: string | undefined;
-      if (wantsResearch) {
+      if (wantsResearch && generationMode === 'video') {
         setStatusMessage(`Finding the longest-running ${generationMode} ads in this niche on Meta India...`);
         setProgress(8);
         try {
@@ -1295,7 +1299,8 @@ export function HeroSection() {
             aspectRatio: isProductFlow ? '9:16' : undefined,
             resolution: '2K',
             productContext,
-            adPatterns,
+            research: wantsResearch,
+            country: 'IN',
           }),
         }, 295000);
 
@@ -1325,10 +1330,20 @@ export function HeroSection() {
               if (event.type === 'status' && typeof event.message === 'string') {
                 setStatusMessage(event.message);
                 setProgress((p) => Math.min(94, p + 6));
+              } else if (event.type === 'research' && event.research) {
+                const research = event.research as AdResearch;
+                setAdResearch(research);
+                setIsResearching(false);
+                setStatusMessage(`Studied ${research.ads.length} winning ${research.niche} ads. Building your creatives...`);
+                setProgress((p) => Math.max(p, 45));
+              } else if (event.type === 'research_failed') {
+                setIsResearching(false);
+                toast.error(`${typeof event.message === 'string' ? event.message : 'Ad research failed'} Continuing without research.`);
               } else if (event.type === 'angles' && Array.isArray(event.angles)) {
-                setCreativeSlots((event.angles as Array<{ name: string; withText: boolean }>).map((angle) => ({
+                setCreativeSlots((event.angles as Array<{ name: string; withText: boolean; modelledOn?: string }>).map((angle) => ({
                   angle: angle.name,
                   withText: angle.withText,
+                  modelledOn: angle.modelledOn,
                 })));
               } else if (event.type === 'creative' && index >= 0) {
                 setCreativeSlots((slots) => slots.map((slot, i) => i === index
@@ -1996,8 +2011,13 @@ export function HeroSection() {
                         </div>
                       )}
                       {slot.url && (
-                      <div className="absolute inset-x-0 bottom-0 flex items-center justify-end bg-gradient-to-t from-black/72 via-black/20 to-transparent p-3 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                        <div className="flex gap-2">
+                      <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/72 via-black/20 to-transparent p-3 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                        {slot.modelledOn ? (
+                          <span className="truncate rounded-full border border-white/10 bg-white/10 px-2.5 py-1 text-[10px] font-medium text-white/76 backdrop-blur">
+                            Modelled on {slot.modelledOn}
+                          </span>
+                        ) : <span />}
+                        <div className="flex shrink-0 gap-2">
                           <button
                             type="button"
                             onClick={() => setPreviewImageUrl(slot.url ?? null)}

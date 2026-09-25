@@ -10,6 +10,10 @@ export interface AdAngle {
   /** Present only for text-overlay slots. */
   headline?: string;
   subline?: string;
+  /** Layout/design notes distilled from a winning ad this angle is modelled on. */
+  design?: string;
+  /** Advertiser page of the winning ad this angle is modelled on, for the UI. */
+  modelledOn?: string;
 }
 
 /** Slots 1-2 carry Meta-style text overlays, slots 3-4 are clean. */
@@ -106,7 +110,7 @@ ${direction ? `User art direction: ${direction}` : ''}
 ${manifest ? `\nFORENSIC PRODUCT IDENTITY MANIFEST - use this only to verify the preserved pixels; never re-typeset from it:\n${manifest}\n` : ''}
 CREATIVE ANGLE - ${clean(angle.name, 60)}
 Scene: ${clean(angle.scene, 600)}
-
+${angle.design ? `Design reference (structure of a long-running ad in this niche; reproduce the layout logic, product placement and visual hierarchy, never any brand, wording or claim from it): ${clean(angle.design, 500)}\n` : ''}
 ${textOverlayBlock(angle)}
 
 ${PRODUCT_LOCK}

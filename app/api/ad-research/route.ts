@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
       country: result.country,
       ads: result.ads,
       patterns: result.patterns,
+      designs: result.designs,
       mock: result.mock,
     });
   } catch (error) {

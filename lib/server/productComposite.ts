@@ -7,99 +7,49 @@ import type { ProviderUsage } from '@/lib/server/usage';
  * Generative models redraw packaging and garble small print. Instead of trusting
  * the rendered product, we cut the real product out of the canonical store photo
  * and paste it over the model's version, so label text is exact by construction.
+ *
+ * Cutting: an ML salient-object model (@imgly/background-removal-node, on-CPU)
+ * produces an alpha matte for the whole photo. The model is under-confident on
+ * dark products, so the matte is binarised at a low threshold: true background is
+ * exactly zero, product pixels are merely low. Gemini's bounding box then picks the
+ * package region and only the largest connected region inside it is kept, which
+ * drops icons, arrows and props that share the photo.
  */
 
 export interface ProductCutout {
   png: Buffer;
   width: number;
   height: number;
+  sourceUrl: string;
+  /** Mean luminance (0-255) of the opaque pixels, used to match scene lighting. */
+  luminance: number;
 }
 
-interface Box {
+export interface Box {
   left: number;
   top: number;
   width: number;
   height: number;
 }
 
-const BG_TOLERANCE = 34; // max RGB distance from the sampled background colour to count as background
-const SOFT_EDGE = 26; // distance range over which alpha ramps from 0 to 1
-const MIN_COVERAGE = 0.04; // cutout must keep at least this share of pixels to be a real product
-
-function colorDistance(a: number[], b: number[]): number {
-  return Math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2);
+export interface CutoutResult {
+  cutout: ProductCutout | null;
+  reason?: string;
+  usage?: ProviderUsage;
 }
 
-/**
- * Builds an alpha matte by keying out the near-uniform background found at the
- * image corners. Returns null when the photo has no solid background (lifestyle
- * shots), in which case callers fall back to the model-rendered product.
- */
-export async function cutoutProduct(canonicalImageUrl: string): Promise<ProductCutout | null> {
-  const { images } = await loadPreparedReferences([canonicalImageUrl]);
-  const source = Buffer.from(images[0].data, 'base64');
-  const { data, info } = await sharp(source).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  const { width, height, channels } = info;
+const ML_INPUT_MAX_EDGE = 1600; // the matting model works at ~1k internally; larger input just costs time
+const ALPHA_THRESHOLD = 0.06; // matte values below this are background
+const BOX_MARGIN = 0.08; // expand Gemini's box so the whole silhouette is inside
+const MIN_PRODUCT_SHARE = 0.18; // product must cover at least this share of the box
+const MIN_PRODUCT_EXTENT = 0.55; // and span at least this share of the box width/height
 
-  const sample = (x: number, y: number) => {
-    const i = (y * width + x) * channels;
-    return [data[i], data[i + 1], data[i + 2]];
-  };
-  const pad = Math.max(2, Math.round(Math.min(width, height) * 0.02));
-  const corners = [
-    sample(pad, pad), sample(width - 1 - pad, pad),
-    sample(pad, height - 1 - pad), sample(width - 1 - pad, height - 1 - pad),
-    sample(Math.floor(width / 2), pad), sample(Math.floor(width / 2), height - 1 - pad),
-  ];
-  const bg = corners.reduce((acc, c) => [acc[0] + c[0] / corners.length, acc[1] + c[1] / corners.length, acc[2] + c[2] / corners.length], [0, 0, 0]);
-  if (corners.some((c) => colorDistance(c, bg) > BG_TOLERANCE)) return null;
-
-  // Flood fill from the borders so background-coloured areas inside the product survive.
-  const visited = new Uint8Array(width * height);
-  const stack: number[] = [];
-  const push = (x: number, y: number) => {
-    if (x < 0 || y < 0 || x >= width || y >= height) return;
-    const idx = y * width + x;
-    if (visited[idx]) return;
-    visited[idx] = 1;
-    stack.push(idx);
-  };
-  for (let x = 0; x < width; x++) { push(x, 0); push(x, height - 1); }
-  for (let y = 0; y < height; y++) { push(0, y); push(width - 1, y); }
-
-  const alpha = new Uint8Array(width * height).fill(255);
-  let kept = width * height;
-  while (stack.length) {
-    const idx = stack.pop() as number;
-    const x = idx % width;
-    const y = (idx - x) / width;
-    const dist = colorDistance(sample(x, y), bg);
-    if (dist > BG_TOLERANCE + SOFT_EDGE) continue;
-    const a = dist <= BG_TOLERANCE ? 0 : Math.round(((dist - BG_TOLERANCE) / SOFT_EDGE) * 255);
-    if (a === 0) kept -= 1;
-    alpha[idx] = a;
-    if (a === 0) {
-      push(x + 1, y); push(x - 1, y); push(x, y + 1); push(x, y - 1);
-    }
-  }
-  if (kept / (width * height) < MIN_COVERAGE) return null;
-
-  for (let i = 0; i < width * height; i++) data[i * channels + 3] = alpha[i];
-  const png = await sharp(data, { raw: { width, height, channels: 4 } })
-    .trim({ threshold: 8 })
-    .png()
-    .toBuffer();
-  const meta = await sharp(png).metadata();
-  if (!meta.width || !meta.height) return null;
-  return { png, width: meta.width, height: meta.height };
-}
-
-/** Asks Gemini for the bounding box of the product package in a generated ad. */
-export async function locateProduct(generatedImageUrl: string): Promise<{ box: Box | null; usage: ProviderUsage }> {
-  const { images } = await loadPreparedReferences([generatedImageUrl]);
+/** Asks Gemini for the bounding box of the product package in an image. */
+export async function locateProduct(imageUrl: string): Promise<{ box: Box | null; usage: ProviderUsage }> {
+  const { images } = await loadPreparedReferences([imageUrl]);
   const { response, providerModel } = await requestGeminiText(
     [
-      { text: 'Find the single main product package (bottle, pouch, box, jar, tube or similar retail packaging) in this advertisement image. Return JSON only: {"box_2d":[ymin,xmin,ymax,xmax]} with coordinates normalised to 0-1000, tightly enclosing the whole package including its edges. If there is no package, return {"box_2d":null}.' },
+      { text: 'Find the single main retail product package (pouch, bottle, box, jar, tube or similar) in this image. Return JSON only: {"box_2d":[ymin,xmin,ymax,xmax]} with coordinates normalised to 0-1000, tightly enclosing the whole package including its edges but excluding shadows, props, icons and text that are not printed on the package. If there is no package, return {"box_2d":null}.' },
       { inlineData: { mimeType: images[0].mimeType, data: images[0].data } },
     ],
     { temperature: 0 },
@@ -123,9 +73,153 @@ export async function locateProduct(generatedImageUrl: string): Promise<{ box: B
   };
 }
 
+/** Runs the on-CPU matting model. Returns null when the engine is disabled or unavailable. */
+async function removeBackgroundML(png: Buffer): Promise<Buffer | null> {
+  if (process.env.PRODUCT_CUTOUT_ENGINE === 'off') return null;
+  try {
+    const { removeBackground } = await import('@imgly/background-removal-node');
+    const result = await removeBackground(new Blob([new Uint8Array(png)], { type: 'image/png' }), {
+      model: 'medium',
+      output: { format: 'image/png', quality: 1 },
+    });
+    return Buffer.from(await result.arrayBuffer());
+  } catch (error) {
+    console.warn('Background removal model unavailable:', error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
+/**
+ * Cuts the product out of a store photo. Returns null (with a reason) when it
+ * cannot be done reliably, in which case callers keep the model rendering.
+ */
+export async function cutoutProduct(imageUrl: string): Promise<CutoutResult> {
+  const { images } = await loadPreparedReferences([imageUrl]);
+  const source = Buffer.from(images[0].data, 'base64');
+  const meta = await sharp(source).metadata();
+  const W = meta.width ?? 0;
+  const H = meta.height ?? 0;
+  if (!W || !H) return { cutout: null, reason: 'unreadable image' };
+
+  const mlInput = await sharp(source)
+    .resize({ width: ML_INPUT_MAX_EDGE, height: ML_INPUT_MAX_EDGE, fit: 'inside', withoutEnlargement: true })
+    .png()
+    .toBuffer();
+  const [matted, located] = await Promise.all([removeBackgroundML(mlInput), locateProduct(imageUrl)]);
+  if (!matted) return { cutout: null, reason: 'matting engine unavailable', usage: located.usage };
+  if (!located.box) return { cutout: null, reason: 'no package located', usage: located.usage };
+
+  // Full-resolution alpha from the matte, binarised at a low threshold.
+  const alphaFull = await sharp(matted)
+    .ensureAlpha()
+    .extractChannel(3)
+    .resize(W, H, { fit: 'fill' })
+    .raw()
+    .toBuffer();
+  const rgb = await sharp(source).removeAlpha().raw().toBuffer();
+
+  const mx = located.box.width * BOX_MARGIN * W;
+  const my = located.box.height * BOX_MARGIN * H;
+  const left = Math.max(0, Math.floor(located.box.left * W - mx));
+  const top = Math.max(0, Math.floor(located.box.top * H - my));
+  const right = Math.min(W, Math.ceil((located.box.left + located.box.width) * W + mx));
+  const bottom = Math.min(H, Math.ceil((located.box.top + located.box.height) * H + my));
+  const width = right - left;
+  const height = bottom - top;
+  if (width < 32 || height < 32) return { cutout: null, reason: 'package box too small', usage: located.usage };
+
+  // Hard threshold: the matte is under-confident inside dark products, so any
+  // interior softness must become fully opaque; edges are feathered later.
+  const alpha = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      alpha[y * width + x] = alphaFull[(top + y) * W + left + x] / 255 < ALPHA_THRESHOLD ? 0 : 255;
+    }
+  }
+
+  // Keep only the largest opaque region (the package); drop icons, arrows, props.
+  const label = new Int32Array(width * height).fill(-1);
+  let bestLabel = -1;
+  let bestSize = 0;
+  const extents: Array<{ minX: number; minY: number; maxX: number; maxY: number; size: number }> = [];
+  for (let start = 0; start < width * height; start++) {
+    if (alpha[start] === 0 || label[start] !== -1) continue;
+    const id = extents.length;
+    const ext = { minX: width, minY: height, maxX: 0, maxY: 0, size: 0 };
+    extents.push(ext);
+    const queue = [start];
+    label[start] = id;
+    while (queue.length) {
+      const idx = queue.pop() as number;
+      const x = idx % width;
+      const y = (idx - x) / width;
+      ext.size += 1;
+      if (x < ext.minX) ext.minX = x;
+      if (x > ext.maxX) ext.maxX = x;
+      if (y < ext.minY) ext.minY = y;
+      if (y > ext.maxY) ext.maxY = y;
+      for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const n = ny * width + nx;
+        if (alpha[n] !== 0 && label[n] === -1) { label[n] = id; queue.push(n); }
+      }
+    }
+    if (ext.size > bestSize) { bestSize = ext.size; bestLabel = id; }
+  }
+  if (bestLabel < 0) return { cutout: null, reason: 'nothing left after matting', usage: located.usage };
+  const best = extents[bestLabel];
+  const share = best.size / (width * height);
+  const extentX = (best.maxX - best.minX + 1) / width;
+  const extentY = (best.maxY - best.minY + 1) / height;
+  if (share < MIN_PRODUCT_SHARE || extentX < MIN_PRODUCT_EXTENT || extentY < MIN_PRODUCT_EXTENT) {
+    return { cutout: null, reason: `matted region too small (share ${share.toFixed(2)}, extent ${extentX.toFixed(2)}x${extentY.toFixed(2)})`, usage: located.usage };
+  }
+
+  // Keep the product component only, then erode its edge a few pixels so the
+  // source background's colour fringe is not carried into the ad.
+  const mask = new Uint8Array(width * height);
+  for (let i = 0; i < width * height; i++) mask[i] = label[i] === bestLabel ? 255 : 0;
+  const erodeRadius = Math.max(1, Math.round(Math.min(W, H) / 600));
+  const eroded = erode(mask, width, height, erodeRadius);
+  const feathered = await sharp(Buffer.from(eroded), { raw: { width, height, channels: 1 } })
+    .blur(0.8)
+    .raw()
+    .toBuffer();
+
+  const outW = best.maxX - best.minX + 1;
+  const outH = best.maxY - best.minY + 1;
+  const out = Buffer.alloc(outW * outH * 4);
+  let lumSum = 0;
+  let lumCount = 0;
+  for (let y = 0; y < outH; y++) {
+    for (let x = 0; x < outW; x++) {
+      const cx = best.minX + x;
+      const cy = best.minY + y;
+      const ci = cy * width + cx;
+      const si = ((top + cy) * W + left + cx) * 3;
+      const a = feathered[ci];
+      const oi = (y * outW + x) * 4;
+      out[oi] = rgb[si];
+      out[oi + 1] = rgb[si + 1];
+      out[oi + 2] = rgb[si + 2];
+      out[oi + 3] = a;
+      if (a === 255) {
+        lumSum += 0.2126 * rgb[si] + 0.7152 * rgb[si + 1] + 0.0722 * rgb[si + 2];
+        lumCount += 1;
+      }
+    }
+  }
+  const png = await sharp(out, { raw: { width: outW, height: outH, channels: 4 } }).png().toBuffer();
+  return {
+    cutout: { png, width: outW, height: outH, sourceUrl: imageUrl, luminance: lumCount ? lumSum / lumCount : 128 },
+    usage: located.usage,
+  };
+}
+
 /**
  * Pastes the real product cutout over the model's rendition, scaled to cover the
- * located box, with a soft contact shadow. Returns the public URL of the composite.
+ * located box, brightness-matched to the scene, with a soft contact shadow.
+ * Returns the public URL of the composite.
  */
 export async function compositeProduct(
   generatedImageUrl: string,
@@ -133,8 +227,8 @@ export async function compositeProduct(
   box: Box
 ): Promise<string> {
   const { images } = await loadPreparedReferences([generatedImageUrl]);
-  const base = sharp(Buffer.from(images[0].data, 'base64'));
-  const meta = await base.metadata();
+  const baseBuffer = Buffer.from(images[0].data, 'base64');
+  const meta = await sharp(baseBuffer).metadata();
   const W = meta.width ?? 0;
   const H = meta.height ?? 0;
   if (!W || !H) throw new Error('Could not read generated image dimensions');
@@ -142,7 +236,7 @@ export async function compositeProduct(
   const boxW = box.width * W;
   const boxH = box.height * H;
   // Cover the rendered product so none of its garbled text peeks out.
-  const scale = Math.max(boxW / cutout.width, boxH / cutout.height) * 1.04;
+  const scale = Math.max(boxW / cutout.width, boxH / cutout.height) * 1.05;
   const pw = Math.max(1, Math.round(cutout.width * scale));
   const ph = Math.max(1, Math.round(cutout.height * scale));
   const cx = box.left * W + boxW / 2;
@@ -150,7 +244,23 @@ export async function compositeProduct(
   const left = Math.round(cx - pw / 2);
   const top = Math.round(cy - ph / 2);
 
-  const product = await sharp(cutout.png).resize(pw, ph, { fit: 'fill' }).png().toBuffer();
+  // Match the scene's brightness on the product (never its hue: packaging colours stay true).
+  const region = await sharp(baseBuffer)
+    .extract({
+      left: Math.max(0, Math.round(box.left * W)),
+      top: Math.max(0, Math.round(box.top * H)),
+      width: Math.max(1, Math.min(W - Math.round(box.left * W), Math.round(boxW))),
+      height: Math.max(1, Math.min(H - Math.round(box.top * H), Math.round(boxH))),
+    })
+    .stats();
+  const sceneLum = 0.2126 * region.channels[0].mean + 0.7152 * region.channels[1].mean + 0.0722 * region.channels[2].mean;
+  const brightness = Math.min(1.12, Math.max(0.82, sceneLum / Math.max(1, cutout.luminance)));
+
+  const product = await sharp(cutout.png)
+    .resize(pw, ph, { fit: 'fill' })
+    .modulate({ brightness })
+    .png()
+    .toBuffer();
   const shadow = await sharp(product)
     .ensureAlpha()
     .linear([0, 0, 0, 0.55], [0, 0, 0, 0])
@@ -162,12 +272,34 @@ export async function compositeProduct(
     clipToCanvas(shadow, left + Math.round(pw * 0.02), top + Math.round(ph * 0.04), pw, ph, W, H),
     clipToCanvas(product, left, top, pw, ph, W, H),
   ]);
-  const composite = await base
+  const composite = await sharp(baseBuffer)
     .composite(layers.filter((layer): layer is NonNullable<typeof layer> => layer !== null))
     .png()
     .toBuffer();
 
   return uploadDataUrlToBucket(`data:image/png;base64,${composite.toString('base64')}`, 'generated-thumbnails');
+}
+
+/** Binary erosion: a pixel stays opaque only if every pixel within `radius` is opaque. */
+function erode(mask: Uint8Array, width: number, height: number, radius: number): Uint8Array {
+  const out = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x;
+      if (mask[i] === 0) continue;
+      let keep = true;
+      for (let dy = -radius; dy <= radius && keep; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= height) { keep = false; break; }
+        for (let dx = -radius; dx <= radius; dx++) {
+          const xx = x + dx;
+          if (xx < 0 || xx >= width || mask[yy * width + xx] === 0) { keep = false; break; }
+        }
+      }
+      out[i] = keep ? 255 : 0;
+    }
+  }
+  return out;
 }
 
 /** sharp rejects overlays that extend past the base image, so crop them to the visible part. */

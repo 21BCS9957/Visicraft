@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  // Native/ONNX packages must load from node_modules at runtime, not be bundled.
+  serverExternalPackages: ['@imgly/background-removal-node', 'onnxruntime-node', 'sharp'],
   
   // Performance optimizations
   compress: true,

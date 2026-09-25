@@ -12,6 +12,7 @@ import {
 } from '@/lib/prompts/shopifyCreative';
 import { planAdAngles } from '@/lib/server/adAngles';
 import { compositeProduct, cutoutProduct, locateProduct } from '@/lib/server/productComposite';
+import { researchWinningAds, type AdDesign } from '@/lib/server/metaAdResearch';
 import type { ProviderUsage } from '@/lib/server/usage';
 import {
   deductCreditsForUser,
@@ -98,6 +99,8 @@ export async function POST(request: NextRequest) {
         resolution,
         productContext,
         adPatterns: typeof body.adPatterns === 'string' ? body.adPatterns.slice(0, 2500) : undefined,
+        research: body.research === true,
+        country: typeof body.country === 'string' && /^[A-Z]{2}$/.test(body.country) ? body.country : 'IN',
         perImageCost,
         creditCost,
       });
@@ -177,6 +180,9 @@ interface CreativeSetOptions {
   resolution?: string;
   productContext?: ShopifyProductContext;
   adPatterns?: string;
+  /** Run Meta winning-ad research inside the stream (overlaps product analysis). */
+  research?: boolean;
+  country?: string;
   perImageCost: number;
   creditCost: number;
 }
@@ -187,7 +193,9 @@ interface CreativeSetOptions {
  * giving up; unfilled slots are refunded.
  */
 function streamCreativeSet(options: CreativeSetOptions): Response {
-  const { user, mode, referenceImages, userDirection, model, resolution, productContext, adPatterns, perImageCost, creditCost } = options;
+  const { user, mode, referenceImages, userDirection, model, resolution, productContext, research, country, perImageCost, creditCost } = options;
+  let adPatterns = options.adPatterns;
+  let winningDesigns: AdDesign[] = [];
   const deadline = Date.now() + REQUEST_BUDGET_MS;
   const encoder = new TextEncoder();
 
@@ -204,24 +212,74 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
       let verifierErrors = 0;
 
       try {
-        send({ type: 'status', message: 'Locking the exact product from your store images...' });
+        // Winning-ad research runs concurrently with product analysis and cutout.
+        const researchPromise = research && productContext
+          ? researchWinningAds(productContext, 'image', country ?? 'IN')
+              .then((result) => ({ result, error: null as Error | null }))
+              .catch((error: unknown) => ({ result: null, error: error instanceof Error ? error : new Error('Ad research failed') }))
+          : null;
+        send({
+          type: 'status',
+          message: researchPromise
+            ? 'Finding the longest-running ads in this niche and locking your product...'
+            : 'Locking the exact product from your store images...',
+        });
         const identity = await analyzeProductIdentity(referenceImages);
         analysisUsages.push(identity.usage);
         const canonicalImage = referenceImages[identity.canonicalReferenceIndex] ?? referenceImages[0];
 
         // Real product pixels get pasted over the model's rendition so label text stays exact.
-        // Prefer the canonical photo; otherwise any store image with a solid background.
-        let cutout: Awaited<ReturnType<typeof cutoutProduct>> = null;
-        for (const candidate of [canonicalImage, ...referenceImages.filter((url) => url !== canonicalImage)]) {
-          cutout = await cutoutProduct(candidate).catch((error) => {
-            console.warn('Product cutout failed for', candidate, error);
-            return null;
-          });
-          if (cutout) {
-            console.log(`Product cutout ready (${cutout.width}x${cutout.height}) from ${candidate}`);
-            break;
+        // Only the analyzer's packshot is trusted as the paste source: other store images
+        // may be infographics or lifestyle collages that merely contain a plain background.
+        const cut: Awaited<ReturnType<typeof cutoutProduct>> = await cutoutProduct(canonicalImage).catch((error) => {
+          console.warn('Product cutout failed:', error);
+          return { cutout: null, reason: 'error' };
+        });
+        if (cut.usage) analysisUsages.push(cut.usage);
+        const cutout = cut.cutout;
+        console.log(cutout
+          ? `Product cutout ready (${cutout.width}x${cutout.height}) from ${canonicalImage}`
+          : `Cutout skipped (${cut.reason}); relying on model rendering for ${canonicalImage}`);
+
+        if (researchPromise) {
+          const research = await researchPromise;
+          if (research.result) {
+            adPatterns = research.result.patterns;
+            winningDesigns = research.result.designs;
+            send({
+              type: 'research',
+              research: {
+                niche: research.result.niche,
+                keywords: research.result.keywords,
+                ads: research.result.ads,
+                patterns: research.result.patterns,
+                mock: research.result.mock,
+              },
+            });
+            await logUsage({
+              user,
+              model: research.result.usage.providerModel || 'gemini-3.8-flash',
+              feature: 'image_generation',
+              inputTokens: research.result.usage.inputTokens,
+              outputTokens: research.result.usage.outputTokens,
+              totalTokens: research.result.usage.totalTokens,
+              imageCount: 0,
+              estimatedCostUsd: estimateGoogleProductAnalysisCostUsd({ ...research.result.usage, model: research.result.usage.providerModel }),
+              creditCost: 0,
+              metadata: {
+                operation: 'meta_winning_ad_research',
+                mediaType: 'image',
+                country: country ?? 'IN',
+                niche: research.result.niche,
+                keywords: research.result.keywords,
+                adCount: research.result.ads.length,
+                mock: research.result.mock,
+              },
+            }).catch((error) => console.error('Research usage logging failed:', error));
+          } else {
+            console.error('Ad research failed, continuing without it:', research.error);
+            send({ type: 'research_failed', message: research.error?.message ?? 'Ad research failed' });
           }
-          console.log('No solid background, cutout skipped for', candidate);
         }
 
         send({ type: 'status', message: 'Planning four ad angles...', canonicalImage });
@@ -230,6 +288,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           identityManifest: identity.manifest,
           userDirection,
           adPatterns,
+          winningDesigns,
         });
         if (plan.usage) analysisUsages.push(plan.usage);
         send({
@@ -237,6 +296,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           angles: plan.angles.map((angle, index) => ({
             name: angle.name,
             withText: CREATIVE_SLOTS[index].withText,
+            modelledOn: angle.modelledOn,
           })),
         });
         send({ type: 'status', message: 'Generating four Meta ad creatives...' });
@@ -253,10 +313,12 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           });
           let rejectedUrl: string | null = null;
 
-          for (let attempt = 0; attempt < MAX_ATTEMPTS_PER_SLOT; attempt++) {
+          // With the real product pasted in, a failure means occlusion or a bad box, so
+          // one clean regeneration is enough; without it, allow a repair pass too.
+          const maxAttempts = cutout ? 2 : MAX_ATTEMPTS_PER_SLOT;
+          for (let attempt = 0; attempt < maxAttempts; attempt++) {
             if (attempt > 0 && deadline - Date.now() < MIN_TIME_FOR_ATTEMPT_MS) break;
-            // Attempt 2 repairs the rejected composition; attempt 3 starts fresh.
-            const repair = attempt === 1 && rejectedUrl !== null;
+            const repair = !cutout && attempt === 1 && rejectedUrl !== null;
             try {
               const generated = await runImageGeneration({
                 mode,

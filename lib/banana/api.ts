@@ -192,7 +192,7 @@ export async function analyzeProductIdentity(referenceImages: string[]): Promise
   const parts: GeminiPart[] = [{
     text: `Act as a forensic packaging and product-identity analyst. Inspect every supplied reference, determine which single image gives the clearest, largest, most front-facing and least-obstructed view of the actual product, then return a concise PRODUCT IDENTITY MANIFEST for another image model.
 
-The first line must be exactly CANONICAL_REFERENCE_INDEX: N, where N is the one-based reference number you selected. Prefer a clean product-facing image over a lifestyle image. Do not automatically select image 1.
+The first line must be exactly CANONICAL_REFERENCE_INDEX: N, where N is the one-based reference number you selected. Choose the image where the physical package is largest, sharpest, front-facing and completely unobstructed, with nothing overlapping it. Strongly prefer a plain packshot. Rank lower: lifestyle scenes with props touching the package, collages, and images with added icons, badges, arrows or marketing text outside the package. Never choose an infographic or an image that does not show the package itself. Do not automatically select image 1.
 
 Include:
 1. Exact package/object silhouette, dimensions and front-facing orientation.
