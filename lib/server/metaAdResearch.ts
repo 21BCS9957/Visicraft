@@ -17,6 +17,8 @@ export interface WinningAd {
   landingDomain?: string;
   imageUrl?: string;
   videoUrl?: string;
+  /** Video ads can still serve as design references (via their cover frame) when image ads are scarce. */
+  mediaKind: 'image' | 'video';
   libraryUrl: string;
 }
 
@@ -54,7 +56,7 @@ const MIN_AGE_CASCADE_DAYS: Array<number | null> = [180, 60, null];
 const ADS_PER_COMPETITOR = 25;
 const MIN_USABLE_ADS = 3;
 const TOP_ADS = 6;
-const CANDIDATE_POOL = 24; // longest-running ads considered before the relevance gate
+const CANDIDATE_POOL = 80; // ads screened by the relevance gate before ranking by age
 const MAX_VIDEO_BYTES = 12 * 1024 * 1024;
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
@@ -139,7 +141,7 @@ Rules: exactly 2 keywords, each 1-3 words, generic category terms competitors wo
   };
 }
 
-function adLibrarySearchUrl(keyword: string, country: string, mediaType: AdMediaType): string {
+function adLibrarySearchUrl(keyword: string, country: string, mediaType: AdMediaType | 'all'): string {
   const params = new URLSearchParams({
     active_status: 'active',
     ad_type: 'all',
@@ -183,7 +185,7 @@ function sampleAdLibraryItems(niche: string, mediaType: AdMediaType): RawAd[] {
 async function scrapeAdLibrary(
   keywords: string[],
   country: string,
-  mediaType: AdMediaType,
+  mediaType: AdMediaType | 'all',
   minAgeDays: number | null,
   limitPerKeyword = ADS_PER_KEYWORD
 ): Promise<RawAd[]> {
@@ -261,7 +263,12 @@ function hasMedia(url: string | undefined): boolean {
 }
 
 /** Winning = still active and running the longest. One ad per advertiser for variety. */
-export function rankWinningAds(rawAds: RawAd[], mediaType: AdMediaType, limit = TOP_ADS): WinningAd[] {
+export function rankWinningAds(
+  rawAds: RawAd[],
+  mediaType: AdMediaType,
+  limit = TOP_ADS,
+  includeOtherKind = false
+): WinningAd[] {
   const now = Date.now();
   const bestPerPage = new Map<string, WinningAd>();
 
@@ -276,7 +283,9 @@ export function rankWinningAds(rawAds: RawAd[], mediaType: AdMediaType, limit = 
     if (!start) continue;
     const snapshot = pick(raw, 'snapshot') as RawAd | undefined;
     const media = firstMedia(snapshot);
-    if (mediaType === 'video' ? !hasMedia(media.videoUrl) : !hasMedia(media.imageUrl) || hasMedia(media.videoUrl)) continue;
+    const mediaKind: 'image' | 'video' = hasMedia(media.videoUrl) ? 'video' : 'image';
+    if (!hasMedia(media.imageUrl) && !hasMedia(media.videoUrl)) continue;
+    if (!includeOtherKind && mediaKind !== mediaType) continue;
 
     const id = String(pick(raw, 'ad_archive_id', 'adArchiveID', 'adArchiveId', 'id') ?? '');
     if (!id) continue;
@@ -294,6 +303,7 @@ export function rankWinningAds(rawAds: RawAd[], mediaType: AdMediaType, limit = 
       landingDomain: clean(pick(snapshot, 'caption') ?? pick(snapshot, 'link_url', 'linkUrl'), 80).replace(/^https?:\/\//, '').split('/')[0] || undefined,
       imageUrl: media.imageUrl || undefined,
       videoUrl: media.videoUrl || undefined,
+      mediaKind,
       libraryUrl: `https://www.facebook.com/ads/library/?id=${encodeURIComponent(id)}`,
     };
 
@@ -413,7 +423,7 @@ Never copy a competitor's brand name, claims or exact wording into your descript
 
   ads.forEach((ad, index) => {
     parts.push({
-      text: `AD ${index + 1} — id ${ad.id} — running ${ad.daysRunning} days. Headline: ${ad.title || 'n/a'}. CTA: ${ad.ctaText || 'n/a'}. Primary text: ${ad.body || 'n/a'}`,
+      text: `AD ${index + 1} — id ${ad.id} — running ${ad.daysRunning} days${ad.mediaKind === 'video' && mediaType === 'image' ? ' (video ad; its cover frame is shown)' : ''}. Headline: ${ad.title || 'n/a'}. CTA: ${ad.ctaText || 'n/a'}. Primary text: ${ad.body || 'n/a'}`,
     });
     const video = videoByAd.get(ad.id);
     const image = imageByAd.get(ad.id);
@@ -478,9 +488,10 @@ export async function researchWinningAds(
       run: () => scrapeAdLibrary(keywords, country, mediaType, minAgeDays),
     }));
     if (competitors.length > 0) {
+      // Brands mostly run video; their cover frames are still valid design references.
       jobs.push({
         label: `competitors ${competitors.join(', ')}`,
-        run: () => scrapeAdLibrary(competitors, country, mediaType, null, ADS_PER_COMPETITOR),
+        run: () => scrapeAdLibrary(competitors, country, 'all', null, ADS_PER_COMPETITOR),
       });
     }
     const tiers = await Promise.all(
@@ -490,7 +501,7 @@ export async function researchWinningAds(
           console.warn(`Ad research ${job.label} failed:`, error instanceof Error ? error.message : error);
           return [] as RawAd[];
         });
-        const ranked = rankWinningAds(rawAds, mediaType, CANDIDATE_POOL);
+        const ranked = rankWinningAds(rawAds, mediaType, CANDIDATE_POOL, true);
         console.log(`Ad research: ${ranked.length} usable ${mediaType} ads for ${job.label} (${Math.round((Date.now() - started) / 1000)}s)`);
         return ranked;
       })
@@ -501,10 +512,21 @@ export async function researchWinningAds(
       const existing = pool.get(ad.id);
       if (!existing || ad.daysRunning > existing.daysRunning) pool.set(ad.id, ad);
     });
+    // Gate every candidate first: long-running junk (advertorials, novel apps) must not
+    // crowd out genuine competitors that happen to refresh creatives more often.
     const candidates = [...pool.values()].sort((a, b) => b.daysRunning - a.daysRunning).slice(0, CANDIDATE_POOL);
     const screened = await filterRelevantAds(candidates, product, niche);
     relevanceUsage = screened.usage;
-    ads = screened.ads.sort((a, b) => b.daysRunning - a.daysRunning).slice(0, TOP_ADS);
+    const relevant = screened.ads.sort((a, b) => b.daysRunning - a.daysRunning);
+    const sameKind = relevant.filter((ad) => ad.mediaKind === mediaType);
+    const otherKind = relevant.filter((ad) => ad.mediaKind !== mediaType);
+    ads = (sameKind.length >= MIN_USABLE_ADS
+      ? sameKind.slice(0, TOP_ADS)
+      : [...sameKind, ...otherKind].slice(0, TOP_ADS)
+    ).sort((a, b) => b.daysRunning - a.daysRunning);
+    if (otherKind.length && sameKind.length < MIN_USABLE_ADS) {
+      console.log(`Ad research: only ${sameKind.length} relevant ${mediaType} ads; using ${Math.min(otherKind.length, TOP_ADS - sameKind.length)} ${mediaType === 'image' ? 'video cover frames' : 'image ads'} as extra design references`);
+    }
   }
   if (ads.length === 0) {
     throw new Error(`No long-running ${mediaType} ads selling ${niche} were found on Meta in ${country}.`);
