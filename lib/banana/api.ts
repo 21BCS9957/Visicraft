@@ -281,7 +281,7 @@ ${identityManifest.slice(0, 3200)}
 
 For packagingTextExact, inspect the visible brand name, product name, variant name, prominent numbers, and prominent symbols. Tiny regulatory or ingredient copy that is genuinely too small to resolve may be treated as unreadable rather than changed. Still reject any clearly invented, misspelled, substituted, or rearranged prominent copy.
 
-Return JSON only with this exact shape:
+Return JSON only with this exact shape, where score is an integer from 0 to 100 (100 = pixel-faithful product, 85+ = identity unmistakably the same, below 60 = a different or altered product):
 {"packagingTextExact":true,"logoExact":true,"artworkLayoutExact":true,"geometryExact":true,"score":0,"reason":"brief factual reason"}`,
     },
     { text: 'CANONICAL PRODUCT:' },
@@ -312,7 +312,9 @@ Return JSON only with this exact shape:
     throw new Error('Product identity verification returned malformed JSON.');
   }
   const parsed = JSON.parse(withoutFences.slice(jsonStart, jsonEnd + 1)) as Record<string, unknown>;
-  const score = Math.max(0, Math.min(100, Number(parsed.score) || 0));
+  const rawScore = Number(parsed.score) || 0;
+  // Models sometimes answer on a 0-10 scale despite the instruction; normalise to 0-100.
+  const score = Math.max(0, Math.min(100, rawScore > 0 && rawScore <= 10 && Number.isInteger(rawScore) ? rawScore * 10 : rawScore));
   const passed =
     parsed.packagingTextExact === true &&
     parsed.logoExact === true &&

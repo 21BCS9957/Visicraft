@@ -330,8 +330,8 @@ ${mediaType === 'video' ? '6. Video pacing: what happens in the first 2 seconds,
     });
     const video = videoByAd.get(ad.id);
     const image = imageByAd.get(ad.id);
-    if (video) parts.push({ inlineData: video });
-    else if (image) parts.push({ inlineData: image });
+    if (video) parts.push({ inlineData: { mimeType: video.mimeType, data: video.data } });
+    else if (image) parts.push({ inlineData: { mimeType: image.mimeType, data: image.data } });
   });
 
   const { response, providerModel } = await requestGeminiText(parts, { temperature: 0.3 }, 'Winning ad analysis');
