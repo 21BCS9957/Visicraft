@@ -789,6 +789,123 @@ function ProductCreativeProgress({
   );
 }
 
+/**
+ * Glass placeholder for one ad slot: a ghost 9:16 ad layout (hero block, copy
+ * bars for text slots, CTA pill) under a drifting aurora and a light sweep.
+ */
+function CreativeSlotSkeleton({ index, slot }: { index: number; slot: CreativeSlot }) {
+  const delay = index * 380;
+  const withText = slot.withText !== false;
+  const label = slot.failed
+    ? 'Withheld'
+    : slot.retrying
+      ? 'Refining product'
+      : slot.angle
+        ? 'Composing scene'
+        : 'Planning angle';
+
+  return (
+    <div className={cn(
+      'absolute inset-0 overflow-hidden bg-[#111114]',
+      !slot.failed && 'shadow-[inset_0_0_0_1px_rgba(255,240,90,0.08),inset_0_-60px_80px_-60px_rgba(255,240,90,0.12)]'
+    )}>
+      {/* Aurora */}
+      {!slot.failed && (
+        <>
+          <div
+            className="absolute -left-1/2 -top-1/3 h-[95%] w-[150%] rounded-full opacity-80 blur-3xl"
+            style={{
+              background: 'radial-gradient(closest-side, rgba(255,240,90,0.5), transparent 68%)',
+              animation: `slotAurora 9s ease-in-out ${delay}ms infinite alternate`,
+            }}
+          />
+          <div
+            className="absolute -bottom-1/3 -right-1/2 h-[90%] w-[150%] rounded-full opacity-80 blur-3xl"
+            style={{
+              background: 'radial-gradient(closest-side, rgba(188,168,255,0.48), transparent 68%)',
+              animation: `slotAurora 11s ease-in-out ${delay + 1200}ms infinite alternate-reverse`,
+            }}
+          />
+        </>
+      )}
+
+      {/* Glass ad layout ghost */}
+      <div className="absolute inset-0 flex flex-col px-[12%] pb-[11%] pt-[17%]">
+        <div
+          className="relative flex-1 rounded-[18px] border border-white/[0.14] bg-gradient-to-b from-white/[0.09] to-white/[0.03] shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_18px_40px_-20px_rgba(0,0,0,0.8)] backdrop-blur-xl"
+        >
+          {/* product silhouette */}
+          <div className="absolute left-1/2 top-[44%] h-[46%] w-[38%] -translate-x-1/2 -translate-y-1/2 rounded-[14px] border border-white/10 bg-gradient-to-b from-white/[0.14] to-white/[0.03] shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]" />
+          <div className="absolute inset-x-[18%] bottom-[16%] h-[6%] rounded-full bg-black/45 blur-md" />
+
+          {/* Status */}
+          <div className="absolute inset-x-0 bottom-[6%] flex flex-col items-center gap-2.5">
+            {slot.failed ? (
+              <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.05] backdrop-blur">
+                <X className="h-4 w-4 text-white/55" />
+              </span>
+            ) : (
+              <span className="relative flex h-10 w-10 items-center justify-center">
+                <span
+                  className="absolute inset-0 rounded-full"
+                  style={{
+                    background: `conic-gradient(from 0deg, transparent 0 62%, ${slot.retrying ? 'rgba(188,168,255,0.95)' : 'rgba(255,240,90,0.95)'} 100%)`,
+                    WebkitMask: 'radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px))',
+                    mask: 'radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px))',
+                    animation: 'slotRing 1.4s linear infinite',
+                  }}
+                />
+                <span className="absolute inset-0 rounded-full border border-white/10" />
+                <span
+                  className={cn(
+                    'h-1.5 w-1.5 rounded-full',
+                    slot.retrying
+                      ? 'bg-[#c8b8ff] shadow-[0_0_16px_rgba(188,168,255,0.7)]'
+                      : 'bg-[#fff05a] shadow-[0_0_16px_rgba(255,240,90,0.7)]'
+                  )}
+                />
+              </span>
+            )}
+            <div className="px-3 text-center">
+              <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-white/72">{label}</p>
+              <p className="mt-1 whitespace-nowrap text-[11px] font-light text-white/40">
+                {slot.failed
+                  ? 'Product check failed · refunded'
+                  : slot.retrying
+                    ? 'Matching your packaging'
+                    : `Ad ${index + 1} of ${PRODUCT_SET_SIZE}`}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {withText ? (
+          <div className="mt-[7%] space-y-[3.5%]">
+            <div className="h-[9px] w-[72%] rounded-full bg-white/[0.16]" style={{ animation: `slotBar 2.2s ease-in-out ${delay}ms infinite` }} />
+            <div className="h-[7px] w-[52%] rounded-full bg-white/[0.1]" style={{ animation: `slotBar 2.2s ease-in-out ${delay + 300}ms infinite` }} />
+          </div>
+        ) : (
+          <div className="mt-[7%] h-[9px]" />
+        )}
+
+        <div className="mt-[6%] flex items-center justify-between">
+          <div className="h-[9px] w-[34%] rounded-full bg-white/[0.06]" />
+          <div className="h-[24px] w-[34%] rounded-full border border-[#fff05a]/20 bg-[#fff05a]/[0.08]" />
+        </div>
+      </div>
+
+      {/* Light sweep */}
+      {!slot.failed && (
+        <div
+          className="pointer-events-none absolute inset-y-0 w-[55%] -skew-x-12 bg-gradient-to-r from-transparent via-white/[0.07] to-transparent"
+          style={{ animation: `slotSheen 3.4s cubic-bezier(0.4,0,0.2,1) ${delay}ms infinite` }}
+        />
+      )}
+
+    </div>
+  );
+}
+
 let imageIdCounter = 0;
 
 export function HeroSection() {
@@ -850,6 +967,19 @@ export function HeroSection() {
     return () => {
       uploadedImages.forEach((img) => URL.revokeObjectURL(img.preview));
     };
+  }, []);
+
+  // Dev-only: /?previewSlots=1 shows the four loading cards without generating.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return;
+    if (!new URLSearchParams(window.location.search).has('previewSlots')) return;
+    setGeneratedType('image');
+    setCreativeSlots([
+      { angle: 'Core benefit', withText: true },
+      { angle: 'Problem to solution', withText: true, retrying: true },
+      { angle: 'Lifestyle moment', withText: false },
+      { angle: 'Premium still life', withText: false, failed: true },
+    ]);
   }, []);
 
   useEffect(() => {
@@ -1836,7 +1966,7 @@ export function HeroSection() {
                   {creativeSlots.map((slot, i) => (
                     <div
                       key={i}
-                      className="group relative aspect-[9/16] w-full overflow-hidden rounded-[22px] border border-white/10 bg-[#151519] opacity-0 shadow-[0_22px_70px_rgba(0,0,0,0.34)] animate-word-appear"
+                      className="group relative aspect-[9/16] w-full overflow-hidden rounded-[22px] border border-white/10 bg-[#151519] opacity-0 shadow-[0_22px_70px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.06)] animate-word-appear"
                       style={{ animationDelay: `${i * 0.1}s`, animationFillMode: 'forwards' }}
                     >
                       {slot.url ? (
@@ -1849,27 +1979,11 @@ export function HeroSection() {
                             src={slot.url}
                             alt={slot.angle ? `${slot.angle} ad creative` : `Generated ${i + 1}`}
                             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.025]"
+                            style={{ animation: 'slotReveal 900ms cubic-bezier(0.2,0.8,0.2,1) both' }}
                           />
                         </button>
                       ) : (
-                        <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-4 text-center">
-                          {slot.failed ? (
-                            <>
-                              <X className="h-5 w-5 text-white/40" />
-                              <p className="text-xs font-light text-white/50">
-                                Didn&apos;t pass the product check. Credits refunded.
-                              </p>
-                            </>
-                          ) : (
-                            <>
-                              <div className="absolute inset-0 animate-pulse bg-gradient-to-b from-white/[0.06] to-transparent" />
-                              <span className="relative h-2 w-2 animate-pulse rounded-full bg-[#fff05a] shadow-[0_0_18px_rgba(255,240,90,0.55)]" />
-                              <p className="relative text-xs font-light text-white/60">
-                                {slot.retrying ? 'Fixing product details...' : slot.angle ? `Creating "${slot.angle}"` : 'Planning angle...'}
-                              </p>
-                            </>
-                          )}
-                        </div>
+                        <CreativeSlotSkeleton index={i} slot={slot} />
                       )}
                       {slot.angle && (
                         <div className="pointer-events-none absolute left-3 top-3 flex gap-1.5">
@@ -2199,6 +2313,28 @@ export function HeroSection() {
         @keyframes shimmer {
           0% { transform: translateX(-100%); }
           100% { transform: translateX(100%); }
+        }
+        @keyframes slotSheen {
+          0% { transform: translateX(-160%) skewX(-12deg); }
+          60%, 100% { transform: translateX(320%) skewX(-12deg); }
+        }
+        @keyframes slotAurora {
+          0% { transform: translate3d(0, 0, 0) scale(1); }
+          100% { transform: translate3d(12%, 10%, 0) scale(1.18); }
+        }
+        @keyframes slotRing {
+          to { transform: rotate(360deg); }
+        }
+        @keyframes slotBar {
+          0%, 100% { opacity: 0.55; }
+          50% { opacity: 1; }
+        }
+        @keyframes slotReveal {
+          from { opacity: 0; transform: scale(1.04); filter: blur(10px); }
+          to { opacity: 1; transform: scale(1); filter: blur(0); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          [style*="slotSheen"], [style*="slotAurora"], [style*="slotBar"] { animation: none !important; }
         }
         @keyframes showcaseProgress {
           from { width: 0%; }
