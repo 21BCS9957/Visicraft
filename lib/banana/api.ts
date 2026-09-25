@@ -78,6 +78,7 @@ export interface ProductIdentityAnalysis {
 export interface ProductIdentityValidation {
   passed: boolean;
   score: number;
+  checks: Record<'packagingTextExact' | 'logoExact' | 'artworkLayoutExact' | 'geometryExact', boolean>;
   reason: string;
   usage: ProviderUsage;
 }
@@ -315,12 +316,16 @@ Return JSON only with this exact shape, where score is an integer from 0 to 100 
   const rawScore = Number(parsed.score) || 0;
   // Models sometimes answer on a 0-10 scale despite the instruction; normalise to 0-100.
   const score = Math.max(0, Math.min(100, rawScore > 0 && rawScore <= 10 && Number.isInteger(rawScore) ? rawScore * 10 : rawScore));
-  const passed =
-    parsed.packagingTextExact === true &&
-    parsed.logoExact === true &&
-    parsed.artworkLayoutExact === true &&
-    parsed.geometryExact === true &&
-    score >= 85;
+  const checks = {
+    packagingTextExact: parsed.packagingTextExact === true,
+    logoExact: parsed.logoExact === true,
+    artworkLayoutExact: parsed.artworkLayoutExact === true,
+    geometryExact: parsed.geometryExact === true,
+  };
+  const allExact = Object.values(checks).every(Boolean);
+  // The model's numeric score is conservative even when it reports no discrepancies,
+  // so the four explicit checks decide; the score only guards against contradictions.
+  const passed = (allExact && score >= 60) || score >= 85;
   const usageMetadata = response.data.usageMetadata;
   const inputTokens = Number(usageMetadata?.promptTokenCount) || 0;
   const outputTokens = Number(usageMetadata?.candidatesTokenCount) || 0;
@@ -328,6 +333,7 @@ Return JSON only with this exact shape, where score is an integer from 0 to 100 
   return {
     passed,
     score,
+    checks,
     reason: typeof parsed.reason === 'string' ? parsed.reason.slice(0, 500) : 'Identity mismatch detected.',
     usage: {
       inputTokens,

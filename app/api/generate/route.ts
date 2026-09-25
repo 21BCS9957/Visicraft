@@ -198,7 +198,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
       };
       const generationUsages: ProviderUsage[] = [];
       const analysisUsages: ProviderUsage[] = [];
-      const validationScores: Array<{ slot: number; attempt: number; score: number; passed: boolean; reason: string }> = [];
+      const validationScores: Array<{ slot: number; attempt: number; score: number; passed: boolean; checks: Record<string, boolean>; composited: boolean; reason: string }> = [];
       let billedImageCount = 0;
       let acceptedCount = 0;
       let verifierErrors = 0;
@@ -210,11 +210,19 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
         const canonicalImage = referenceImages[identity.canonicalReferenceIndex] ?? referenceImages[0];
 
         // Real product pixels get pasted over the model's rendition so label text stays exact.
-        const cutout = await cutoutProduct(canonicalImage).catch((error) => {
-          console.warn('Product cutout unavailable, relying on model rendering:', error);
-          return null;
-        });
-        console.log(cutout ? `Product cutout ready (${cutout.width}x${cutout.height})` : 'No solid-background product photo; cutout skipped');
+        // Prefer the canonical photo; otherwise any store image with a solid background.
+        let cutout: Awaited<ReturnType<typeof cutoutProduct>> = null;
+        for (const candidate of [canonicalImage, ...referenceImages.filter((url) => url !== canonicalImage)]) {
+          cutout = await cutoutProduct(candidate).catch((error) => {
+            console.warn('Product cutout failed for', candidate, error);
+            return null;
+          });
+          if (cutout) {
+            console.log(`Product cutout ready (${cutout.width}x${cutout.height}) from ${candidate}`);
+            break;
+          }
+          console.log('No solid background, cutout skipped for', candidate);
+        }
 
         send({ type: 'status', message: 'Planning four ad angles...', canonicalImage });
         const plan = await planAdAngles({
@@ -265,6 +273,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
               billedImageCount += generated.images.length;
               let imageUrl = generated.images[0];
               if (!imageUrl) continue;
+              let composited = false;
 
               if (cutout) {
                 try {
@@ -272,6 +281,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                   analysisUsages.push(located.usage);
                   if (located.box) {
                     imageUrl = await compositeProduct(imageUrl, cutout, located.box);
+                    composited = true;
                   } else {
                     console.warn(`Slot ${index + 1}: product not located in generated image; keeping model rendering`);
                   }
@@ -299,6 +309,8 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                   attempt: attempt + 1,
                   score: validation.score,
                   passed: validation.passed,
+                  checks: validation.checks,
+                  composited,
                   reason: validation.reason,
                 });
               }
