@@ -200,6 +200,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
       const validationScores: Array<{ slot: number; attempt: number; score: number; passed: boolean; reason: string }> = [];
       let billedImageCount = 0;
       let acceptedCount = 0;
+      let verifierErrors = 0;
 
       try {
         send({ type: 'status', message: 'Locking the exact product from your store images...' });
@@ -264,8 +265,11 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                 { overlayTextExpected: slot.withText }
               ).catch((error) => {
                 console.error(`Slot ${index + 1} verification failed:`, error);
+                verifierErrors += 1;
                 return null;
               });
+              // The checker itself failed (not the image): retrying generation would only burn credits.
+              if (!validation) break;
               if (validation) {
                 analysisUsages.push(validation.usage);
                 validationScores.push({
@@ -310,7 +314,9 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           acceptedCount,
           creditsDeducted: perImageCost * acceptedCount,
           warning: acceptedCount === 0
-            ? 'Every attempt changed the product packaging, so nothing was kept and your credits were refunded. Try a clearer front-facing product image.'
+            ? verifierErrors > 0
+              ? 'The product check service was unavailable, so no creatives could be verified. Your credits were refunded; please try again in a minute.'
+              : 'Every attempt changed the product packaging, so nothing was kept and your credits were refunded. Try a clearer front-facing product image.'
             : failedSlots > 0
               ? `${acceptedCount} of ${CREATIVE_SLOTS.length} ads passed the product check. Credits for the other ${failedSlots} were refunded.`
               : undefined,

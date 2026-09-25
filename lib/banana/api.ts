@@ -90,16 +90,18 @@ export async function requestGeminiText(
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
 
+  // Google retired gemini-2.5-flash(-lite) for new API keys; keep them as late fallbacks only.
   const modelCandidates = Array.from(new Set([
     process.env.GEMINI_ANALYSIS_MODEL,
+    'gemini-3.8-flash',
+    'gemini-3.5-flash-lite',
     'gemini-2.5-flash',
     'gemini-2.5-flash-lite',
-    'gemini-3-pro-image',
   ].filter((model): model is string => Boolean(model))));
   let lastError: unknown;
 
   for (const providerModel of modelCandidates) {
-    const apiVersion = providerModel === 'gemini-3-pro-image' ? 'v1beta' : 'v1';
+    const apiVersion = 'v1beta';
     try {
       const response = await axios.post<GeminiResponse>(
         `https://generativelanguage.googleapis.com/${apiVersion}/models/${providerModel}:generateContent`,
