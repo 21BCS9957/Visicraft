@@ -110,12 +110,13 @@ export async function cutoutProduct(imageUrl: string): Promise<CutoutResult> {
   if (!located.box) return { cutout: null, reason: 'no package located', usage: located.usage };
 
   // Full-resolution alpha from the matte, binarised at a low threshold.
-  const alphaFull = await sharp(matted)
+  const matteAlpha = await sharp(matted)
     .ensureAlpha()
     .extractChannel(3)
     .resize(W, H, { fit: 'fill' })
     .raw()
-    .toBuffer();
+    .toBuffer({ resolveWithObject: true });
+  const alphaFull = singleChannel(matteAlpha.data, matteAlpha.info.channels, W * H);
   const rgb = await sharp(source).removeAlpha().raw().toBuffer();
 
   const mx = located.box.width * BOX_MARGIN * W;
@@ -179,12 +180,33 @@ export async function cutoutProduct(imageUrl: string): Promise<CutoutResult> {
   // source background's colour fringe is not carried into the ad.
   const mask = new Uint8Array(width * height);
   for (let i = 0; i < width * height; i++) mask[i] = label[i] === bestLabel ? 255 : 0;
+  // The matte dips below threshold in patches inside dark packaging; a package has no
+  // see-through parts, so fill every transparent region not reachable from the border.
+  const reachable = new Uint8Array(width * height);
+  const fill: number[] = [];
+  const seed = (x: number, y: number) => {
+    const i = y * width + x;
+    if (mask[i] === 0 && !reachable[i]) { reachable[i] = 1; fill.push(i); }
+  };
+  for (let x = 0; x < width; x++) { seed(x, 0); seed(x, height - 1); }
+  for (let y = 0; y < height; y++) { seed(0, y); seed(width - 1, y); }
+  while (fill.length) {
+    const i = fill.pop() as number;
+    const x = i % width;
+    const y = (i - x) / width;
+    if (x > 0) seed(x - 1, y);
+    if (x < width - 1) seed(x + 1, y);
+    if (y > 0) seed(x, y - 1);
+    if (y < height - 1) seed(x, y + 1);
+  }
+  let filledHoles = 0;
+  for (let i = 0; i < width * height; i++) {
+    if (mask[i] === 0 && !reachable[i]) { mask[i] = 255; filledHoles += 1; }
+  }
+  if (filledHoles) console.log(`Product cutout: filled ${filledHoles} interior hole pixels`);
   const erodeRadius = Math.max(1, Math.round(Math.min(W, H) / 600));
   const eroded = erode(mask, width, height, erodeRadius);
-  const feathered = await sharp(Buffer.from(eroded), { raw: { width, height, channels: 1 } })
-    .blur(0.8)
-    .raw()
-    .toBuffer();
+  const feathered = boxBlur3(eroded, width, height);
 
   const outW = best.maxX - best.minX + 1;
   const outH = best.maxY - best.minY + 1;
@@ -278,6 +300,41 @@ export async function compositeProduct(
     .toBuffer();
 
   return uploadDataUrlToBucket(`data:image/png;base64,${composite.toString('base64')}`, 'generated-thumbnails');
+}
+
+/**
+ * sharp's raw output does not always keep a single band (a blurred 1-channel
+ * image comes back as 3), so take the first channel per pixel defensively.
+ */
+function singleChannel(data: Buffer, channels: number, pixels: number): Uint8Array {
+  if (channels === 1 && data.length === pixels) return new Uint8Array(data.buffer, data.byteOffset, pixels);
+  const stride = Math.max(1, Math.round(data.length / pixels));
+  const out = new Uint8Array(pixels);
+  for (let i = 0; i < pixels; i++) out[i] = data[i * stride];
+  return out;
+}
+
+/** 3x3 box blur of a mask: a one-pixel soft edge without relying on sharp's channel handling. */
+function boxBlur3(mask: Uint8Array, width: number, height: number): Uint8Array {
+  const out = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let sum = 0;
+      let count = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= height) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx;
+          if (xx < 0 || xx >= width) continue;
+          sum += mask[yy * width + xx];
+          count += 1;
+        }
+      }
+      out[y * width + x] = Math.round(sum / count);
+    }
+  }
+  return out;
 }
 
 /** Binary erosion: a pixel stays opaque only if every pixel within `radius` is opaque. */
