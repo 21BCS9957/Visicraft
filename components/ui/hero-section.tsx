@@ -672,11 +672,9 @@ async function fetchWithTimeout(
   }
 }
 
-function buildProductCreativePrompt(product: ProductCapture, originalPrompt: string, productUrl: string): string {
-  const userDirection = removeUrlFromPrompt(originalPrompt, productUrl);
-  const productName = product.title ? `"${product.title}"` : 'this Shopify product';
-  const brand = product.vendor ? ` by ${product.vendor}` : '';
-  return userDirection || `High-Vogue luxury campaign for ${productName}${brand}, preserving the exact canonical product identity.`;
+/** Keeps only the user's own direction; the server supplies the Meta ad art direction. */
+function buildProductCreativePrompt(_product: ProductCapture, originalPrompt: string, productUrl: string): string {
+  return removeUrlFromPrompt(originalPrompt, productUrl);
 }
 
 function ProductCreativeProgress({

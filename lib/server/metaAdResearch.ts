@@ -30,8 +30,11 @@ export interface AdResearchResult {
   usage: ProviderUsage;
 }
 
-const DEFAULT_ACTOR = 'curious_coder~facebook-ads-library-scraper';
-const ADS_PER_KEYWORD = 30;
+const DEFAULT_ACTOR = 'apify~facebook-ads-scraper';
+const ADS_PER_KEYWORD = 40;
+// Longest-running first: only ads already live this many days ago (and still active) qualify.
+const MIN_AGE_CASCADE_DAYS: Array<number | null> = [180, 90, 30, null];
+const MIN_USABLE_ADS = 3;
 const TOP_ADS = 6;
 const MAX_VIDEO_BYTES = 12 * 1024 * 1024;
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -151,20 +154,29 @@ function sampleAdLibraryItems(niche: string, mediaType: AdMediaType): RawAd[] {
   }));
 }
 
-async function scrapeAdLibrary(keywords: string[], country: string, mediaType: AdMediaType): Promise<RawAd[]> {
+async function scrapeAdLibrary(
+  keywords: string[],
+  country: string,
+  mediaType: AdMediaType,
+  minAgeDays: number | null
+): Promise<RawAd[]> {
   const token = process.env.APIFY_API_TOKEN;
   if (!token) throw new Error('Winning-ad research is not configured (missing APIFY_API_TOKEN).');
   const actor = process.env.APIFY_META_ADS_ACTOR || DEFAULT_ACTOR;
 
+  // apify/facebook-ads-scraper input; the Ad Library search URL carries country, keyword and media type.
   const response = await axios.post<unknown>(
     `https://api.apify.com/v2/acts/${actor}/run-sync-get-dataset-items?timeout=150`,
     {
-      urls: keywords.map((keyword) => ({ url: adLibrarySearchUrl(keyword, country, mediaType) })),
-      count: ADS_PER_KEYWORD * keywords.length,
-      limitPerSource: ADS_PER_KEYWORD,
-      scrapeAdDetails: false,
-      'scrapePageAds.activeStatus': 'active',
-      'scrapePageAds.countryCode': country,
+      startUrls: keywords.map((keyword) => ({ url: adLibrarySearchUrl(keyword, country, mediaType) })),
+      resultsLimit: ADS_PER_KEYWORD * keywords.length,
+      activeStatus: 'active',
+      sorting: '',
+      ...(minAgeDays
+        ? { onlyAdsOlderThan: new Date(Date.now() - minAgeDays * 86_400_000).toISOString().slice(0, 10) }
+        : {}),
+      isDetailsPerAd: false,
+      enrichWithEcommerceData: false,
     },
     {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -184,7 +196,7 @@ function pick(record: RawAd | undefined, ...keys: string[]): unknown {
 }
 
 function toStartDate(raw: RawAd): Date | null {
-  const value = pick(raw, 'start_date', 'startDate', 'start_date_formatted', 'ad_delivery_start_time');
+  const value = pick(raw, 'startDateFormatted', 'start_date_formatted', 'start_date', 'startDate', 'ad_delivery_start_time');
   if (typeof value === 'number') return new Date(value < 1e12 ? value * 1000 : value);
   if (typeof value === 'string' && value) {
     const numeric = Number(value);
@@ -196,13 +208,16 @@ function toStartDate(raw: RawAd): Date | null {
 }
 
 function firstMedia(snapshot: RawAd | undefined): { imageUrl?: string; videoUrl?: string } {
+  // Field names differ between Ad Library scrapers (snake_case vs camelCase); accept both.
   const images = pick(snapshot, 'images') as RawAd[] | undefined;
   const videos = pick(snapshot, 'videos') as RawAd[] | undefined;
   const cards = pick(snapshot, 'cards') as RawAd[] | undefined;
-  const video = (Array.isArray(videos) && videos[0]) || (Array.isArray(cards) && cards.find((c) => pick(c, 'video_sd_url', 'video_hd_url'))) || undefined;
-  const image = (Array.isArray(images) && images[0]) || (Array.isArray(cards) && cards.find((c) => pick(c, 'original_image_url', 'resized_image_url'))) || undefined;
-  const videoUrl = pick(video, 'video_sd_url', 'video_hd_url');
-  const imageUrl = pick(image, 'original_image_url', 'resized_image_url') ?? pick(video, 'video_preview_image_url');
+  const videoKeys = ['video_sd_url', 'videoSdUrl', 'video_hd_url', 'videoHdUrl'];
+  const imageKeys = ['original_image_url', 'originalImageUrl', 'resized_image_url', 'resizedImageUrl'];
+  const video = (Array.isArray(videos) && videos[0]) || (Array.isArray(cards) && cards.find((c) => pick(c, ...videoKeys))) || undefined;
+  const image = (Array.isArray(images) && images[0]) || (Array.isArray(cards) && cards.find((c) => pick(c, ...imageKeys))) || undefined;
+  const videoUrl = pick(video, ...videoKeys);
+  const imageUrl = pick(image, ...imageKeys) ?? pick(video, 'video_preview_image_url', 'videoPreviewImageUrl');
   return {
     imageUrl: typeof imageUrl === 'string' ? imageUrl : undefined,
     videoUrl: typeof videoUrl === 'string' ? videoUrl : undefined,
@@ -220,6 +235,11 @@ export function rankWinningAds(rawAds: RawAd[], mediaType: AdMediaType, limit = 
 
   for (const raw of rawAds) {
     if (pick(raw, 'is_active', 'isActive') === false) continue;
+    // Catalog/DPA ads are auto-generated from product feeds, not designed creatives worth modelling.
+    const snapshotForFormat = pick(raw, 'snapshot') as RawAd | undefined;
+    const displayFormat = String(pick(snapshotForFormat, 'displayFormat', 'display_format') ?? '').toUpperCase();
+    const title = String(pick(snapshotForFormat, 'title') ?? '');
+    if (displayFormat === 'DPA' || displayFormat === 'DCO' || /\{\{.*\}\}/.test(title)) continue;
     const start = toStartDate(raw);
     if (!start) continue;
     const snapshot = pick(raw, 'snapshot') as RawAd | undefined;
@@ -238,7 +258,7 @@ export function rankWinningAds(rawAds: RawAd[], mediaType: AdMediaType, limit = 
       daysRunning: Math.max(0, Math.floor((now - start.getTime()) / 86_400_000)),
       body: clean(typeof body === 'string' ? body : pick(body as RawAd, 'text'), 600) || undefined,
       title: clean(pick(snapshot, 'title'), 160) || undefined,
-      ctaText: clean(pick(snapshot, 'cta_text'), 40) || undefined,
+      ctaText: clean(pick(snapshot, 'cta_text', 'ctaText'), 40) || undefined,
       imageUrl: media.imageUrl || undefined,
       videoUrl: media.videoUrl || undefined,
       libraryUrl: `https://www.facebook.com/ads/library/?id=${encodeURIComponent(id)}`,
@@ -334,10 +354,18 @@ export async function researchWinningAds(
   }
 
   const mock = process.env.AD_RESEARCH_MOCK === 'true';
-  const rawAds = mock
-    ? sampleAdLibraryItems(niche, mediaType)
-    : await scrapeAdLibrary(keywords, country, mediaType);
-  const ads = rankWinningAds(rawAds, mediaType);
+  let ads: WinningAd[] = [];
+  if (mock) {
+    ads = rankWinningAds(sampleAdLibraryItems(niche, mediaType), mediaType);
+  } else {
+    for (const minAgeDays of MIN_AGE_CASCADE_DAYS) {
+      const rawAds = await scrapeAdLibrary(keywords, country, mediaType, minAgeDays);
+      const ranked = rankWinningAds(rawAds, mediaType);
+      console.log(`Ad research: ${ranked.length} usable ${mediaType} ads for "${keywords.join('", "')}" running ${minAgeDays ?? 0}+ days`);
+      if (ranked.length > ads.length) ads = ranked;
+      if (ads.length >= MIN_USABLE_ADS) break;
+    }
+  }
   if (ads.length === 0) {
     throw new Error(`No active ${mediaType} ads found on Meta for "${keywords.join('", "')}" in ${country}.`);
   }
