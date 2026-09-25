@@ -11,6 +11,7 @@ import {
   type ShopifyProductContext,
 } from '@/lib/prompts/shopifyCreative';
 import { planAdAngles } from '@/lib/server/adAngles';
+import { compositeProduct, cutoutProduct, locateProduct } from '@/lib/server/productComposite';
 import type { ProviderUsage } from '@/lib/server/usage';
 import {
   deductCreditsForUser,
@@ -208,6 +209,13 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
         analysisUsages.push(identity.usage);
         const canonicalImage = referenceImages[identity.canonicalReferenceIndex] ?? referenceImages[0];
 
+        // Real product pixels get pasted over the model's rendition so label text stays exact.
+        const cutout = await cutoutProduct(canonicalImage).catch((error) => {
+          console.warn('Product cutout unavailable, relying on model rendering:', error);
+          return null;
+        });
+        console.log(cutout ? `Product cutout ready (${cutout.width}x${cutout.height})` : 'No solid-background product photo; cutout skipped');
+
         send({ type: 'status', message: 'Planning four ad angles...', canonicalImage });
         const plan = await planAdAngles({
           context: productContext,
@@ -255,8 +263,22 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
               });
               generationUsages.push(generated.usage);
               billedImageCount += generated.images.length;
-              const imageUrl = generated.images[0];
+              let imageUrl = generated.images[0];
               if (!imageUrl) continue;
+
+              if (cutout) {
+                try {
+                  const located = await locateProduct(imageUrl);
+                  analysisUsages.push(located.usage);
+                  if (located.box) {
+                    imageUrl = await compositeProduct(imageUrl, cutout, located.box);
+                  } else {
+                    console.warn(`Slot ${index + 1}: product not located in generated image; keeping model rendering`);
+                  }
+                } catch (error) {
+                  console.warn(`Slot ${index + 1}: compositing failed, keeping model rendering:`, error);
+                }
+              }
 
               const validation = await validateProductIdentity(
                 canonicalImage,
