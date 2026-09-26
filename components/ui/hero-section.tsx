@@ -73,6 +73,20 @@ interface AdResearch {
   mock?: boolean;
 }
 
+interface StoryboardShot {
+  t: string;
+  action: string;
+  camera: string;
+  purpose: string;
+}
+
+interface VideoStoryboard {
+  hook: string;
+  shots: StoryboardShot[];
+  mood: string;
+  modelledOn?: string;
+}
+
 interface CreativeSlot {
   angle?: string;
   withText?: boolean;
@@ -942,6 +956,7 @@ export function HeroSection() {
   const [creativeSlots, setCreativeSlots] = useState<CreativeSlot[]>([]);
   const [productFlowStep, setProductFlowStep] = useState<ProductFlowStep>('none');
   const [adResearch, setAdResearch] = useState<AdResearch | null>(null);
+  const [storyboard, setStoryboard] = useState<VideoStoryboard | null>(null);
   const [isResearching, setIsResearching] = useState(false);
   const [generatedType, setGeneratedType] = useState<'image' | 'video'>('image');
   const [generationReferenceUrls, setGenerationReferenceUrls] = useState<string[]>([]);
@@ -1243,6 +1258,7 @@ export function HeroSection() {
     setGenerationReferenceUrls([...productReferenceUrls, ...uploadedImages.map((img) => img.preview)]);
     setIsResearching(wantsResearch);
     setAdResearch(null);
+    setStoryboard(null);
     setIsGenerating(true);
     setGeneratedResults([]);
     setCreativeSlots([]);
@@ -1250,7 +1266,7 @@ export function HeroSection() {
 
     try {
       let adPatterns: string | undefined;
-      if (wantsResearch && generationMode === 'video') {
+      if (wantsResearch && generationMode === 'video' && !isProductFlow) {
         setStatusMessage(`Finding the longest-running ${generationMode} ads in this niche on Meta India...`);
         setProgress(8);
         try {
@@ -1283,7 +1299,32 @@ export function HeroSection() {
       const imageUrls = [...productReferenceUrls, ...uploadedImageUrls];
       setGenerationReferenceUrls(imageUrls);
 
-      if (generationMode === 'image') {
+      // Extracts the finished video URL(s) by polling the Veo operation.
+      const pollVideo = async (operationId: string): Promise<string[]> => {
+        setProgress(15);
+        setStatusMessage('Rendering video...');
+        for (;;) {
+          await new Promise((r) => setTimeout(r, 10000));
+          const statusRes = await fetch('/api/video-status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ operationId }),
+          });
+          if (!statusRes.ok) continue;
+          const statusData = await statusRes.json();
+          if (statusData.error) throw new Error(statusData.error);
+          if (statusData.done) {
+            setProgress(100);
+            setStatusMessage('Done!');
+            return statusData.url ? [statusData.url] : [];
+          }
+          const p = typeof statusData.progress === 'number' && statusData.progress > 0 ? statusData.progress : 15;
+          setProgress(p);
+          setStatusMessage(`Rendering video... ${p}%`);
+        }
+      };
+
+      if (generationMode === 'image' || isProductFlow) {
         setProgress((p) => Math.max(p, 60));
         const res = await fetchWithTimeout('/api/generate', {
           method: 'POST',
@@ -1294,13 +1335,15 @@ export function HeroSection() {
             prompt: isProductFlow && activeProductUrl
               ? removeUrlFromPrompt(promptValue, activeProductUrl)
               : promptForGeneration || '',
-            model: selectedModel,
             creativeSet: isProductFlow,
             aspectRatio: isProductFlow ? '9:16' : undefined,
             resolution: '2K',
             productContext,
             research: wantsResearch,
             country: 'IN',
+            videoAd: isProductFlow && generationMode === 'video',
+            videoModel: generationMode === 'video' ? selectedModel : undefined,
+            model: generationMode === 'video' ? 'nano-banana-pro' : selectedModel,
           }),
         }, 295000);
 
@@ -1310,7 +1353,8 @@ export function HeroSection() {
         }
 
         if (isProductFlow && res.body) {
-          setCreativeSlots(Array.from({ length: PRODUCT_SET_SIZE }, () => ({})));
+          setCreativeSlots(Array.from({ length: generationMode === 'video' ? 1 : PRODUCT_SET_SIZE }, () => ({})));
+          let pendingOperationId: string | null = null;
           setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
           const reader = res.body.getReader();
           const decoder = new TextDecoder();
@@ -1345,15 +1389,19 @@ export function HeroSection() {
                   withText: angle.withText,
                   modelledOn: angle.modelledOn,
                 })));
+              } else if (event.type === 'storyboard' && event.storyboard) {
+                setStoryboard(event.storyboard as VideoStoryboard);
+              } else if (event.type === 'video_submitted' && typeof event.operationId === 'string') {
+                pendingOperationId = event.operationId;
               } else if (event.type === 'creative' && index >= 0) {
-                setCreativeSlots((slots) => slots.map((slot, i) => i === index
+                setCreativeSlots((slots) => slots.map((slot, i) => (slots.length === 1 ? i === 0 : i === index)
                   ? { ...slot, url: String(event.url), retrying: false }
                   : slot));
                 setProgress((p) => Math.min(96, p + 8));
               } else if (event.type === 'retry' && index >= 0) {
-                setCreativeSlots((slots) => slots.map((slot, i) => i === index ? { ...slot, retrying: true } : slot));
+                setCreativeSlots((slots) => slots.map((slot, i) => (slots.length === 1 ? i === 0 : i === index) ? { ...slot, retrying: true } : slot));
               } else if (event.type === 'slot_failed' && index >= 0) {
-                setCreativeSlots((slots) => slots.map((slot, i) => i === index ? { ...slot, failed: true, retrying: false } : slot));
+                setCreativeSlots((slots) => slots.map((slot, i) => (slots.length === 1 ? i === 0 : i === index) ? { ...slot, failed: true, retrying: false } : slot));
               } else if (event.type === 'done') {
                 finished = true;
                 if (typeof event.warning === 'string') {
@@ -1366,6 +1414,9 @@ export function HeroSection() {
             }
           }
           if (!finished) throw new Error('Generation stopped before finishing. Check your creations before retrying.');
+          if (pendingOperationId) {
+            setGeneratedResults(await pollVideo(pendingOperationId));
+          }
         } else {
           const result = await res.json().catch(() => ({}));
           setCreativeSlots(((result.images ?? []) as string[]).map((url) => ({ url })));
@@ -1400,49 +1451,7 @@ export function HeroSection() {
         if (!res.ok) throw new Error(result.error || 'Video generation failed');
 
         if (result.operationId) {
-          setProgress(15);
-          setStatusMessage('Rendering video...');
-
-          let isDone = false;
-          let failed = false;
-          let finalUrls: string[] = [];
-
-          while (!isDone) {
-            await new Promise((r) => setTimeout(r, 10000));
-            try {
-              const statusRes = await fetch('/api/video-status', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ operationId: result.operationId }),
-              });
-              if (statusRes.ok) {
-                const statusData = await statusRes.json();
-                if (statusData.error) {
-                  failed = true;
-                  isDone = true;
-                  throw new Error(statusData.error);
-                }
-                if (statusData.done) {
-                  isDone = true;
-                  finalUrls = statusData.url ? [statusData.url] : [];
-                  setProgress(100);
-                  setStatusMessage('Done!');
-                } else {
-                  const p = typeof statusData.progress === 'number' && statusData.progress > 0
-                    ? statusData.progress : 15;
-                  setProgress(p);
-                  setStatusMessage(`Rendering video... ${p}%`);
-                }
-              }
-            } catch (e) {
-              if ((e as Error).message) {
-                failed = true;
-                isDone = true;
-              }
-            }
-          }
-          if (failed) throw new Error('Video generation failed');
-          setGeneratedResults(finalUrls);
+          setGeneratedResults(await pollVideo(result.operationId));
         } else if (result.images) {
           setProgress(100);
           setStatusMessage('Done!');
@@ -1975,13 +1984,19 @@ export function HeroSection() {
               )}
 
               {/* Generated Images */}
-              {creativeSlots.length > 0 && generatedType === 'image' && (
+              {creativeSlots.length > 0 && (generatedType === 'image' || creativeSlots.length === 1) && (
                 <div className="mx-auto w-full overflow-x-auto pb-2 scrollbar-hide">
-                  <div className="mx-auto grid min-w-[920px] max-w-[1280px] grid-cols-4 gap-3 sm:gap-4">
+                  <div className={cn(
+                    'mx-auto gap-3 sm:gap-4',
+                    creativeSlots.length === 1 ? 'flex max-w-[1280px] justify-center' : 'grid min-w-[920px] max-w-[1280px] grid-cols-4'
+                  )}>
                   {creativeSlots.map((slot, i) => (
                     <div
                       key={i}
-                      className="group relative aspect-[9/16] w-full overflow-hidden rounded-[22px] border border-white/10 bg-[#151519] opacity-0 shadow-[0_22px_70px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.06)] animate-word-appear"
+                      className={cn(
+                        'group relative aspect-[9/16] overflow-hidden rounded-[22px] border border-white/10 bg-[#151519] opacity-0 shadow-[0_22px_70px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.06)] animate-word-appear',
+                        creativeSlots.length === 1 ? 'w-[300px]' : 'w-full'
+                      )}
                       style={{ animationDelay: `${i * 0.1}s`, animationFillMode: 'forwards' }}
                     >
                       {slot.url ? (
@@ -2039,6 +2054,30 @@ export function HeroSection() {
                       )}
                     </div>
                   ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Video storyboard */}
+              {storyboard && (
+                <div className="mx-auto mt-6 w-full max-w-[1280px] text-left">
+                  <p className="mb-3 text-xs font-medium uppercase tracking-[0.2em] text-white/40">
+                    Storyboard{storyboard.modelledOn ? ` · modelled on ${storyboard.modelledOn}` : ''}
+                  </p>
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur">
+                    <p className="text-sm text-white/85">{storyboard.hook}</p>
+                    <ol className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {storyboard.shots.map((shot, i) => (
+                        <li key={i} className="flex gap-3 rounded-xl border border-white/8 bg-black/25 p-3">
+                          <span className="shrink-0 rounded-full bg-[#fff05a]/15 px-2 py-0.5 text-[10px] font-semibold text-[#fbf2a0]">{shot.t}</span>
+                          <span className="text-xs font-light leading-relaxed text-white/70">
+                            {shot.action}
+                            {shot.camera ? <span className="text-white/40"> · {shot.camera}</span> : null}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                    {storyboard.mood && <p className="mt-3 text-[11px] text-white/40">Mood: {storyboard.mood}</p>}
                   </div>
                 </div>
               )}

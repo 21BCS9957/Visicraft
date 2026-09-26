@@ -27,7 +27,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Product title or description is required for ad research' }, { status: 400 });
     }
 
-    const result = await researchWinningAds(product, mediaType, country);
+    const imageUrls = Array.isArray(body.imageUrls)
+      ? body.imageUrls.filter((url): url is string => typeof url === 'string' && /^https?:\/\//.test(url)).slice(0, 3)
+      : [];
+    const result = await researchWinningAds(product, mediaType, country, { imageUrls });
 
     await logUsage({
       user,

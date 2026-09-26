@@ -22,6 +22,16 @@ export interface WinningAd {
   libraryUrl: string;
 }
 
+/** One beat of a video ad's timeline. */
+export interface AdSequenceShot {
+  /** Time range, e.g. "0-2s". */
+  t: string;
+  shot: string;
+  camera?: string;
+  text?: string;
+  purpose?: string;
+}
+
 /** How one winning ad is built, so a new creative can be modelled on it. */
 export interface AdDesign {
   id: string;
@@ -34,6 +44,10 @@ export interface AdDesign {
   colorMood: string;
   proofOrOffer: string;
   whyItWorks: string;
+  /** Video ads only: the timed shot sequence. */
+  sequence?: AdSequenceShot[];
+  /** Video ads only: voice-over / music / sound style. */
+  audio?: string;
 }
 
 export interface AdResearchResult {
@@ -58,6 +72,9 @@ const MIN_USABLE_ADS = 3;
 const TOP_ADS = 6;
 const CANDIDATE_POOL = 80; // ads screened by the relevance gate before ranking by age
 const MAX_VIDEO_BYTES = 12 * 1024 * 1024;
+// Gemini's inline request limit is ~20 MB in total; keep headroom for the images and text.
+const MAX_INLINE_VIDEO_TOTAL_BYTES = 15 * 1024 * 1024;
+const MAX_VIDEOS_TO_WATCH = 3;
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 type RawAd = Record<string, unknown>;
@@ -104,15 +121,18 @@ function parseJsonObject(raw: string): Record<string, unknown> | null {
   }
 }
 
-async function deriveNicheKeywords(product: ShopifyProductContext): Promise<{
+async function deriveNicheKeywords(
+  product: ShopifyProductContext,
+  imageUrls: string[] = []
+): Promise<{
   niche: string;
   keywords: string[];
   competitors: string[];
   usage: ProviderUsage;
 }> {
-  const { response, providerModel } = await requestGeminiText(
-    [{
-      text: `You pick Meta Ad Library search keywords for competitor research in India.
+  // The photos settle what the product actually is when the listing text is vague.
+  const parts: Parameters<typeof requestGeminiText>[0] = [{
+    text: `You pick Meta Ad Library search keywords for competitor research in India. Study the product photos (if attached) together with the listing to understand exactly what kind of product this is, who buys it and why.
 
 Product name: ${clean(product.title, 180) || 'unknown'}
 Brand: ${clean(product.vendor, 120) || 'unknown'}
@@ -120,10 +140,14 @@ Description: ${clean(product.description, 700) || 'unknown'}
 
 Return JSON only: {"niche":"2-4 word product category","keywords":["kw1","kw2"],"competitors":["Brand A","Brand B","Brand C","Brand D"]}
 Rules: exactly 2 keywords, each 1-3 words, generic category terms competitors would use in ad copy (e.g. "protein powder", "hair oil"). competitors: 3-4 well-known consumer brands that sell this same product category in India and advertise on Meta (D2C brands preferred), by the name their Facebook page would use. Never include this brand's own name.`,
-    }],
-    { temperature: 0.2 },
-    'Ad research keyword planning'
-  );
+  }];
+  if (imageUrls.length > 0) {
+    const { images } = await loadPreparedReferences(imageUrls.slice(0, 3)).catch(() => ({ images: [] as Array<{ mimeType: string; data: string }> }));
+    images.forEach((image, index) => {
+      parts.push({ text: `PRODUCT PHOTO ${index + 1}:` }, { inlineData: { mimeType: image.mimeType, data: image.data } });
+    });
+  }
+  const { response, providerModel } = await requestGeminiText(parts, { temperature: 0.2 }, 'Ad research keyword planning');
   const parsed = parseJsonObject(geminiText(response));
   const keywords = Array.isArray(parsed?.keywords)
     ? parsed.keywords.map((k) => clean(k, 40)).filter(Boolean).slice(0, 2)
@@ -317,15 +341,16 @@ export function rankWinningAds(
     .slice(0, limit);
 }
 
-async function loadVideoInline(url: string): Promise<{ mimeType: string; data: string } | null> {
+async function loadVideoInline(url: string): Promise<{ mimeType: string; data: string; byteLength: number } | null> {
   try {
     const response = await axios.get<ArrayBuffer>(url, {
       responseType: 'arraybuffer',
-      timeout: 20000,
+      timeout: 25000,
       maxContentLength: MAX_VIDEO_BYTES,
       maxBodyLength: MAX_VIDEO_BYTES,
     });
-    return { mimeType: 'video/mp4', data: Buffer.from(response.data).toString('base64') };
+    const bytes = Buffer.from(response.data);
+    return { mimeType: 'video/mp4', data: bytes.toString('base64'), byteLength: bytes.byteLength };
   } catch {
     return null;
   }
@@ -395,10 +420,12 @@ Study each creative and its copy. Return JSON only:
       "textPlacement": "how much text, where, hierarchy, colours",
       "colorMood": "palette, lighting, mood",
       "proofOrOffer": "reviews, ratings, guarantees, offers, badges used",
-      "whyItWorks": "one sentence on the psychological lever"
+      "whyItWorks": "one sentence on the psychological lever"${mediaType === 'video' ? `,
+      "sequence": [{"t":"0-2s","shot":"what is on screen","camera":"static / push-in / handheld / cut","text":"on-screen text if any","purpose":"hook / problem / reveal / proof / offer / CTA"}],
+      "audio": "voice-over, music and sound style"` : ''}
     }
   ]
-}
+}${mediaType === 'video' ? '\nFor ads whose video is attached, watch it and give the full timed sequence from first frame to last (typically 4-8 beats). For ads where only a cover frame is attached, infer the likely sequence from the frame and copy and say so in "format".' : ''}
 Never copy a competitor's brand name, claims or exact wording into your descriptions.`,
   }];
 
@@ -415,10 +442,17 @@ Never copy a competitor's brand name, claims or exact wording into your descript
 
   const videoByAd = new Map<string, { mimeType: string; data: string }>();
   if (mediaType === 'video') {
+    // Watch the top winners that fit the inline budget, longest-running first.
     const videos = await Promise.all(
-      ads.slice(0, 2).map(async (ad) => [ad.id, ad.videoUrl?.startsWith('http') ? await loadVideoInline(ad.videoUrl) : null] as const)
+      ads.slice(0, MAX_VIDEOS_TO_WATCH).map(async (ad) => [ad.id, ad.videoUrl?.startsWith('http') ? await loadVideoInline(ad.videoUrl) : null] as const)
     );
-    videos.forEach(([id, video]) => { if (video) videoByAd.set(id, video); });
+    let budget = MAX_INLINE_VIDEO_TOTAL_BYTES;
+    videos.forEach(([id, video]) => {
+      if (!video) return;
+      if (video.byteLength > budget) { console.log(`Ad research: skipping video ${id} (${Math.round(video.byteLength / 1e6)} MB over inline budget)`); return; }
+      budget -= video.byteLength;
+      videoByAd.set(id, { mimeType: video.mimeType, data: video.data });
+    });
   }
 
   ads.forEach((ad, index) => {
@@ -436,7 +470,7 @@ Never copy a competitor's brand name, claims or exact wording into your descript
   const parsed = parseJsonObject(text);
   const byId = new Map(ads.map((ad) => [ad.id, ad]));
   const designs: AdDesign[] = (Array.isArray(parsed?.ads) ? parsed.ads : [])
-    .map((item) => {
+    .map((item): AdDesign | null => {
       const record = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
       const ad = byId.get(String(record.id ?? ''));
       if (!ad) return null;
@@ -451,6 +485,18 @@ Never copy a competitor's brand name, claims or exact wording into your descript
         colorMood: clean(record.colorMood, 200),
         proofOrOffer: clean(record.proofOrOffer, 200),
         whyItWorks: clean(record.whyItWorks, 200),
+        sequence: Array.isArray(record.sequence)
+          ? record.sequence
+              .map((beat): AdSequenceShot | null => {
+                const b = (beat && typeof beat === 'object' ? beat : {}) as Record<string, unknown>;
+                const shot = clean(b.shot, 220);
+                if (!shot) return null;
+                return { t: clean(b.t, 12) || '?', shot, camera: clean(b.camera, 80) || undefined, text: clean(b.text, 120) || undefined, purpose: clean(b.purpose, 40) || undefined };
+              })
+              .filter((beat): beat is AdSequenceShot => beat !== null)
+              .slice(0, 10)
+          : undefined,
+        audio: clean(record.audio, 200) || undefined,
       };
     })
     .filter((design): design is AdDesign => design !== null);
@@ -464,9 +510,10 @@ Never copy a competitor's brand name, claims or exact wording into your descript
 export async function researchWinningAds(
   product: ShopifyProductContext,
   mediaType: AdMediaType,
-  country = 'IN'
+  country = 'IN',
+  options: { imageUrls?: string[] } = {}
 ): Promise<AdResearchResult> {
-  const { niche, keywords, competitors, usage: keywordUsage } = await deriveNicheKeywords(product);
+  const { niche, keywords, competitors, usage: keywordUsage } = await deriveNicheKeywords(product, options.imageUrls ?? []);
   const cacheKey = `${process.env.AD_RESEARCH_MOCK === 'true' ? 'mock|' : ''}${country}|${mediaType}|${[...keywords, ...competitors].join(',').toLowerCase()}`;
   const cached = researchCache.get(cacheKey);
   if (cached && Date.now() - cached.createdAt < CACHE_TTL_MS) {

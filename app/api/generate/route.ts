@@ -13,10 +13,14 @@ import {
 import { planAdAngles } from '@/lib/server/adAngles';
 import { compositeProduct, cutoutProduct, locateProduct } from '@/lib/server/productComposite';
 import { researchWinningAds, type AdDesign } from '@/lib/server/metaAdResearch';
+import { planVideoStoryboard } from '@/lib/server/videoStoryboard';
+import { isVideoGenerationConfigured, resolveVeoModel, submitVeoJob } from '@/lib/server/veo';
 import type { ProviderUsage } from '@/lib/server/usage';
 import {
   deductCreditsForUser,
   estimateGoogleImageCostUsd,
+  estimateGoogleVideoCostUsd,
+  getServerVideoCreditCost,
   estimateGoogleProductAnalysisCostUsd,
   getServerImageCreditCost,
   logUsage,
@@ -72,8 +76,17 @@ export async function POST(request: NextRequest) {
     const resolution = typeof body.resolution === 'string' ? body.resolution : undefined;
     const creativeSet = body.creativeSet === true && mode === 'generate';
     const productContext = readProductContext(body.productContext);
+    // Video ad: one clean hero frame (real product pasted in) + one Veo clip animated from it.
+    const videoAd = creativeSet && body.videoAd === true;
+    const videoModel = resolveVeoModel(typeof body.videoModel === 'string' ? body.videoModel : undefined);
+    const videoDurationSeconds = 8;
     const perImageCost = getServerImageCreditCost(mode, model, resolution);
-    const creditCost = creativeSet ? perImageCost * CREATIVE_SLOTS.length : perImageCost;
+    const videoCost = videoAd ? getServerVideoCreditCost({ model: videoModel, duration: `${videoDurationSeconds}s` }) : 0;
+    const creditCost = videoAd
+      ? perImageCost + videoCost
+      : creativeSet
+        ? perImageCost * CREATIVE_SLOTS.length
+        : perImageCost;
     const deducted = await deductCreditsForUser(user.id, creditCost);
 
     if (!deducted) {
@@ -101,6 +114,7 @@ export async function POST(request: NextRequest) {
         adPatterns: typeof body.adPatterns === 'string' ? body.adPatterns.slice(0, 2500) : undefined,
         research: body.research === true,
         country: typeof body.country === 'string' && /^[A-Z]{2}$/.test(body.country) ? body.country : 'IN',
+        video: videoAd ? { model: videoModel, durationSeconds: videoDurationSeconds, cost: videoCost } : undefined,
         perImageCost,
         creditCost,
       });
@@ -183,6 +197,8 @@ interface CreativeSetOptions {
   /** Run Meta winning-ad research inside the stream (overlaps product analysis). */
   research?: boolean;
   country?: string;
+  /** Present for a video ad: one hero frame is generated, then animated with Veo. */
+  video?: { model: string; durationSeconds: number; cost: number };
   perImageCost: number;
   creditCost: number;
 }
@@ -193,7 +209,10 @@ interface CreativeSetOptions {
  * giving up; unfilled slots are refunded.
  */
 function streamCreativeSet(options: CreativeSetOptions): Response {
-  const { user, mode, referenceImages, userDirection, model, resolution, productContext, research, country, perImageCost, creditCost } = options;
+  const { user, mode, referenceImages, userDirection, model, resolution, productContext, research, country, video, perImageCost, creditCost } = options;
+  // A video ad needs exactly one clean frame; use the clean "lifestyle" slot as the hero.
+  const slotIndexes = video ? [2] : CREATIVE_SLOTS.map((_, index) => index);
+  const researchMediaType = video ? 'video' as const : 'image' as const;
   let adPatterns = options.adPatterns;
   let winningDesigns: AdDesign[] = [];
   const deadline = Date.now() + REQUEST_BUDGET_MS;
@@ -210,11 +229,13 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
       let billedImageCount = 0;
       let acceptedCount = 0;
       let verifierErrors = 0;
+      const acceptedUrls = new Map<number, string>();
+      let videoCreditsRefunded = 0;
 
       try {
         // Winning-ad research runs concurrently with product analysis and cutout.
         const researchPromise = research && productContext
-          ? researchWinningAds(productContext, 'image', country ?? 'IN')
+          ? researchWinningAds(productContext, researchMediaType, country ?? 'IN', { imageUrls: referenceImages.slice(0, 3) })
               .then((result) => ({ result, error: null as Error | null }))
               .catch((error: unknown) => ({ result: null, error: error instanceof Error ? error : new Error('Ad research failed') }))
           : null;
@@ -268,7 +289,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
               creditCost: 0,
               metadata: {
                 operation: 'meta_winning_ad_research',
-                mediaType: 'image',
+                mediaType: researchMediaType,
                 country: country ?? 'IN',
                 niche: research.result.niche,
                 keywords: research.result.keywords,
@@ -293,13 +314,14 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
         if (plan.usage) analysisUsages.push(plan.usage);
         send({
           type: 'angles',
-          angles: plan.angles.map((angle, index) => ({
-            name: angle.name,
+          angles: slotIndexes.map((index) => ({
+            index,
+            name: plan.angles[index].name,
             withText: CREATIVE_SLOTS[index].withText,
-            modelledOn: angle.modelledOn,
+            modelledOn: plan.angles[index].modelledOn,
           })),
         });
-        send({ type: 'status', message: 'Generating four Meta ad creatives...' });
+        send({ type: 'status', message: video ? 'Generating the hero frame for your video...' : 'Generating four Meta ad creatives...' });
 
         const produceSlot = async (index: number) => {
           const slot = CREATIVE_SLOTS[index];
@@ -379,6 +401,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
 
               if (validation?.passed) {
                 acceptedCount += 1;
+                acceptedUrls.set(index, imageUrl);
                 send({
                   type: 'creative',
                   index,
@@ -400,27 +423,96 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           return null;
         };
 
-        await Promise.all(CREATIVE_SLOTS.map((_, index) => produceSlot(index)));
+        await Promise.all(slotIndexes.map((index) => produceSlot(index)));
 
-        const failedSlots = CREATIVE_SLOTS.length - acceptedCount;
+        const failedSlots = slotIndexes.length - acceptedCount;
         if (failedSlots > 0) await refundCreditsForUser(user.id, perImageCost * failedSlots);
+
+        // Video ad: storyboard modelled on the winning sequences, then animate the hero frame.
+        let operationId: string | undefined;
+        let videoWarning: string | undefined;
+        if (video) {
+          const heroUrl = acceptedUrls.get(slotIndexes[0]);
+          if (!heroUrl) {
+            videoCreditsRefunded = video.cost;
+            await refundCreditsForUser(user.id, video.cost);
+          } else {
+            send({ type: 'status', message: 'Writing the storyboard from the winning video ads...' });
+            const planned = await planVideoStoryboard({
+              context: productContext,
+              identityManifest: identity.manifest,
+              userDirection,
+              adPatterns,
+              winningDesigns,
+              durationSeconds: video.durationSeconds,
+            });
+            if (planned.usage) analysisUsages.push(planned.usage);
+            send({ type: 'storyboard', storyboard: planned.storyboard });
+
+            if (!isVideoGenerationConfigured()) {
+              videoCreditsRefunded = video.cost;
+              await refundCreditsForUser(user.id, video.cost);
+              videoWarning = 'Video generation is not configured on this server yet (GOOGLE_VIDEO_SERVICE_ACCOUNT_JSON). The hero frame and storyboard were kept; video credits were refunded.';
+            } else {
+              try {
+                send({ type: 'status', message: 'Rendering your video with Veo...' });
+                const job = await submitVeoJob({
+                  imageUrl: heroUrl,
+                  prompt: planned.storyboard.prompt,
+                  negativePrompt: planned.storyboard.negativePrompt,
+                  model: video.model,
+                  aspectRatio: '9:16',
+                  duration: `${video.durationSeconds}s`,
+                });
+                operationId = job.operationName;
+                await logUsage({
+                  user,
+                  model: job.model,
+                  feature: 'video_generation',
+                  videoSeconds: video.durationSeconds,
+                  estimatedCostUsd: estimateGoogleVideoCostUsd({ model: job.model, duration: `${video.durationSeconds}s`, numResults: 1 }),
+                  creditCost: video.cost,
+                  metadata: {
+                    mode: 'product_video_ad',
+                    operationId,
+                    aspectRatio: '9:16',
+                    resolution: '720p',
+                    metaAdResearch: Boolean(adPatterns),
+                    modelledOn: planned.storyboard.modelledOn ?? null,
+                    chargedServerSide: true,
+                  },
+                }).catch((error) => console.error('Video usage logging failed:', error));
+                send({ type: 'video_submitted', operationId });
+              } catch (error) {
+                console.error('Veo submission failed:', error);
+                videoCreditsRefunded = video.cost;
+                await refundCreditsForUser(user.id, video.cost);
+                videoWarning = `The video could not be started (${error instanceof Error ? error.message : 'unknown error'}). The hero frame was kept; video credits were refunded.`;
+              }
+            }
+          }
+        }
 
         send({
           type: 'done',
           acceptedCount,
-          creditsDeducted: perImageCost * acceptedCount,
+          operationId,
+          creditsDeducted: perImageCost * acceptedCount + (video ? video.cost - videoCreditsRefunded : 0),
           warning: acceptedCount === 0
             ? verifierErrors > 0
               ? 'The product check service was unavailable, so no creatives could be verified. Your credits were refunded; please try again in a minute.'
               : 'Every attempt changed the product packaging, so nothing was kept and your credits were refunded. Try a clearer front-facing product image.'
-            : failedSlots > 0
-              ? `${acceptedCount} of ${CREATIVE_SLOTS.length} ads passed the product check. Credits for the other ${failedSlots} were refunded.`
-              : undefined,
+            : videoWarning
+              ? videoWarning
+              : failedSlots > 0
+                ? `${acceptedCount} of ${slotIndexes.length} ads passed the product check. Credits for the other ${failedSlots} were refunded.`
+                : undefined,
         });
       } catch (error) {
         console.error('Creative set error:', error);
-        const unfilled = CREATIVE_SLOTS.length - acceptedCount;
-        await refundCreditsForUser(user.id, perImageCost * unfilled).catch(() => undefined);
+        const unfilled = slotIndexes.length - acceptedCount;
+        const pendingVideo = video ? video.cost - videoCreditsRefunded : 0;
+        await refundCreditsForUser(user.id, perImageCost * unfilled + pendingVideo).catch(() => undefined);
         send({ type: 'error', message: error instanceof Error ? error.message : 'Generation failed' });
       } finally {
         await logCreativeSetUsage({
@@ -437,6 +529,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           creditCost,
           validationScores,
           researched: Boolean(adPatterns),
+          videoCreditsKept: video ? video.cost - videoCreditsRefunded : 0,
         }).catch((error) => console.error('Usage logging failed:', error));
         controller.close();
       }
@@ -466,6 +559,7 @@ async function logCreativeSetUsage(input: {
   creditCost: number;
   validationScores: unknown[];
   researched: boolean;
+  videoCreditsKept: number;
 }) {
   const analysis = sumUsage(input.analysisUsages);
   const analysisModel = input.analysisUsages[0]?.providerModel || 'gemini-2.5-flash';
@@ -510,7 +604,7 @@ async function logCreativeSetUsage(input: {
       referenceCount: input.referenceCount,
       acceptedImageCount: input.acceptedCount,
       creditsCharged: input.creditCost,
-      creditsRefunded: input.creditCost - input.perImageCost * input.acceptedCount,
+      creditsRefunded: input.creditCost - input.perImageCost * input.acceptedCount - input.videoCreditsKept,
       validationScores: input.validationScores,
       chargedServerSide: true,
     },

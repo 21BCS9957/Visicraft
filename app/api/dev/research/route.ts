@@ -10,10 +10,11 @@ export async function POST(request: NextRequest) {
     productContext?: { title?: string; vendor?: string; description?: string };
     mediaType?: AdMediaType;
     country?: string;
+    imageUrls?: string[];
   };
   const started = Date.now();
   try {
-  const result = await researchWinningAds(body.productContext ?? {}, body.mediaType === 'video' ? 'video' : 'image', body.country ?? 'IN');
+  const result = await researchWinningAds(body.productContext ?? {}, body.mediaType === 'video' ? 'video' : 'image', body.country ?? 'IN', { imageUrls: body.imageUrls ?? [] });
   return NextResponse.json({
     ms: Date.now() - started,
     niche: result.niche,
