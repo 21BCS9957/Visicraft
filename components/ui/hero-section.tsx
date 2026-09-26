@@ -105,7 +105,8 @@ interface CreativeSlot {
   url?: string;
   failed?: boolean;
   retrying?: boolean;
-  retryReason?: 'quality' | 'product';
+  retryReason?: 'quality' | 'product' | 'safety';
+  failReason?: 'product' | 'generation' | 'safety' | 'quality';
 }
 
 type ProductFlowStep = 'none' | 'format' | 'research';
@@ -825,7 +826,7 @@ function CreativeSlotSkeleton({ index, slot }: { index: number; slot: CreativeSl
   const label = slot.failed
     ? 'Withheld'
     : slot.retrying
-      ? slot.retryReason === 'quality' ? 'Raising the bar' : 'Refining product'
+      ? slot.retryReason === 'quality' ? 'Raising the bar' : slot.retryReason === 'safety' ? 'Reworking, tastefully' : 'Refining product'
       : slot.angle
         ? 'Composing scene'
         : 'Planning angle';
@@ -896,9 +897,15 @@ function CreativeSlotSkeleton({ index, slot }: { index: number; slot: CreativeSl
               <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-white/72">{label}</p>
               <p className="mt-1 whitespace-nowrap text-[11px] font-light text-white/40">
                 {slot.failed
-                  ? 'Product check failed · refunded'
+                  ? slot.failReason === 'safety'
+                    ? 'Blocked by the image safety filter · refunded'
+                    : slot.failReason === 'generation'
+                      ? 'Image generation failed · refunded'
+                      : slot.failReason === 'quality'
+                        ? 'Did not pass creative review · refunded'
+                        : 'Product check failed · refunded'
                   : slot.retrying
-                    ? slot.retryReason === 'quality' ? 'Reworking after creative review' : 'Matching your packaging'
+                    ? slot.retryReason === 'quality' ? 'Reworking after creative review' : slot.retryReason === 'safety' ? 'Safety filter blocked it; making it tasteful' : 'Matching your packaging'
                     : slot.modelledOn
                       ? `Modelled on ${slot.modelledOn}`
                       : `Ad ${index + 1} of ${PRODUCT_SET_SIZE}`}
@@ -1489,9 +1496,10 @@ export function HeroSection() {
                   const d = (g.data ?? {}) as { retrying?: number };
                   return { ...current, generate: { ...g, data: { ...d, retrying: (d.retrying ?? 0) + 1 } } };
                 });
-                setCreativeSlots((slots) => slots.map((slot, i) => (slots.length === 1 ? i === 0 : i === index) ? { ...slot, retrying: true, retryReason: event.reason === 'quality' ? 'quality' : 'product' } : slot));
+                setCreativeSlots((slots) => slots.map((slot, i) => (slots.length === 1 ? i === 0 : i === index) ? { ...slot, retrying: true, retryReason: event.reason === 'quality' ? 'quality' : event.reason === 'safety' ? 'safety' : 'product' } : slot));
               } else if (event.type === 'slot_failed' && index >= 0) {
-                setCreativeSlots((slots) => slots.map((slot, i) => (slots.length === 1 ? i === 0 : i === index) ? { ...slot, failed: true, retrying: false } : slot));
+                const failReason = (['product', 'generation', 'safety', 'quality'] as const).find((r) => r === event.reason) ?? 'generation';
+                setCreativeSlots((slots) => slots.map((slot, i) => (slots.length === 1 ? i === 0 : i === index) ? { ...slot, failed: true, retrying: false, failReason } : slot));
               } else if (event.type === 'done') {
                 finished = true;
                 if (!(typeof event.operationId === 'string' && event.operationId)) {

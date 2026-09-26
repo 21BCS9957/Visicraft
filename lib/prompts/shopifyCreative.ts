@@ -9,6 +9,10 @@ export interface AdAngle {
   /** The single promise the ad makes, in the shopper's words. */
   promise?: string;
   scene: string;
+  /** Decided by the planner from what the winning ads do; falls back to the slot default. */
+  withText?: boolean;
+  /** The planner's full expert image brief for this creative (composition, subject, light, palette, type). */
+  brief?: string;
   /** Present only for text-overlay slots. */
   headline?: string;
   subline?: string;
@@ -35,6 +39,11 @@ Perform an IMAGE EDIT / OUTPAINT operation around the canonical product. Do not 
 Keep the product in the same front-facing camera orientation and aspect proportions as reference image 1. You may scale and position the whole product uniformly, but may not perspective-warp, rotate, bend, crop, hide, relight destructively, or cover any identity-defining surface. Do not improve, simplify, restyle, relabel, rebrand, recolor, stretch, duplicate, stack, or substitute the product. Never add or alter text on the product itself.
 
 The complete product must be fully visible, tack-sharp, correctly scaled, and integrated using realistic contact shadows and environmental reflections around its perimeter. Never place fingers over the package or put the product into a pose that requires changing its perspective. The product is the hero; people and scenery are supporting elements.
+`.trim();
+
+const APPAREL_LOCK = `
+PRODUCT IDENTITY LOCK - HIGHEST PRIORITY
+Reference image 1 shows the exact garment being advertised. The garment is immutable: its colour, fabric, lace or print pattern, cut and silhouette, panels and boning, straps, hems, ruffles, trims, lacing, ribbons, hooks, garters and any label or logo must appear exactly as in the reference. Do not recolour, restyle, simplify, embellish, or swap it for a similar garment. Show it completely and clearly on the model, as the hero of the frame, with its construction visible. The model, pose, styling, setting and camera may change; the garment may not. Add no text on the garment.
 `.trim();
 
 const PERFORMANCE_STANDARD = `
@@ -109,6 +118,7 @@ export function buildMetaAdCreativePrompt(options: {
   critique?: string;
   /** Real product pixels will be pasted in afterwards: keep the pack face square to the camera. */
   frontalProduct?: boolean;
+  productKind?: 'packaged' | 'apparel' | 'object';
 }): string {
   const manifest = clean(options.identityManifest, 3200);
   const direction = clean(options.userDirection, 1200);
@@ -124,16 +134,15 @@ ${direction ? `User art direction: ${direction}` : ''}
 ${manifest ? `\nFORENSIC PRODUCT IDENTITY MANIFEST - use this only to verify the preserved pixels; never re-typeset from it:\n${manifest}\n` : ''}
 CREATIVE ANGLE - ${clean(angle.name, 60)}
 The one promise this ad makes: ${clean(angle.promise, 160) || 'the product\'s core benefit, shown not told'}
-Scene: ${clean(angle.scene, 600)}
-${angle.design ? `Design reference (structure of a long-running ad in this niche; reproduce the layout logic, product placement and visual hierarchy, never any brand, wording or claim from it): ${clean(angle.design, 500)}\n` : ''}
+${angle.brief ? `CREATIVE BRIEF (written by the strategist after studying the winning ads in this niche; follow it closely):\n${clean(angle.brief, 1200)}\n` : `Scene: ${clean(angle.scene, 600)}\n`}${angle.design ? `Design reference (structure of a long-running ad in this niche; reproduce the layout logic, product placement and visual hierarchy, never any brand, wording or claim from it): ${clean(angle.design, 500)}\n` : ''}
 ${textOverlayBlock(angle)}
 ${options.frontalProduct ? `\nCAMERA ON THE PRODUCT: shoot the package at its own height with its front face parallel to the image plane (no top-down or three-quarter views of the pack); it stands on a level surface with a soft contact shadow. Props, people and the environment may be angled freely; only the package stays square-on.\n` : ''}${critique ? `\nFIXES FROM CREATIVE REVIEW - a previous render of this ad was rejected; apply every fix:\n${critique}\n` : ''}
-${PRODUCT_LOCK}
+${options.productKind === 'apparel' ? APPAREL_LOCK : PRODUCT_LOCK}
 
 ${PERFORMANCE_STANDARD}
 
 FINAL PRE-FLIGHT CHECK - perform silently before rendering
-1. Product: compare it against reference image 1 at high magnification; if any character, logo, illustration, label geometry, silhouette, proportion, material or colour differs, simplify the composition rather than redraw the product.
+1. Product: compare it against reference image 1 at high magnification; if any ${options.productKind === 'apparel' ? 'colour, pattern, cut, trim, closure or hardware' : 'character, logo, illustration, label geometry, silhouette, proportion, material or colour'} differs, simplify the composition rather than alter the product.
 2. Performance: at phone size, is the focal point instant, is the promise obvious, is the copy (if any) exactly as specified and legible, is nothing important in the top 14% or bottom 20%?
 3. Craft: hands, faces, props and surfaces are physically correct; no artifacts.
 Output only the final image.

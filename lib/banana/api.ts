@@ -70,9 +70,13 @@ export interface GeneratedImageData {
   usage: ProviderUsage;
 }
 
+export type ProductKind = 'packaged' | 'apparel' | 'object';
+
 export interface ProductIdentityAnalysis {
   manifest: string;
   canonicalReferenceIndex: number;
+  /** packaged = printed packaging; apparel = worn on the body; object = unpackaged item. */
+  productKind: ProductKind;
   usage: ProviderUsage;
 }
 
@@ -193,15 +197,16 @@ export async function analyzeProductIdentity(referenceImages: string[]): Promise
   const parts: GeminiPart[] = [{
     text: `Act as a forensic packaging and product-identity analyst. Inspect every supplied reference, determine which single image gives the clearest, largest, most front-facing and least-obstructed view of the actual product, then return a concise PRODUCT IDENTITY MANIFEST for another image model.
 
-The first line must be exactly CANONICAL_REFERENCE_INDEX: N, where N is the one-based reference number you selected. Choose the image where the physical package is largest, sharpest, front-facing and completely unobstructed, with nothing overlapping it. Strongly prefer a plain packshot. Rank lower: lifestyle scenes with props touching the package, collages, and images with added icons, badges, arrows or marketing text outside the package. Never choose an infographic or an image that does not show the package itself. Do not automatically select image 1.
+The first line must be exactly CANONICAL_REFERENCE_INDEX: N, where N is the one-based reference number you selected. The second line must be exactly PRODUCT_KIND: packaged, apparel or object (packaged = a product with printed packaging such as a pouch, box, bottle, jar or tube; apparel = clothing, lingerie, footwear, bags or accessories worn on the body; object = an unpackaged physical item such as furniture, a gadget, cookware or jewellery).
+Choose the image where the product is largest, sharpest, most complete and least obstructed. For packaged goods strongly prefer a plain front-facing packshot; for apparel prefer the clearest full view of the garment (on a model or flat) showing its construction. Rank lower: collages, infographics, and images with added icons, badges, arrows or marketing text. Do not automatically select image 1.
 
 Include:
-1. Exact package/object silhouette, dimensions and front-facing orientation.
-2. Exact material, finish, seams, closures and color fields.
-3. Logo geometry and exact position.
-4. Every legible word, number and symbol transcribed exactly with capitalization and line order. Write [unreadable] instead of guessing.
-5. Label blocks, illustrations, certification marks and their relative positions.
-6. A short list of forbidden changes that would make it a different product.
+1. Exact silhouette, proportions and orientation (for apparel: cut, length, neckline/straps, fit).
+2. Exact material, finish, texture, seams, closures, trims and hardware, and every color field (for apparel: fabric, lace or print pattern, boning, lacing, ribbons, hooks, garters).
+3. Logo geometry and exact position, or branded labels/tags if visible.
+4. Every legible word, number and symbol transcribed exactly with capitalization and line order. Write [unreadable] instead of guessing; write "none" if the product carries no text.
+5. Label blocks, illustrations, certification marks or decorative motifs and their relative positions.
+6. A short list of forbidden changes that would make it a different product. For apparel, never describe the model's body or face; only the garment.
 
 Do not propose a campaign scene. Do not improve or rewrite copy. Keep the response below 2,500 characters.`,
   }];
@@ -236,8 +241,11 @@ Do not propose a campaign scene. Do not improve or rewrite copy. Keep the respon
     ? Math.max(0, Math.min(images.length - 1, selectedReference - 1))
     : 0;
   const canonicalReferenceIndex = sourceIndexes[selectedPreparedIndex] ?? 0;
+  const kindMatch = analysisText.match(/PRODUCT_KIND\s*:\s*(packaged|apparel|object)/i);
+  const productKind = (kindMatch?.[1]?.toLowerCase() as ProductKind | undefined) ?? 'packaged';
   const manifest = analysisText
     .replace(/^\s*CANONICAL_REFERENCE_INDEX\s*:\s*\d+\s*/i, '')
+    .replace(/^\s*PRODUCT_KIND\s*:\s*\w+\s*/i, '')
     .trim();
 
   const usageMetadata = response.data.usageMetadata;
@@ -247,6 +255,7 @@ Do not propose a campaign scene. Do not improve or rewrite copy. Keep the respon
   return {
     manifest: manifest.slice(0, 3200),
     canonicalReferenceIndex,
+    productKind,
     usage: {
       inputTokens,
       outputTokens,
@@ -260,16 +269,35 @@ export async function validateProductIdentity(
   canonicalImageUrl: string,
   generatedImageUrl: string,
   identityManifest: string,
-  options: { overlayTextExpected?: boolean } = {}
+  options: { overlayTextExpected?: boolean; productKind?: ProductKind } = {}
 ): Promise<ProductIdentityValidation> {
   const { images } = await loadPreparedReferences([canonicalImageUrl, generatedImageUrl]);
   if (images.length !== 2) {
     throw new Error('Could not load both images for product identity verification.');
   }
 
+  const apparel = options.productKind === 'apparel';
   const parts: GeminiPart[] = [
     {
-      text: `You are a strict visual quality-control inspector. Compare the generated campaign image against the canonical product image. Ignore the scene, person, props, scale, lighting, and background. Inspect only the physical product and its printed packaging.
+      text: apparel
+        ? `You are a strict visual quality-control inspector for fashion. Compare the garment in the generated campaign image against the canonical product image. Ignore the person wearing it (body, face, skin, pose), the setting, props, lighting and camera. Inspect only the garment itself.
+
+The generated garment passes only when all of these remain faithful:
+- colour, fabric look and any lace, print or pattern;
+- construction: cut, silhouette, neckline and straps, panels and boning, hem and trims, ruffles, peplums, garters;
+- closures and hardware: lacing, ribbons, hooks, clips, buckles, rings;
+- any branded label, tag, logo or printed text if visible.
+
+Reject a different garment, a recoloured one, a redesigned cut, missing or added trims or closures, or a materially different pattern. A different body, size, pose or styling of the model is acceptable.
+
+Identity manifest:
+${identityManifest.slice(0, 3200)}
+
+Map your findings to these keys: packagingTextExact = any printed text, labels or tags (true if none exist and none were invented); logoExact = logos and branded hardware; artworkLayoutExact = colour, fabric, lace/print/pattern and their placement; geometryExact = cut, construction, closures and trims.
+
+Return JSON only with this exact shape, where score is an integer from 0 to 100 (100 = the identical garment, 85+ = unmistakably the same garment, below 60 = a different or altered garment):
+{"packagingTextExact":true,"logoExact":true,"artworkLayoutExact":true,"geometryExact":true,"score":0,"reason":"brief factual reason"}`
+        : `You are a strict visual quality-control inspector. Compare the generated campaign image against the canonical product image. Ignore the scene, person, props, scale, lighting, and background. Inspect only the physical product and its printed packaging.
 
 The generated product passes only when all of these remain faithful:
 - every visible brand word, product word, number, symbol, and capitalization;

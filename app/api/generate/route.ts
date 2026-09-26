@@ -224,6 +224,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
   const researchMediaType = video ? 'video' as const : 'image' as const;
   let adPatterns = options.adPatterns;
   let winningDesigns: AdDesign[] = [];
+  let winnerImages: string[] = [];
   const deadline = Date.now() + REQUEST_BUDGET_MS;
   const encoder = new TextEncoder();
 
@@ -290,10 +291,13 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
         // Real product pixels get pasted over the model's rendition so label text stays exact.
         // Only the analyzer's packshot is trusted as the paste source: other store images
         // may be infographics or lifestyle collages that merely contain a plain background.
-        const cut: Awaited<ReturnType<typeof cutoutProduct>> = await cutoutProduct(canonicalImage).catch((error) => {
-          console.warn('Product cutout failed:', error);
-          return { cutout: null, reason: 'error' };
-        });
+        // Real pixels are pasted only for packaged goods; a garment on a body cannot be pasted.
+        const cut: Awaited<ReturnType<typeof cutoutProduct>> = identity.productKind === 'packaged'
+          ? await cutoutProduct(canonicalImage).catch((error) => {
+              console.warn('Product cutout failed:', error);
+              return { cutout: null, reason: 'error' };
+            })
+          : { cutout: null, reason: `${identity.productKind} product: no paste` };
         if (cut.usage) analysisUsages.push(cut.usage);
         const cutout = cut.cutout;
         console.log(cutout
@@ -308,6 +312,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           competitors: nicheInfo?.competitors ?? [],
           locked: lockedElements(identity.manifest),
           productPasted: Boolean(cutout),
+          productKind: identity.productKind,
         });
         if (!researchPromise) { stage('research', 'skipped', 'Research not requested'); stage('analyze', 'skipped'); }
 
@@ -316,6 +321,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           if (research.result) {
             adPatterns = research.result.patterns;
             winningDesigns = research.result.designs;
+            winnerImages = research.result.ads.map((ad) => ad.imageUrl).filter((url): url is string => Boolean(url));
             stage('analyze', 'done', `${research.result.designs.length} winning ${researchMediaType} ads broken down`, {
               designs: research.result.designs.map((d) => ({ pageName: d.pageName, format: d.format, hook: d.hook, daysRunning: d.daysRunning, sequence: d.sequence })),
             });
@@ -365,6 +371,8 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           userDirection,
           adPatterns,
           winningDesigns,
+          winnerImages,
+          productKind: identity.productKind,
         });
         if (plan.usage) analysisUsages.push(plan.usage);
         send({
@@ -372,7 +380,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           angles: slotIndexes.map((index) => ({
             index,
             name: plan.angles[index].name,
-            withText: CREATIVE_SLOTS[index].withText,
+            withText: plan.angles[index].withText ?? CREATIVE_SLOTS[index].withText,
             modelledOn: plan.angles[index].modelledOn,
           })),
         });
@@ -383,7 +391,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
             promise: plan.angles[index].promise,
             headline: plan.angles[index].headline,
             subline: plan.angles[index].subline,
-            withText: CREATIVE_SLOTS[index].withText,
+            withText: plan.angles[index].withText ?? CREATIVE_SLOTS[index].withText,
             modelledOn: plan.angles[index].modelledOn,
           })),
         });
@@ -391,8 +399,10 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
         send({ type: 'status', message: video ? 'Generating the hero frame for your video...' : 'Generating four Meta ad creatives...' });
 
         const produceSlot = async (index: number) => {
-          const slot = CREATIVE_SLOTS[index];
           const angle = plan.angles[index];
+          const slot = { withText: video ? false : (angle.withText ?? CREATIVE_SLOTS[index].withText) };
+          let failReason: 'product' | 'generation' | 'safety' | 'quality' = 'generation';
+          let qualityRerolls = 0;
           let rejectedUrl: string | null = null;
           let critique: string | undefined;
           const promptFor = () => buildMetaAdCreativePrompt({
@@ -403,6 +413,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
             withText: slot.withText,
             critique,
             frontalProduct: Boolean(cutout),
+            productKind: identity.productKind,
           });
 
           // With the real product pasted in, a failure means occlusion or a bad box, so
@@ -433,7 +444,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                 canonicalImage,
                 url,
                 identity.manifest,
-                { overlayTextExpected: slot.withText }
+                { overlayTextExpected: slot.withText, productKind: identity.productKind }
               ).catch((error) => {
                 console.error(`Slot ${index + 1} verification failed:`, error);
                 verifierErrors += 1;
@@ -486,6 +497,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                   context: productContext,
                   angle,
                   withText: slot.withText,
+                  productKind: identity.productKind,
                 }).catch((error) => {
                   console.warn(`Slot ${index + 1} creative review unavailable:`, error);
                   return null;
@@ -495,8 +507,11 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                   console.log(`Slot ${index + 1} attempt ${attempt + 1} review: ${verdict.score}/10`, verdict.scores, verdict.critical.length ? `critical: ${verdict.critical.join('; ')}` : '');
                 }
                 const canReroll = attempt < maxAttempts - 1 && deadline - Date.now() >= MIN_TIME_FOR_ATTEMPT_MS;
-                if (verdict && !verdict.passed && canReroll) {
+                // One quality re-roll per creative; the remaining attempts stay for real failures.
+                if (verdict && !verdict.passed && canReroll && qualityRerolls < 1) {
+                  qualityRerolls += 1;
                   critique = [verdict.critical.length ? `Deal-breakers: ${verdict.critical.join('; ')}.` : '', verdict.fixes].filter(Boolean).join(' ');
+                  failReason = 'quality';
                   send({ type: 'retry', index, attempt: attempt + 1, reason: 'quality' });
                   continue;
                 }
@@ -514,13 +529,23 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                 return imageUrl;
               }
               rejectedUrl = imageUrl;
+              failReason = 'product';
               send({ type: 'retry', index, attempt: attempt + 1 });
             } catch (error) {
-              console.error(`Slot ${index + 1} attempt ${attempt + 1} failed:`, error);
+              const message = error instanceof Error ? error.message : String(error);
+              console.error(`Slot ${index + 1} attempt ${attempt + 1} failed:`, message);
+              if (/safety|PROHIBITED_CONTENT|IMAGE_OTHER/i.test(message)) {
+                // Re-roll with an explicitly tasteful direction instead of repeating the same prompt.
+                failReason = 'safety';
+                critique = 'The previous version was blocked by the platform safety filter. Make it unmistakably tasteful editorial photography: adult model, natural relaxed posing, no suggestive gestures, no nudity, product fully shown; if in doubt, show less skin and more of the product and setting.';
+                send({ type: 'retry', index, attempt: attempt + 1, reason: 'safety' });
+              } else {
+                failReason = 'generation';
+              }
             }
           }
 
-          send({ type: 'slot_failed', index });
+          send({ type: 'slot_failed', index, reason: failReason });
           return null;
         };
 

@@ -32,6 +32,7 @@ export async function judgeAdCreative(options: {
   context?: ShopifyProductContext;
   angle: AdAngle;
   withText: boolean;
+  productKind?: 'packaged' | 'apparel' | 'object';
 }): Promise<AdVerdict> {
   const { images } = await loadPreparedReferences([options.imageUrl]);
   const expectedCopy = options.withText
@@ -49,7 +50,7 @@ ${expectedCopy}
 Score 0-10 on each:
 - thumbStop: would an Indian shopper scrolling Instagram stop on this within one second? (contrast, focal point, hook)
 - clarity: is the promise/benefit understood at a glance, and is any text exactly the expected copy, legible on a phone, not overlapping the product?
-- productHero: is the package clearly the hero, large, sharp, unobstructed, believable in the scene (contact shadow, matching light)?
+- productHero: ${options.productKind === 'apparel' ? 'is the garment clearly the hero, fully visible on the model, its fit and details readable, tastefully shot?' : 'is the package clearly the hero, large, sharp, unobstructed, believable in the scene (contact shadow, matching light)?'}
 - nativeFeel: does it look like a real ad from a real brand in India rather than generic stock or obvious AI?
 - craft: photographic quality; no artifacts (deformed hands/faces, warped props, floating objects, extra limbs, gibberish text, seams around the product).
 
