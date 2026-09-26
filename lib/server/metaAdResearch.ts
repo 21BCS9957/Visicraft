@@ -226,10 +226,12 @@ async function scGet<T>(path: string, params: Record<string, string | undefined>
   const apiKey = process.env.SCRAPECREATORS_API_KEY;
   if (!apiKey) throw new Error('Winning-ad research is not configured (missing SCRAPECREATORS_API_KEY).');
   const query = Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v as string)}`).join('&');
-  const response = await axios.get<T & { success?: boolean; error?: string; message?: string }>(`${SC_BASE}/${path}?${query}`, {
+  const attempt = () => axios.get<T & { success?: boolean; error?: string; message?: string }>(`${SC_BASE}/${path}?${query}`, {
     headers: { 'x-api-key': apiKey },
-    timeout: 45000,
-  }).catch((error: unknown) => {
+    timeout: 60000,
+  });
+  // The upstream scrape occasionally stalls; one retry recovers it without re-paying (cached server side).
+  const response = await attempt().catch(() => attempt()).catch((error: unknown) => {
     const message = axios.isAxiosError(error)
       ? (error.response?.data as { message?: string; error?: string } | undefined)?.message || (error.response?.data as { error?: string } | undefined)?.error || error.message
       : String(error);
