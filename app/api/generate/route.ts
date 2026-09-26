@@ -14,6 +14,7 @@ import { planAdAngles } from '@/lib/server/adAngles';
 import { compositeProduct, cutoutProduct, locateProduct } from '@/lib/server/productComposite';
 import { researchWinningAds, type AdDesign } from '@/lib/server/metaAdResearch';
 import { planVideoStoryboard } from '@/lib/server/videoStoryboard';
+import { judgeAdCreative } from '@/lib/server/adJudge';
 import { isVideoGenerationConfigured, resolveVeoModel, submitVeoJob } from '@/lib/server/veo';
 import type { ProviderUsage } from '@/lib/server/usage';
 import {
@@ -326,14 +327,16 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
         const produceSlot = async (index: number) => {
           const slot = CREATIVE_SLOTS[index];
           const angle = plan.angles[index];
-          const slotPrompt = buildMetaAdCreativePrompt({
+          let rejectedUrl: string | null = null;
+          let critique: string | undefined;
+          const promptFor = () => buildMetaAdCreativePrompt({
             context: productContext,
             userDirection,
             identityManifest: identity.manifest,
             angle,
             withText: slot.withText,
+            critique,
           });
-          let rejectedUrl: string | null = null;
 
           // With the real product pasted in, a failure means occlusion or a bad box, so
           // one clean regeneration is enough; without it, allow a repair pass too.
@@ -345,7 +348,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
               const generated = await runImageGeneration({
                 mode,
                 referenceImages: repair ? [canonicalImage, rejectedUrl as string] : [canonicalImage],
-                prompt: slotPrompt,
+                prompt: promptFor(),
                 model,
                 aspectRatio: '9:16',
                 resolution,
@@ -400,6 +403,26 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
               }
 
               if (validation?.passed) {
+                // Product is right; now judge it as a media buyer would. One re-roll with fixes.
+                const verdict = await judgeAdCreative({
+                  imageUrl,
+                  context: productContext,
+                  angle,
+                  withText: slot.withText,
+                }).catch((error) => {
+                  console.warn(`Slot ${index + 1} creative review unavailable:`, error);
+                  return null;
+                });
+                if (verdict) {
+                  analysisUsages.push(verdict.usage);
+                  console.log(`Slot ${index + 1} attempt ${attempt + 1} review: ${verdict.score}/10`, verdict.scores, verdict.critical.length ? `critical: ${verdict.critical.join('; ')}` : '');
+                }
+                const canReroll = attempt < maxAttempts - 1 && deadline - Date.now() >= MIN_TIME_FOR_ATTEMPT_MS;
+                if (verdict && !verdict.passed && canReroll) {
+                  critique = [verdict.critical.length ? `Deal-breakers: ${verdict.critical.join('; ')}.` : '', verdict.fixes].filter(Boolean).join(' ');
+                  send({ type: 'retry', index, attempt: attempt + 1, reason: 'quality' });
+                  continue;
+                }
                 acceptedCount += 1;
                 acceptedUrls.set(index, imageUrl);
                 send({
@@ -409,6 +432,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                   angle: angle.name,
                   withText: slot.withText,
                   attempts: attempt + 1,
+                  score: verdict?.score,
                 });
                 return imageUrl;
               }
@@ -476,7 +500,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                     mode: 'product_video_ad',
                     operationId,
                     aspectRatio: '9:16',
-                    resolution: '720p',
+                    resolution: job.model.includes('veo-3') ? '1080p' : '720p',
                     metaAdResearch: Boolean(adPatterns),
                     modelledOn: planned.storyboard.modelledOn ?? null,
                     chargedServerSide: true,

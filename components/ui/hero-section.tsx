@@ -95,6 +95,7 @@ interface CreativeSlot {
   url?: string;
   failed?: boolean;
   retrying?: boolean;
+  retryReason?: 'quality' | 'product';
 }
 
 type ProductFlowStep = 'none' | 'format' | 'research';
@@ -815,7 +816,7 @@ function CreativeSlotSkeleton({ index, slot }: { index: number; slot: CreativeSl
   const label = slot.failed
     ? 'Withheld'
     : slot.retrying
-      ? 'Refining product'
+      ? slot.retryReason === 'quality' ? 'Raising the bar' : 'Refining product'
       : slot.angle
         ? 'Composing scene'
         : 'Planning angle';
@@ -888,7 +889,7 @@ function CreativeSlotSkeleton({ index, slot }: { index: number; slot: CreativeSl
                 {slot.failed
                   ? 'Product check failed · refunded'
                   : slot.retrying
-                    ? 'Matching your packaging'
+                    ? slot.retryReason === 'quality' ? 'Reworking after creative review' : 'Matching your packaging'
                     : slot.modelledOn
                       ? `Modelled on ${slot.modelledOn}`
                       : `Ad ${index + 1} of ${PRODUCT_SET_SIZE}`}
@@ -1399,7 +1400,7 @@ export function HeroSection() {
                   : slot));
                 setProgress((p) => Math.min(96, p + 8));
               } else if (event.type === 'retry' && index >= 0) {
-                setCreativeSlots((slots) => slots.map((slot, i) => (slots.length === 1 ? i === 0 : i === index) ? { ...slot, retrying: true } : slot));
+                setCreativeSlots((slots) => slots.map((slot, i) => (slots.length === 1 ? i === 0 : i === index) ? { ...slot, retrying: true, retryReason: event.reason === 'quality' ? 'quality' : 'product' } : slot));
               } else if (event.type === 'slot_failed' && index >= 0) {
                 setCreativeSlots((slots) => slots.map((slot, i) => (slots.length === 1 ? i === 0 : i === index) ? { ...slot, failed: true, retrying: false } : slot));
               } else if (event.type === 'done') {

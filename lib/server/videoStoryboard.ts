@@ -27,7 +27,7 @@ function clean(value: unknown, maxLength: number): string {
 }
 
 /** The video model animates from an exact product frame; the prompt must never ask it to redraw the product. */
-const PRODUCT_LOCK_FOR_VIDEO = 'The first frame is the real product and its scene. The package in frame is the hero and must remain pixel-identical for the whole clip: same artwork, text, colours, shape and proportions. Never rotate it past a gentle angle, never occlude its front, never morph, regenerate or restyle it, and add no on-screen text, captions, logos or subtitles anywhere.';
+const PRODUCT_LOCK_FOR_VIDEO = 'The first frame is the real product and its scene. The package in frame is the hero and must remain pixel-identical for the whole clip: same artwork, text, colours, shape and proportions. Never rotate it past a gentle angle, never occlude its front, never morph, regenerate or restyle it, and add no on-screen text, captions, logos or subtitles anywhere. Sound: natural ambient sound and a soft, warm music bed only; no dialogue, no voice-over, no spoken or sung words.';
 
 function fallbackStoryboard(context: ShopifyProductContext | undefined, durationSeconds: number): VideoStoryboard {
   const name = clean(context?.title, 120) || 'the product';
@@ -80,6 +80,8 @@ Hard rules for the video model:
 - One continuous clip: describe camera motion as smooth moves and light changes, not hard cuts, since the model renders a single shot. Suggest at most one subtle transition.
 - Photoreal, Indian setting where a setting is visible, realistic light; only claims supported by the product context.
 - The first 1.5 seconds must be a scroll-stopping hook (motion, reveal, contrast), the middle a benefit moment, the end a calm front-facing product hold.
+- The model generates sound: describe natural ambience and a soft music mood in the prompt; never dialogue, voice-over or lyrics.
+- This is a paid ad that must earn its spend: every beat either stops the scroll, makes the promise visible, or builds desire for the product; nothing decorative.
 
 Return JSON only:
 {"hook":"one sentence","shots":[{"t":"0-2s","action":"","camera":"","purpose":""}],"mood":"","modelledOn":1,"prompt":"the final prompt, 90-160 words, present tense, concrete, in shot order","negativePrompt":"comma-separated things to avoid"}`,

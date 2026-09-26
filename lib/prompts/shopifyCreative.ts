@@ -6,6 +6,8 @@ export interface ShopifyProductContext {
 
 export interface AdAngle {
   name: string;
+  /** The single promise the ad makes, in the shopper's words. */
+  promise?: string;
   scene: string;
   /** Present only for text-overlay slots. */
   headline?: string;
@@ -36,10 +38,16 @@ The complete product must be fully visible, tack-sharp, correctly scaled, and in
 `.trim();
 
 const PERFORMANCE_STANDARD = `
-PERFORMANCE AD STANDARD
-This is a paid Meta ad (Instagram/Facebook feed, Stories and Reels) for Indian shoppers. Its job is to stop the scroll in under one second and make the product instantly understood. Photoreal, in-camera look, never an AI illustration or 3D render. Bright, clean, high-contrast lighting with the product as the unmistakable focal point; the product should occupy roughly 35-55% of the frame. Use real, relatable Indian settings and people when a person fits the angle: adults 21-35, authentic skin texture, natural anatomy, believable expressions, anatomically correct hands. Keep the top 14% and bottom 20% of the 9:16 frame free of key product detail so Meta's UI never covers it.
+PERFORMANCE AD STANDARD - this image exists to make money on Meta
+It is a paid ad for Indian shoppers scrolling Instagram and Facebook on a phone. It has one job: stop the thumb in under a second and make the promise obvious at a glance, so the viewer taps. Everything in the frame serves that.
 
-Avoid: clutter, cheap props, fake bokeh, floating objects, collage borders, UI chrome, watermarks, platform logos, price tags, invented discounts, star ratings, or claims not supported by the product context.
+Composition: one clear focal point, the product large and sharp (roughly 35-55% of the frame height), placed on a rule-of-thirds line, standing on a real surface with a true contact shadow and reflections that match the scene light. Strong figure-ground contrast between product and background. Keep the top ~14% and bottom ~20% of the 9:16 frame free of the product and any headline so Meta's UI never covers them; leave a calm area of negative space where copy sits or could sit.
+
+Photography: a real campaign photograph, not an illustration or 3D render. Name-the-camera realism: 50mm or 85mm lens, shallow but believable depth of field, one motivated key light with soft fill and a subtle rim, honest colour, fine grain. Settings and people are recognisably Indian and current (real homes, kitchens, desks, gyms, streets), styled like a premium D2C brand shoot, never like stock. People, if any, are adults 21-35 with natural skin texture, correct hands and proportions, candid expressions, and they never hide the product's front.
+
+Persuasion: the scene itself should dramatise the benefit or the moment of use so the promise reads even with the sound off and the text removed. Only proof that is true may appear (nothing invented: no prices, discounts, ratings, awards, review counts or medical claims).
+
+Never: clutter, cheap props, fake bokeh, floating objects, collage borders, UI chrome, platform logos, watermarks, badges, stars, extra products, mirrored or duplicated packs, gibberish text, deformed hands or faces.
 `.trim();
 
 function clean(value: string | undefined, maxLength: number): string {
@@ -88,7 +96,7 @@ function textOverlayBlock(angle: AdAngle): string {
   return `
 TEXT OVERLAY - render exactly this ad copy, spelled exactly, nothing else:
 - Headline: "${headline}"
-${subline ? `- Supporting line: "${subline}"\n` : ''}Set it in bold, modern, highly legible sans-serif type with strong contrast against the background, as a native Meta ad would. Place it in clear negative space in the upper-middle or lower-middle area, never overlapping the product and never inside the top 14% or bottom 20% of the frame. No other words, prices, badges, logos or buttons.`.trim();
+${subline ? `- Supporting line: "${subline}"\n` : ''}Typography like a top D2C brand's paid ad: a bold, modern sans-serif headline (large enough to read on a phone at feed size, roughly 6-9% of frame height per line, maximum two lines), the supporting line smaller and lighter beneath it, tight consistent spacing, left- or centre-aligned as the composition demands. Guarantee legibility with real contrast (light type on a darker area or a subtle, natural darkening behind the type), never a slapped-on box. Place the copy in clear negative space in the upper-middle or lower-middle of the frame, never overlapping the product and never inside the top 14% or bottom 20%. No other words, prices, badges, logos or buttons.`.trim();
 }
 
 export function buildMetaAdCreativePrompt(options: {
@@ -97,28 +105,36 @@ export function buildMetaAdCreativePrompt(options: {
   identityManifest?: string;
   angle: AdAngle;
   withText: boolean;
+  /** Fixes from a rejected render, applied on the regeneration. */
+  critique?: string;
 }): string {
   const manifest = clean(options.identityManifest, 3200);
   const direction = clean(options.userDirection, 1200);
   const angle = options.withText ? options.angle : { ...options.angle, headline: undefined, subline: undefined };
 
+  const critique = clean(options.critique, 500);
+
   return `
-You are the creative director of a top Indian D2C performance agency. Create exactly one finished standalone 9:16 Meta ad image by preserving the canonical product asset and building the scene around it.
+You are the creative director of a top Indian D2C performance agency, making a Meta ad that has to earn its media spend. Create exactly one finished standalone 9:16 ad image by preserving the canonical product asset and building the scene around it.
 
 ${productBrief(options.context)}
 ${direction ? `User art direction: ${direction}` : ''}
 ${manifest ? `\nFORENSIC PRODUCT IDENTITY MANIFEST - use this only to verify the preserved pixels; never re-typeset from it:\n${manifest}\n` : ''}
 CREATIVE ANGLE - ${clean(angle.name, 60)}
+The one promise this ad makes: ${clean(angle.promise, 160) || 'the product\'s core benefit, shown not told'}
 Scene: ${clean(angle.scene, 600)}
 ${angle.design ? `Design reference (structure of a long-running ad in this niche; reproduce the layout logic, product placement and visual hierarchy, never any brand, wording or claim from it): ${clean(angle.design, 500)}\n` : ''}
 ${textOverlayBlock(angle)}
-
+${critique ? `\nFIXES FROM CREATIVE REVIEW - a previous render of this ad was rejected; apply every fix:\n${critique}\n` : ''}
 ${PRODUCT_LOCK}
 
 ${PERFORMANCE_STANDARD}
 
 FINAL PRE-FLIGHT CHECK - perform silently before rendering
-Compare the product in the proposed frame against reference image 1 at high magnification. Reject and correct the frame if any visible character, logo, icon, illustration, label geometry, artwork placement, package seam, silhouette, proportion, material, or color on the product differs. If the composition would require redrawing the product, simplify the composition instead. Output only the final image.
+1. Product: compare it against reference image 1 at high magnification; if any character, logo, illustration, label geometry, silhouette, proportion, material or colour differs, simplify the composition rather than redraw the product.
+2. Performance: at phone size, is the focal point instant, is the promise obvious, is the copy (if any) exactly as specified and legible, is nothing important in the top 14% or bottom 20%?
+3. Craft: hands, faces, props and surfaces are physically correct; no artifacts.
+Output only the final image.
 `.trim();
 }
 

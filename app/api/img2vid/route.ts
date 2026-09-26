@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
         mode: 'img2vid',
         operationId: operationName,
         aspectRatio: aspectRatio || '16:9',
-        resolution: resolution || '720p',
+        resolution: resolution || (targetModel.includes('veo-3') ? '1080p' : '720p'),
         chargedServerSide: true,
       },
     });

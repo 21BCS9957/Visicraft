@@ -16,8 +16,20 @@ export interface VeoJobOptions {
   numResults?: number;
 }
 
-export const DEFAULT_VEO_MODEL = 'veo-2.0-generate-001';
-const LOCATION = 'us-central1';
+/** VEO_MODEL overrides the default so a newer Veo can be adopted without a code change. */
+export const DEFAULT_VEO_MODEL = process.env.VEO_MODEL || 'veo-3.1-generate-001';
+const LOCATION = process.env.VEO_LOCATION || 'us-central1';
+
+function isVeo3(model: string): boolean {
+  return /veo-3/.test(model);
+}
+
+/** Veo 3.x renders 1080p and native audio; older models are limited to 720p, silent. */
+export function veoCapabilities(model: string): { resolution: string; generateAudio: boolean } {
+  return isVeo3(model)
+    ? { resolution: process.env.VEO_RESOLUTION || '1080p', generateAudio: process.env.VEO_GENERATE_AUDIO !== 'false' }
+    : { resolution: '720p', generateAudio: false };
+}
 
 export function isVideoGenerationConfigured(): boolean {
   return Boolean(process.env.GOOGLE_VIDEO_SERVICE_ACCOUNT_JSON);
@@ -43,23 +55,29 @@ export async function submitVeoJob(options: VeoJobOptions): Promise<{ operationN
 
   const dataUrl = await imageToBase64(options.imageUrl);
   const model = resolveVeoModel(options.model);
-  const duration = typeof options.duration === 'number' ? `${options.duration}s` : options.duration || '5s';
+  const durationSeconds = Math.min(8, Math.max(4, Math.round(
+    typeof options.duration === 'number' ? options.duration : parseFloat(String(options.duration || '8')) || 8
+  )));
+  const capabilities = veoCapabilities(model);
   const endpoint = `https://${LOCATION}-aiplatform.googleapis.com/v1beta1/projects/${projectId}/locations/${LOCATION}/publishers/google/models/${model}:predictLongRunning`;
 
+  // Vertex Veo schema: prompt + image in the instance; everything else in parameters.
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       instances: [{
         prompt: options.prompt || 'A smooth cinematic tracking shot',
-        negativePrompt: options.negativePrompt || undefined,
         image: { bytesBase64Encoded: dataUrl.split(',')[1], mimeType: 'image/jpeg' },
       }],
       parameters: {
         sampleCount: options.numResults || 1,
-        duration,
-        resolution: '720p',
+        durationSeconds,
+        resolution: capabilities.resolution,
         aspectRatio: options.aspectRatio || '16:9',
+        negativePrompt: options.negativePrompt || undefined,
+        generateAudio: capabilities.generateAudio,
+        personGeneration: 'allow_adult',
       },
     }),
   });

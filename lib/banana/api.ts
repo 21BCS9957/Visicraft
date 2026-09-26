@@ -359,8 +359,10 @@ export async function generateThumbnail(
   }
 
   // Map model IDs to Gemini API model names
+  // IMAGE_MODEL lets a newer Gemini image model be adopted without a code change.
+  const defaultImageModel = process.env.IMAGE_MODEL || 'gemini-3-pro-image';
   const modelMap: Record<string, string> = {
-    'nano-banana-pro': 'gemini-3-pro-image',
+    'nano-banana-pro': defaultImageModel,
   };
 
   // Map UI aspect ratios to Gemini API format
@@ -383,7 +385,7 @@ export async function generateThumbnail(
   };
 
   const selectedModel = model || 'nano-banana-pro';
-  const geminiModel = modelMap[selectedModel] || 'gemini-3-pro-image';
+  const geminiModel = modelMap[selectedModel] || defaultImageModel;
   const selectedAspectRatio = aspectRatioMap[aspectRatio || '16:9'] || '16:9';
   const selectedResolution = resolutionMap[resolution || '1080p'] || '2K';
 

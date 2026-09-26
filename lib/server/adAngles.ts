@@ -38,15 +38,16 @@ ${productBrief(options.context)}
 Product identity notes: ${clean(options.identityManifest, 1500) || 'n/a'}
 ${options.userDirection ? `User direction: ${clean(options.userDirection, 800)}` : ''}
 ${patterns ? `\nWHAT THE LONGEST-RUNNING ADS IN THIS NICHE DO (model the structure, never copy brands or wording):\n${patterns}\n` : ''}${designBlock}
-Rules:
-- Angles 1 and 2 are text-overlay ads: give a headline (max 6 words) and subline (max 8 words). Angles 3 and 4 are clean visual ads: headline and subline must be empty strings.
-- Each angle uses a different psychological lever (e.g. core benefit, problem/solution, social/lifestyle, premium/desire).
-- Only use claims supported by the product context. Never invent prices, discounts, ratings, review counts, awards, ingredients or medical claims.
-- Scene: one or two sentences describing a photoreal set or situation. The product must stand upright, front-facing and unobstructed; people never cover or hold the package in a way that hides its front.
+These ads exist to make money. Plan them like a direct-response buyer:
+- Each angle makes exactly ONE promise, stated in "promise" in the shopper's own words (what changes in their life), and the scene dramatises that promise so it reads with the text removed.
+- Use four DIFFERENT proven structures, one per angle, chosen from: problem → relief (show the pain moment resolved), core benefit hero, "moment of use" ritual/lifestyle, before/after or comparison (only if truthful and visual), reason-to-believe (ingredient/mechanism/craft shown), desire/aspiration, objection-buster (address the doubt that stops purchase), gift/occasion. Pick the four that fit this product and niche best; if the winning ads reveal what converts in this niche, prefer those structures.
+- Angles 1 and 2 carry copy: headline max 6 words with a concrete promise or a sharp question (no puns, no generic slogans like "Made for you"), subline max 8 words giving the reason to believe. Angles 3 and 4 are clean: headline and subline are empty strings.
+- Only claims the product context supports. Never invent prices, discounts, ratings, review counts, awards, ingredients, results or medical claims.
+- Scene: two or three sentences a photographer can shoot: specific Indian setting, time of day, light, the person (if any) and what they are doing, props that carry the promise, where the product stands (upright, front-facing, unobstructed, on a surface). No clichés (no floating products, no abstract gradients, no generic marble).
 - Copy in simple, punchy English that Indian shoppers use.
 
 Return JSON only:
-{"angles":[{"name":"","scene":"","headline":"","subline":"","design":"layout, product placement, text hierarchy and mood to reproduce (2-3 sentences)","modelledOn":1},{...},{...},{...}]}`,
+{"angles":[{"name":"","promise":"","scene":"","headline":"","subline":"","design":"layout, product placement, text hierarchy and mood to reproduce (2-3 sentences)","modelledOn":1},{...},{...},{...}]}`,
       }],
       { temperature: 0.7 },
       'Ad angle planning'
@@ -71,6 +72,7 @@ Return JSON only:
         : undefined;
       return {
         name: clean(item.name, 60) || fallback.name,
+        promise: clean(item.promise, 160) || undefined,
         scene: scene || fallback.scene,
         headline: slot.withText ? headline || fallback.headline : undefined,
         subline: slot.withText ? clean(item.subline, 70) || (headline ? undefined : fallback.subline) : undefined,
