@@ -221,12 +221,71 @@ const SC_BASE = 'https://api.scrapecreators.com/v1/facebook/adLibrary';
 const SC_PAGES_PER_KEYWORD = 3; // ~25-30 ads per page, 1 credit each
 const SC_PAGES_PER_COMPANY = 2;
 
-export type ResearchProvider = 'scrapecreators' | 'apify';
+export type ResearchProvider = 'selfhosted' | 'scrapecreators' | 'apify';
 
+/** Self-hosted scraper first when configured; ScrapeCreators next; Apify last. */
 export function getResearchProvider(): ResearchProvider | null {
+  const forced = process.env.RESEARCH_PROVIDER;
+  if (forced === 'selfhosted' && process.env.AD_SCRAPER_URL) return 'selfhosted';
+  if (forced === 'scrapecreators' && process.env.SCRAPECREATORS_API_KEY) return 'scrapecreators';
+  if (forced === 'apify' && process.env.APIFY_API_TOKEN) return 'apify';
+  if (process.env.AD_SCRAPER_URL) return 'selfhosted';
   if (process.env.SCRAPECREATORS_API_KEY) return 'scrapecreators';
   if (process.env.APIFY_API_TOKEN) return 'apify';
   return null;
+}
+
+// ---------- self-hosted sidecar (scraper/app.py) ----------
+async function shGet<T>(path: string, params: Record<string, string | number | undefined>): Promise<T> {
+  const base = (process.env.AD_SCRAPER_URL || '').replace(/\/$/, '');
+  if (!base) throw new Error('AD_SCRAPER_URL is not configured.');
+  const query = Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`).join('&');
+  const headers: Record<string, string> = {};
+  if (process.env.SCRAPER_TOKEN) headers['x-scraper-token'] = process.env.SCRAPER_TOKEN;
+  const response = await axios.get<T>(`${base}/${path}?${query}`, { headers, timeout: 170000 }).catch((error: unknown) => {
+    const message = axios.isAxiosError(error)
+      ? (error.response?.data as { detail?: string } | undefined)?.detail || error.message
+      : String(error);
+    throw new Error(`Self-hosted scraper ${path} failed: ${message}`);
+  });
+  return response.data;
+}
+
+async function shSearchAds(keyword: string, country: string, mediaType: AdMediaType | 'all', max: number): Promise<RawAd[]> {
+  const cacheKey = `sh|search|${country}|${mediaType}|${keyword.toLowerCase()}`;
+  const cached = scrapeCache.get(cacheKey);
+  if (cached && Date.now() - cached.createdAt < CACHE_TTL_MS) return cached.items;
+  const data = await shGet<{ items?: RawAd[] }>('search', { query: keyword, country, media_type: mediaType, max });
+  const items = data.items ?? [];
+  scrapeCache.set(cacheKey, { createdAt: Date.now(), items });
+  return items;
+}
+
+async function shCompanyAds(brand: string, country: string, max: number): Promise<RawAd[]> {
+  const cacheKey = `sh|company|${country}|${brand.toLowerCase()}`;
+  const cached = scrapeCache.get(cacheKey);
+  if (cached && Date.now() - cached.createdAt < CACHE_TTL_MS) return cached.items;
+  const found = await shGet<{ items?: Array<{ page_id: string; name: string }> }>('companies', { query: brand, country });
+  const pages = found.items ?? [];
+  if (pages.length === 0) return [];
+  const brandLower = brand.toLowerCase();
+  const countryWords: Record<string, string[]> = { IN: ['india', 'in'], US: ['usa', 'us', 'united states'], GB: ['uk', 'united kingdom'] };
+  const wanted = countryWords[country] ?? [country.toLowerCase()];
+  const best = [...pages].sort((a, b) => {
+    const score = (name: string) => {
+      const n = name.toLowerCase();
+      let v = n.startsWith(brandLower) ? 2 : n.includes(brandLower) ? 1 : 0;
+      if (wanted.some((w) => n.split(/\s+/).includes(w))) v += 3;
+      if (/\b(uk|usa|us|uae|singapore|canada|australia|europe)\b/.test(n) && !wanted.some((w) => n.includes(w))) v -= 2;
+      return v;
+    };
+    return score(b.name) - score(a.name);
+  })[0];
+  const data = await shGet<{ items?: RawAd[] }>('page', { page_id: best.page_id, country, media_type: 'all', max });
+  const items = data.items ?? [];
+  console.log(`Ad research: ${items.length} active ads on page "${best.name}" (${best.page_id}) for competitor ${brand} [self-hosted]`);
+  scrapeCache.set(cacheKey, { createdAt: Date.now(), items });
+  return items;
 }
 
 async function scGet<T>(path: string, params: Record<string, string | undefined>): Promise<T> {
@@ -685,9 +744,33 @@ export async function researchWinningAds(
     // All age tiers scrape concurrently (one round-trip instead of up to four); the
     // oldest tier with enough usable ads wins, otherwise the tier with the most.
     const provider = getResearchProvider();
-    if (!provider) throw new Error('Winning-ad research is not configured (set SCRAPECREATORS_API_KEY).');
+    if (!provider) throw new Error('Winning-ad research is not configured (set AD_SCRAPER_URL or SCRAPECREATORS_API_KEY).');
     const jobs: Array<{ label: string; run: () => Promise<RawAd[]> }> = [];
-    if (provider === 'scrapecreators') {
+    if (provider === 'selfhosted') {
+      // Free path: our own scraper; each job falls back to ScrapeCreators if the scraper fails.
+      const withFallback = (label: string, primary: () => Promise<RawAd[]>, fallback?: () => Promise<RawAd[]>) => ({
+        label,
+        run: async () => {
+          try {
+            return await primary();
+          } catch (error) {
+            if (!fallback || !process.env.SCRAPECREATORS_API_KEY) throw error;
+            console.warn(`Ad research ${label}: self-hosted scraper failed (${error instanceof Error ? error.message : error}); using ScrapeCreators`);
+            return fallback();
+          }
+        },
+      });
+      keywords.forEach((keyword) => jobs.push(withFallback(
+        `"${keyword}" (${mediaType})`,
+        () => shSearchAds(keyword, country, mediaType, 40),
+        () => scSearchAds(keyword, country, mediaType, SC_PAGES_PER_KEYWORD)
+      )));
+      competitors.forEach((brand) => jobs.push(withFallback(
+        `competitor ${brand}`,
+        () => shCompanyAds(brand, country, 40),
+        () => scCompanyAds(brand, country, SC_PAGES_PER_COMPANY)
+      )));
+    } else if (provider === 'scrapecreators') {
       // Current top ads by impressions, plus ads that were already running months ago
       // and are still active (the Ad Library's impressions-window filter): long-runners.
       const longRunnerCutoff = new Date(Date.now() - 120 * 86_400_000).toISOString().slice(0, 10);
