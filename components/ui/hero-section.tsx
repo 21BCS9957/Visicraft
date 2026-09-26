@@ -58,6 +58,7 @@ interface WinningAd {
   id: string;
   pageName: string;
   daysRunning: number;
+  collationCount?: number;
   title?: string;
   body?: string;
   imageUrl?: string;
@@ -2118,7 +2119,9 @@ export function HeroSection() {
                         </div>
                         <div className="p-2.5">
                           <p className="truncate text-xs text-white/80">{ad.pageName}</p>
-                          <p className="mt-0.5 text-[11px] text-[#fff05a]/80">Running {ad.daysRunning} days</p>
+                          <p className="mt-0.5 text-[11px] text-[#fff05a]/80">
+                            Running {ad.daysRunning} days{ad.collationCount && ad.collationCount > 1 ? ` · ${ad.collationCount} variants` : ''}
+                          </p>
                         </div>
                       </a>
                     ))}

@@ -19,6 +19,10 @@ export interface WinningAd {
   videoUrl?: string;
   /** Video ads can still serve as design references (via their cover frame) when image ads are scarce. */
   mediaKind: 'image' | 'video';
+  /** How many ad variants share this creative: advertisers duplicate what makes money. */
+  collationCount: number;
+  /** Ranking score: run length weighted by collation. */
+  winScore: number;
   libraryUrl: string;
 }
 
@@ -206,6 +210,100 @@ function sampleAdLibraryItems(niche: string, mediaType: AdMediaType): RawAd[] {
   }));
 }
 
+const SC_BASE = 'https://api.scrapecreators.com/v1/facebook/adLibrary';
+const SC_PAGES_PER_KEYWORD = 3; // ~25-30 ads per page, 1 credit each
+const SC_PAGES_PER_COMPANY = 2;
+
+export type ResearchProvider = 'scrapecreators' | 'apify';
+
+export function getResearchProvider(): ResearchProvider | null {
+  if (process.env.SCRAPECREATORS_API_KEY) return 'scrapecreators';
+  if (process.env.APIFY_API_TOKEN) return 'apify';
+  return null;
+}
+
+async function scGet<T>(path: string, params: Record<string, string | undefined>): Promise<T> {
+  const apiKey = process.env.SCRAPECREATORS_API_KEY;
+  if (!apiKey) throw new Error('Winning-ad research is not configured (missing SCRAPECREATORS_API_KEY).');
+  const query = Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v as string)}`).join('&');
+  const response = await axios.get<T & { success?: boolean; error?: string; message?: string }>(`${SC_BASE}/${path}?${query}`, {
+    headers: { 'x-api-key': apiKey },
+    timeout: 45000,
+  }).catch((error: unknown) => {
+    const message = axios.isAxiosError(error)
+      ? (error.response?.data as { message?: string; error?: string } | undefined)?.message || (error.response?.data as { error?: string } | undefined)?.error || error.message
+      : String(error);
+    throw new Error(`ScrapeCreators ${path} failed: ${message}`);
+  });
+  if (response.data.success === false) throw new Error(`ScrapeCreators ${path} failed: ${response.data.message || response.data.error || 'unknown error'}`);
+  return response.data;
+}
+
+/** Keyword search on the Ad Library via ScrapeCreators, following the cursor for a few pages. */
+async function scSearchAds(
+  keyword: string,
+  country: string,
+  mediaType: AdMediaType | 'all',
+  pages: number,
+  /** Only ads that already had impressions on/before this date (still active now = long-runner). */
+  impressionsBefore?: string
+): Promise<RawAd[]> {
+  const cacheKey = `sc|search|${country}|${mediaType}|${impressionsBefore ?? ''}|${keyword.toLowerCase()}`;
+  const cached = scrapeCache.get(cacheKey);
+  if (cached && Date.now() - cached.createdAt < CACHE_TTL_MS) return cached.items;
+  const items: RawAd[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < pages; page++) {
+    const data = await scGet<{ searchResults?: RawAd[]; cursor?: string | null }>('search/ads', {
+      query: keyword,
+      country,
+      media_type: mediaType.toUpperCase(),
+      status: 'ACTIVE',
+      sort_by: 'total_impressions',
+      end_date: impressionsBefore,
+      cursor,
+    });
+    items.push(...(data.searchResults ?? []));
+    cursor = data.cursor || undefined;
+    if (!cursor) break;
+  }
+  scrapeCache.set(cacheKey, { createdAt: Date.now(), items });
+  return items;
+}
+
+/** A brand's own active ads: resolve its page (prefer the country's page), then page ads. */
+async function scCompanyAds(brand: string, country: string, pages: number): Promise<RawAd[]> {
+  const cacheKey = `sc|company|${country}|${brand.toLowerCase()}`;
+  const cached = scrapeCache.get(cacheKey);
+  if (cached && Date.now() - cached.createdAt < CACHE_TTL_MS) return cached.items;
+  const found = await scGet<{ searchResults?: Array<{ name?: string; page_id?: string; id?: string }> }>('search/companies', { query: brand });
+  const candidates = (found.searchResults ?? []).filter((c) => c.page_id || c.id);
+  if (candidates.length === 0) return [];
+  const countryWords: Record<string, string[]> = { IN: ['india', 'in'], US: ['usa', 'us', 'united states'], GB: ['uk', 'united kingdom'] };
+  const wanted = countryWords[country] ?? [country.toLowerCase()];
+  const brandLower = brand.toLowerCase();
+  const scored = candidates.map((c) => {
+    const name = (c.name ?? '').toLowerCase();
+    let score = name.startsWith(brandLower) ? 2 : name.includes(brandLower) ? 1 : 0;
+    if (wanted.some((w) => name.split(/\s+/).includes(w))) score += 3;
+    // A page for another country loses to a bare brand page.
+    if (/\b(uk|usa|us|uae|singapore|canada|australia|europe)\b/.test(name) && !wanted.some((w) => name.includes(w))) score -= 2;
+    return { c, score };
+  }).sort((a, b) => b.score - a.score);
+  const pageId = String(scored[0].c.page_id || scored[0].c.id);
+  const items: RawAd[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < pages; page++) {
+    const data = await scGet<{ results?: RawAd[]; cursor?: string | null }>('company/ads', { pageId, status: 'ACTIVE', sort_by: 'total_impressions', cursor });
+    items.push(...(data.results ?? []));
+    cursor = data.cursor || undefined;
+    if (!cursor) break;
+  }
+  console.log(`Ad research: ${items.length} active ads on page "${scored[0].c.name}" (${pageId}) for competitor ${brand}`);
+  scrapeCache.set(cacheKey, { createdAt: Date.now(), items });
+  return items;
+}
+
 async function scrapeAdLibrary(
   keywords: string[],
   country: string,
@@ -291,36 +389,43 @@ export function rankWinningAds(
   rawAds: RawAd[],
   mediaType: AdMediaType,
   limit = TOP_ADS,
-  includeOtherKind = false
+  includeOtherKind = false,
+  /** Keyword searches keep 1 ad per advertiser for variety; a brand's own page may keep several. */
+  maxPerPage = 1
 ): WinningAd[] {
   const now = Date.now();
-  const bestPerPage = new Map<string, WinningAd>();
+  const perPage = new Map<string, WinningAd[]>();
+  const dropped = { inactive: 0, noDate: 0, catalog: 0, noMedia: 0, otherKind: 0 };
 
   for (const raw of rawAds) {
-    if (pick(raw, 'is_active', 'isActive') === false) continue;
+    if (pick(raw, 'is_active', 'isActive') === false) { dropped.inactive += 1; continue; }
     // Catalog/DPA ads are auto-generated from product feeds, not designed creatives worth modelling.
     const snapshotForFormat = pick(raw, 'snapshot') as RawAd | undefined;
     const displayFormat = String(pick(snapshotForFormat, 'displayFormat', 'display_format') ?? '').toUpperCase();
     const title = String(pick(snapshotForFormat, 'title') ?? '');
-    if (displayFormat === 'DPA' || displayFormat === 'DCO' || /\{\{.*\}\}/.test(title)) continue;
+    if (displayFormat === 'DPA' || displayFormat === 'DCO' || /\{\{.*\}\}/.test(title)) { dropped.catalog += 1; continue; }
     const start = toStartDate(raw);
-    if (!start) continue;
+    if (!start) { dropped.noDate += 1; continue; }
     const snapshot = pick(raw, 'snapshot') as RawAd | undefined;
     const media = firstMedia(snapshot);
     const mediaKind: 'image' | 'video' = hasMedia(media.videoUrl) ? 'video' : 'image';
-    if (!hasMedia(media.imageUrl) && !hasMedia(media.videoUrl)) continue;
-    if (!includeOtherKind && mediaKind !== mediaType) continue;
+    if (!hasMedia(media.imageUrl) && !hasMedia(media.videoUrl)) { dropped.noMedia += 1; continue; }
+    if (!includeOtherKind && mediaKind !== mediaType) { dropped.otherKind += 1; continue; }
 
     const id = String(pick(raw, 'ad_archive_id', 'adArchiveID', 'adArchiveId', 'id') ?? '');
     if (!id) continue;
     const pageName = clean(pick(raw, 'page_name', 'pageName') ?? pick(snapshot, 'page_name'), 120) || 'Unknown advertiser';
     const body = pick(snapshot, 'body') as RawAd | string | undefined;
 
+    const collationCount = Math.max(1, Number(pick(raw, 'collation_count', 'collationCount')) || 1);
+    const daysRunning = Math.max(0, Math.floor((now - start.getTime()) / 86_400_000));
     const ad: WinningAd = {
       id,
       pageName,
       startDate: start.toISOString(),
-      daysRunning: Math.max(0, Math.floor((now - start.getTime()) / 86_400_000)),
+      daysRunning,
+      collationCount,
+      winScore: Math.round(daysRunning * (1 + 0.5 * Math.log2(collationCount))),
       body: clean(typeof body === 'string' ? body : pick(body as RawAd, 'text'), 600) || undefined,
       title: clean(pick(snapshot, 'title'), 160) || undefined,
       ctaText: clean(pick(snapshot, 'cta_text', 'ctaText'), 40) || undefined,
@@ -332,12 +437,17 @@ export function rankWinningAds(
     };
 
     const key = pageName.toLowerCase();
-    const existing = bestPerPage.get(key);
-    if (!existing || ad.daysRunning > existing.daysRunning) bestPerPage.set(key, ad);
+    const list = perPage.get(key) ?? [];
+    list.push(ad);
+    perPage.set(key, list);
   }
 
-  return [...bestPerPage.values()]
-    .sort((a, b) => b.daysRunning - a.daysRunning)
+  const kept = [...perPage.values()].flatMap((list) => list.sort((a, b) => b.winScore - a.winScore).slice(0, maxPerPage));
+  if (rawAds.length > 0) {
+    console.log(`Ad research filter: ${rawAds.length} raw → ${kept.length} kept (dropped: ${Object.entries(dropped).filter(([, n]) => n > 0).map(([k, n]) => `${k} ${n}`).join(', ') || 'none'})`);
+  }
+  return kept
+    .sort((a, b) => b.winScore - a.winScore)
     .slice(0, limit);
 }
 
@@ -388,7 +498,7 @@ Return JSON only: {"relevant":[{"id":"...","reason":"<=12 words"}]} listing only
     'Ad relevance screening'
   );
   const parsed = parseJsonObject(geminiText(response));
-  console.log('Ad relevance candidates:\n' + candidates.map((ad) => `  ${ad.daysRunning}d | ${ad.pageName} | ${ad.landingDomain || 'n/a'} | ${(ad.title || '').slice(0, 60)} | ${(ad.body || '').slice(0, 90)}`).join('\n'));
+  console.log('Ad relevance candidates:\n' + candidates.map((ad) => `  ${ad.daysRunning}d x${ad.collationCount} | ${ad.pageName} | ${ad.landingDomain || 'n/a'} | ${(ad.title || '').slice(0, 60)} | ${(ad.body || '').slice(0, 90)}`).join('\n'));
   console.log('Ad relevance verdict:', JSON.stringify(parsed?.relevant ?? parsed).slice(0, 1500));
   const relevantIds = new Set(
     (Array.isArray(parsed?.relevant) ? parsed.relevant : [])
@@ -507,6 +617,31 @@ Never copy a competitor's brand name, claims or exact wording into your descript
   };
 }
 
+/**
+ * Meta's creative URLs are signed CDN links that expire within days. Copy each
+ * winner's image (and SD video) into our storage so the UI strip and later
+ * analysis keep working; fall back to the original URL if a copy fails.
+ */
+async function persistWinnerMedia(ads: WinningAd[]): Promise<WinningAd[]> {
+  const { uploadBufferToBucket } = await import('@/lib/server/supabaseStorage');
+  const copy = async (url: string | undefined, bucket: string, mime: string, maxBytes: number): Promise<string | undefined> => {
+    if (!url || !/^https?:\/\//.test(url)) return url;
+    try {
+      const response = await axios.get<ArrayBuffer>(url, { responseType: 'arraybuffer', timeout: 25000, maxContentLength: maxBytes, maxBodyLength: maxBytes });
+      const type = String(response.headers['content-type'] || mime).split(';')[0].trim() || mime;
+      return await uploadBufferToBucket(Buffer.from(response.data), bucket, type.startsWith('image/') || type.startsWith('video/') ? type : mime);
+    } catch (error) {
+      console.warn('Could not persist winner media, keeping the CDN link:', error instanceof Error ? error.message : error);
+      return url;
+    }
+  };
+  return Promise.all(ads.map(async (ad) => ({
+    ...ad,
+    imageUrl: await copy(ad.imageUrl, 'generated-thumbnails', 'image/jpeg', 8 * 1024 * 1024),
+    videoUrl: await copy(ad.videoUrl, 'generated-videos', 'video/mp4', MAX_VIDEO_BYTES),
+  })));
+}
+
 export async function researchWinningAds(
   product: ShopifyProductContext,
   mediaType: AdMediaType,
@@ -528,18 +663,40 @@ export async function researchWinningAds(
   } else {
     // All age tiers scrape concurrently (one round-trip instead of up to four); the
     // oldest tier with enough usable ads wins, otherwise the tier with the most.
-    // Category keywords by age tier, plus the named competitor brands' own ads
-    // (keyword search on a brand name returns that page's creatives).
-    const jobs: Array<{ label: string; run: () => Promise<RawAd[]> }> = MIN_AGE_CASCADE_DAYS.map((minAgeDays) => ({
-      label: `"${keywords.join('", "')}" running ${minAgeDays ?? 0}+ days`,
-      run: () => scrapeAdLibrary(keywords, country, mediaType, minAgeDays),
-    }));
-    if (competitors.length > 0) {
-      // Brands mostly run video; their cover frames are still valid design references.
-      jobs.push({
-        label: `competitors ${competitors.join(', ')}`,
-        run: () => scrapeAdLibrary(competitors, country, 'all', null, ADS_PER_COMPETITOR),
+    const provider = getResearchProvider();
+    if (!provider) throw new Error('Winning-ad research is not configured (set SCRAPECREATORS_API_KEY).');
+    const jobs: Array<{ label: string; run: () => Promise<RawAd[]> }> = [];
+    if (provider === 'scrapecreators') {
+      // Current top ads by impressions, plus ads that were already running months ago
+      // and are still active (the Ad Library's impressions-window filter): long-runners.
+      const longRunnerCutoff = new Date(Date.now() - 120 * 86_400_000).toISOString().slice(0, 10);
+      keywords.forEach((keyword) => {
+        jobs.push({
+          label: `"${keyword}" (${mediaType})`,
+          run: () => scSearchAds(keyword, country, mediaType, SC_PAGES_PER_KEYWORD),
+        });
+        jobs.push({
+          label: `"${keyword}" (${mediaType}) live since before ${longRunnerCutoff}`,
+          run: () => scSearchAds(keyword, country, mediaType, 2, longRunnerCutoff),
+        });
       });
+      // Competitor brands' own pages: their real creatives, mostly video.
+      competitors.forEach((brand) => jobs.push({
+        label: `competitor ${brand}`,
+        run: () => scCompanyAds(brand, country, SC_PAGES_PER_COMPANY),
+      }));
+    } else {
+      // Apify: category keywords by age tier, plus competitor names as keywords.
+      MIN_AGE_CASCADE_DAYS.forEach((minAgeDays) => jobs.push({
+        label: `"${keywords.join('", "')}" running ${minAgeDays ?? 0}+ days`,
+        run: () => scrapeAdLibrary(keywords, country, mediaType, minAgeDays),
+      }));
+      if (competitors.length > 0) {
+        jobs.push({
+          label: `competitors ${competitors.join(', ')}`,
+          run: () => scrapeAdLibrary(competitors, country, 'all', null, ADS_PER_COMPETITOR),
+        });
+      }
     }
     const tiers = await Promise.all(
       jobs.map(async (job) => {
@@ -548,7 +705,7 @@ export async function researchWinningAds(
           console.warn(`Ad research ${job.label} failed:`, error instanceof Error ? error.message : error);
           return [] as RawAd[];
         });
-        const ranked = rankWinningAds(rawAds, mediaType, CANDIDATE_POOL, true);
+        const ranked = rankWinningAds(rawAds, mediaType, CANDIDATE_POOL, true, job.label.startsWith('competitor') ? 4 : 1);
         console.log(`Ad research: ${ranked.length} usable ${mediaType} ads for ${job.label} (${Math.round((Date.now() - started) / 1000)}s)`);
         return ranked;
       })
@@ -557,20 +714,31 @@ export async function researchWinningAds(
     const pool = new Map<string, WinningAd>();
     tiers.flat().forEach((ad) => {
       const existing = pool.get(ad.id);
-      if (!existing || ad.daysRunning > existing.daysRunning) pool.set(ad.id, ad);
+      if (!existing || ad.winScore > existing.winScore) pool.set(ad.id, ad);
     });
     // Gate every candidate first: long-running junk (advertorials, novel apps) must not
     // crowd out genuine competitors that happen to refresh creatives more often.
-    const candidates = [...pool.values()].sort((a, b) => b.daysRunning - a.daysRunning).slice(0, CANDIDATE_POOL);
+    const candidates = [...pool.values()].sort((a, b) => b.winScore - a.winScore).slice(0, CANDIDATE_POOL);
     const screened = await filterRelevantAds(candidates, product, niche);
     relevanceUsage = screened.usage;
-    const relevant = screened.ads.sort((a, b) => b.daysRunning - a.daysRunning);
+    const relevant = screened.ads.sort((a, b) => b.winScore - a.winScore);
     const sameKind = relevant.filter((ad) => ad.mediaKind === mediaType);
     const otherKind = relevant.filter((ad) => ad.mediaKind !== mediaType);
-    ads = (sameKind.length >= MIN_USABLE_ADS
-      ? sameKind.slice(0, TOP_ADS)
-      : [...sameKind, ...otherKind].slice(0, TOP_ADS)
-    ).sort((a, b) => b.daysRunning - a.daysRunning);
+    const diverse = (list: WinningAd[]) => {
+      const perPage = new Map<string, number>();
+      return list.filter((ad) => {
+        const key = ad.pageName.toLowerCase();
+        const n = perPage.get(key) ?? 0;
+        if (n >= 2) return false;
+        perPage.set(key, n + 1);
+        return true;
+      });
+    };
+    const preferred = diverse(sameKind);
+    ads = (preferred.length >= MIN_USABLE_ADS
+      ? preferred.slice(0, TOP_ADS)
+      : diverse([...sameKind, ...otherKind]).slice(0, TOP_ADS)
+    ).sort((a, b) => b.winScore - a.winScore);
     if (otherKind.length && sameKind.length < MIN_USABLE_ADS) {
       console.log(`Ad research: only ${sameKind.length} relevant ${mediaType} ads; using ${Math.min(otherKind.length, TOP_ADS - sameKind.length)} ${mediaType === 'image' ? 'video cover frames' : 'image ads'} as extra design references`);
     }
@@ -579,6 +747,7 @@ export async function researchWinningAds(
     throw new Error(`No long-running ${mediaType} ads selling ${niche} were found on Meta in ${country}.`);
   }
 
+  if (!mock) ads = await persistWinnerMedia(ads);
   const analysis = await analyzeWinningAds(ads, mediaType, niche);
   const result: AdResearchResult = {
     niche,
