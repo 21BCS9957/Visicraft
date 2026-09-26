@@ -263,6 +263,180 @@ export async function cutoutProduct(imageUrl: string): Promise<CutoutResult> {
   };
 }
 
+export type Quad = [[number, number], [number, number], [number, number], [number, number]];
+
+/**
+ * Asks Gemini for the four corners of the rendered package's front face (TL, TR,
+ * BR, BL, normalised 0-1000), so the real cutout can be warped into the scene's
+ * perspective instead of pasted flat.
+ */
+export async function locateProductQuad(imageUrl: string): Promise<{ quad: Quad | null; box: Box | null; usage: ProviderUsage }> {
+  const { images } = await loadPreparedReferences([imageUrl]);
+  const { response, providerModel } = await requestGeminiText(
+    [
+      { text: 'Find the single main product package in this advertisement image. Return JSON only: {"quad":[[x,y],[x,y],[x,y],[x,y]],"box_2d":[ymin,xmin,ymax,xmax]}. "quad" is the four corners of the package\'s FRONT FACE as drawn in the image (with its perspective), in this order: top-left, top-right, bottom-right, bottom-left, each as [x,y] normalised to 0-1000. "box_2d" is the tight bounding box of the whole package. Exclude shadows, props, hands and text that is not printed on the package. If there is no package, return {"quad":null,"box_2d":null}.' },
+      { inlineData: { mimeType: images[0].mimeType, data: images[0].data } },
+    ],
+    { temperature: 0 },
+    'Product localisation'
+  );
+  const raw = response.data.candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join('') ?? '';
+  const meta = response.data.usageMetadata;
+  const usage: ProviderUsage = {
+    inputTokens: Number(meta?.promptTokenCount) || 0,
+    outputTokens: Number(meta?.candidatesTokenCount) || 0,
+    totalTokens: Number(meta?.totalTokenCount) || 0,
+    providerModel,
+  };
+  const json = raw.replace(/^```(?:json)?\s*|\s*```$/gi, '').trim();
+  const start = json.indexOf('{');
+  const end = json.lastIndexOf('}');
+  if (start < 0 || end <= start) return { quad: null, box: null, usage };
+  let parsed: { quad?: unknown; box_2d?: unknown } = {};
+  try { parsed = JSON.parse(json.slice(start, end + 1)); } catch { return { quad: null, box: null, usage }; }
+  let box: Box | null = null;
+  if (Array.isArray(parsed.box_2d) && parsed.box_2d.length === 4) {
+    const [ymin, xmin, ymax, xmax] = parsed.box_2d.map(Number);
+    if (ymax > ymin && xmax > xmin) box = { left: xmin / 1000, top: ymin / 1000, width: (xmax - xmin) / 1000, height: (ymax - ymin) / 1000 };
+  }
+  let quad: Quad | null = null;
+  if (Array.isArray(parsed.quad) && parsed.quad.length === 4 && parsed.quad.every((p) => Array.isArray(p) && p.length === 2)) {
+    quad = parsed.quad.map((p) => [Number(p[0]) / 1000, Number(p[1]) / 1000]) as Quad;
+    if (!isUsableQuad(quad)) quad = null;
+  }
+  if (!box && quad) {
+    const xs = quad.map((p) => p[0]);
+    const ys = quad.map((p) => p[1]);
+    box = { left: Math.min(...xs), top: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+  }
+  return { quad, box, usage };
+}
+
+/** Convex, sane aspect, not tiny: a quad we can warp onto without producing garbage. */
+function isUsableQuad(q: Quad): boolean {
+  const cross = (o: number[], a: number[], b: number[]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const signs = [0, 1, 2, 3].map((i) => Math.sign(cross(q[i], q[(i + 1) % 4], q[(i + 2) % 4])));
+  if (new Set(signs.filter((v) => v !== 0)).size !== 1) return false;
+  const area = Math.abs(q.reduce((acc, p, i) => acc + p[0] * q[(i + 1) % 4][1] - q[(i + 1) % 4][0] * p[1], 0)) / 2;
+  if (area < 0.01) return false;
+  const w = (Math.hypot(q[1][0] - q[0][0], q[1][1] - q[0][1]) + Math.hypot(q[2][0] - q[3][0], q[2][1] - q[3][1])) / 2;
+  const h = (Math.hypot(q[3][0] - q[0][0], q[3][1] - q[0][1]) + Math.hypot(q[2][0] - q[1][0], q[2][1] - q[1][1])) / 2;
+  return w > 0.03 && h > 0.03 && w / h > 0.25 && w / h < 4;
+}
+
+/** Solves the 3x3 homography mapping src[i] → dst[i] (h33 = 1). */
+function solveHomography(src: number[][], dst: number[][]): number[] {
+  const A: number[][] = [];
+  const b: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    const [x, y] = src[i];
+    const [u, v] = dst[i];
+    A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); b.push(u);
+    A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); b.push(v);
+  }
+  // Gaussian elimination with partial pivoting on the 8x8 system.
+  const n = 8;
+  for (let c = 0; c < n; c++) {
+    let pivot = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(A[r][c]) > Math.abs(A[pivot][c])) pivot = r;
+    [A[c], A[pivot]] = [A[pivot], A[c]];
+    [b[c], b[pivot]] = [b[pivot], b[c]];
+    const d = A[c][c] || 1e-12;
+    for (let r = c + 1; r < n; r++) {
+      const f = A[r][c] / d;
+      for (let k = c; k < n; k++) A[r][k] -= f * A[c][k];
+      b[r] -= f * b[c];
+    }
+  }
+  const h = new Array(n).fill(0);
+  for (let r = n - 1; r >= 0; r--) {
+    let sum = b[r];
+    for (let k = r + 1; k < n; k++) sum -= A[r][k] * h[k];
+    h[r] = sum / (A[r][r] || 1e-12);
+  }
+  return [...h, 1];
+}
+
+/**
+ * Warps the cutout onto the quad (inverse mapping with bilinear sampling) and
+ * darkens/brightens it with the scene's broad light falloff taken from the
+ * model's own rendering, so the real product sits in the shot's perspective and
+ * light. Returns the public URL of the composite.
+ */
+export async function compositeProductPerspective(
+  generatedImageUrl: string,
+  cutout: ProductCutout,
+  quad: Quad
+): Promise<string> {
+  const { images } = await loadPreparedReferences([generatedImageUrl]);
+  const baseBuffer = Buffer.from(images[0].data, 'base64');
+  const meta = await sharp(baseBuffer).metadata();
+  const W = meta.width ?? 0;
+  const H = meta.height ?? 0;
+  if (!W || !H) throw new Error('Could not read generated image dimensions');
+
+  // Grow the quad ~3% about its centre so no rendered edge peeks out.
+  const cx = quad.reduce((a, p) => a + p[0], 0) / 4;
+  const cy = quad.reduce((a, p) => a + p[1], 0) / 4;
+  const grown = quad.map(([x, y]) => [(cx + (x - cx) * 1.03) * W, (cy + (y - cy) * 1.03) * H]);
+  const xs = grown.map((p) => p[0]);
+  const ys = grown.map((p) => p[1]);
+  const left = Math.max(0, Math.floor(Math.min(...xs)));
+  const top = Math.max(0, Math.floor(Math.min(...ys)));
+  const right = Math.min(W, Math.ceil(Math.max(...xs)));
+  const bottom = Math.min(H, Math.ceil(Math.max(...ys)));
+  const bw = right - left;
+  const bh = bottom - top;
+  if (bw < 8 || bh < 8) throw new Error('Quad too small');
+
+  const cut = await sharp(cutout.png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const cw = cut.info.width;
+  const ch = cut.info.height;
+  // dest (canvas px) → unit square of the cutout
+  const Hinv = solveHomography(grown, [[0, 0], [1, 0], [1, 1], [0, 1]]);
+
+  // Scene light: broad blur of the render's luminance inside the quad's bbox, as a ratio to its mean.
+  const shade = await sharp(baseBuffer).extract({ left, top, width: bw, height: bh }).greyscale().blur(Math.max(8, bw * 0.12)).raw().toBuffer({ resolveWithObject: true });
+  const shadeData = singleChannel(shade.data, shade.info.channels, bw * bh);
+  let shadeMean = 0;
+  for (let i = 0; i < bw * bh; i++) shadeMean += shadeData[i];
+  shadeMean = Math.max(1, shadeMean / (bw * bh));
+
+  const layer = Buffer.alloc(bw * bh * 4);
+  const sample = (u: number, v: number, c: number): number => {
+    const x = u * (cw - 1);
+    const y = v * (ch - 1);
+    const x0 = Math.floor(x);
+    const y0 = Math.floor(y);
+    const x1 = Math.min(cw - 1, x0 + 1);
+    const y1 = Math.min(ch - 1, y0 + 1);
+    const fx = x - x0;
+    const fy = y - y0;
+    const at = (xx: number, yy: number) => cut.data[(yy * cw + xx) * 4 + c];
+    return (at(x0, y0) * (1 - fx) + at(x1, y0) * fx) * (1 - fy) + (at(x0, y1) * (1 - fx) + at(x1, y1) * fx) * fy;
+  };
+  for (let y = 0; y < bh; y++) {
+    for (let x = 0; x < bw; x++) {
+      const X = left + x + 0.5;
+      const Y = top + y + 0.5;
+      const w = Hinv[6] * X + Hinv[7] * Y + Hinv[8];
+      const u = (Hinv[0] * X + Hinv[1] * Y + Hinv[2]) / w;
+      const v = (Hinv[3] * X + Hinv[4] * Y + Hinv[5]) / w;
+      const o = (y * bw + x) * 4;
+      if (u < 0 || u >= 1 || v < 0 || v >= 1) { layer[o + 3] = 0; continue; }
+      const ratio = Math.min(1.25, Math.max(0.72, shadeData[y * bw + x] / shadeMean));
+      const gain = Math.pow(ratio, 0.85);
+      layer[o] = Math.min(255, Math.round(sample(u, v, 0) * gain));
+      layer[o + 1] = Math.min(255, Math.round(sample(u, v, 1) * gain));
+      layer[o + 2] = Math.min(255, Math.round(sample(u, v, 2) * gain));
+      layer[o + 3] = Math.round(sample(u, v, 3));
+    }
+  }
+  const layerPng = await sharp(layer, { raw: { width: bw, height: bh, channels: 4 } }).png().toBuffer();
+  const composite = await sharp(baseBuffer).composite([{ input: layerPng, left, top }]).png().toBuffer();
+  return uploadDataUrlToBucket(`data:image/png;base64,${composite.toString('base64')}`, 'generated-thumbnails');
+}
+
 /**
  * Pastes the real product cutout over the model's rendition, scaled to cover the
  * located box, brightness-matched to the scene, with a soft contact shadow.

@@ -107,6 +107,8 @@ export function buildMetaAdCreativePrompt(options: {
   withText: boolean;
   /** Fixes from a rejected render, applied on the regeneration. */
   critique?: string;
+  /** Real product pixels will be pasted in afterwards: keep the pack face square to the camera. */
+  frontalProduct?: boolean;
 }): string {
   const manifest = clean(options.identityManifest, 3200);
   const direction = clean(options.userDirection, 1200);
@@ -125,7 +127,7 @@ The one promise this ad makes: ${clean(angle.promise, 160) || 'the product\'s co
 Scene: ${clean(angle.scene, 600)}
 ${angle.design ? `Design reference (structure of a long-running ad in this niche; reproduce the layout logic, product placement and visual hierarchy, never any brand, wording or claim from it): ${clean(angle.design, 500)}\n` : ''}
 ${textOverlayBlock(angle)}
-${critique ? `\nFIXES FROM CREATIVE REVIEW - a previous render of this ad was rejected; apply every fix:\n${critique}\n` : ''}
+${options.frontalProduct ? `\nCAMERA ON THE PRODUCT: shoot the package at its own height with its front face parallel to the image plane (no top-down or three-quarter views of the pack); it stands on a level surface with a soft contact shadow. Props, people and the environment may be angled freely; only the package stays square-on.\n` : ''}${critique ? `\nFIXES FROM CREATIVE REVIEW - a previous render of this ad was rejected; apply every fix:\n${critique}\n` : ''}
 ${PRODUCT_LOCK}
 
 ${PERFORMANCE_STANDARD}

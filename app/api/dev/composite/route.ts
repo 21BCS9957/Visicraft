@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { compositeProduct, cutoutProduct, locateProduct } from '@/lib/server/productComposite';
+import { compositeProduct, compositeProductPerspective, cutoutProduct, locateProductQuad } from '@/lib/server/productComposite';
 
 /** Development-only harness for the product cutout/locate/composite pipeline. */
 export async function POST(request: NextRequest) {
@@ -18,14 +18,19 @@ export async function POST(request: NextRequest) {
   };
   if (cutout && body.generatedUrl) {
     const t = Date.now();
-    const located = await locateProduct(body.generatedUrl);
+    const located = await locateProductQuad(body.generatedUrl);
     result.box = located.box;
+    result.quad = located.quad;
     result.locateMs = Date.now() - t;
-    if (located.box) {
-      const t2 = Date.now();
+    const t2 = Date.now();
+    if (located.quad) {
+      result.compositeUrl = await compositeProductPerspective(body.generatedUrl, cutout, located.quad);
+      result.method = 'perspective';
+    } else if (located.box) {
       result.compositeUrl = await compositeProduct(body.generatedUrl, cutout, located.box);
-      result.compositeMs = Date.now() - t2;
+      result.method = 'flat';
     }
+    result.compositeMs = Date.now() - t2;
   }
   if (cutout && body.returnCutout) {
     result.cutoutPng = cutout.png.toString('base64');

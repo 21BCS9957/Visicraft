@@ -11,7 +11,7 @@ import {
   type ShopifyProductContext,
 } from '@/lib/prompts/shopifyCreative';
 import { planAdAngles } from '@/lib/server/adAngles';
-import { compositeProduct, cutoutProduct, locateProduct } from '@/lib/server/productComposite';
+import { compositeProduct, compositeProductPerspective, cutoutProduct, locateProductQuad } from '@/lib/server/productComposite';
 import { describeProductNiche, researchWinningAds, type AdDesign } from '@/lib/server/metaAdResearch';
 import { planVideoStoryboard } from '@/lib/server/videoStoryboard';
 import { judgeAdCreative } from '@/lib/server/adJudge';
@@ -402,6 +402,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
             angle,
             withText: slot.withText,
             critique,
+            frontalProduct: Boolean(cutout),
           });
 
           // With the real product pasted in, a failure means occlusion or a bad box, so
@@ -428,11 +429,29 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
               if (!imageUrl) continue;
               let composited = false;
 
-              if (cutout) {
+              const verify = (url: string) => validateProductIdentity(
+                canonicalImage,
+                url,
+                identity.manifest,
+                { overlayTextExpected: slot.withText }
+              ).catch((error) => {
+                console.error(`Slot ${index + 1} verification failed:`, error);
+                verifierErrors += 1;
+                return null;
+              });
+
+              // The model's own rendering is the most natural result; keep it when the
+              // packaging already passes. Paste real pixels only when it does not.
+              let validation = await verify(imageUrl);
+              if (validation) analysisUsages.push(validation.usage);
+              if (validation && !validation.passed && cutout) {
                 try {
-                  const located = await locateProduct(imageUrl);
+                  const located = await locateProductQuad(imageUrl);
                   analysisUsages.push(located.usage);
-                  if (located.box) {
+                  if (located.quad) {
+                    imageUrl = await compositeProductPerspective(imageUrl, cutout, located.quad);
+                    composited = true;
+                  } else if (located.box) {
                     imageUrl = await compositeProduct(imageUrl, cutout, located.box);
                     composited = true;
                   } else {
@@ -441,22 +460,14 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                 } catch (error) {
                   console.warn(`Slot ${index + 1}: compositing failed, keeping model rendering:`, error);
                 }
+                if (composited) {
+                  console.log(`Slot ${index + 1} attempt ${attempt + 1}: render failed the product check (${validation.reason}); real product pasted in`);
+                  validation = await verify(imageUrl);
+                }
               }
-
-              const validation = await validateProductIdentity(
-                canonicalImage,
-                imageUrl,
-                identity.manifest,
-                { overlayTextExpected: slot.withText }
-              ).catch((error) => {
-                console.error(`Slot ${index + 1} verification failed:`, error);
-                verifierErrors += 1;
-                return null;
-              });
               // The checker itself failed (not the image): retrying generation would only burn credits.
               if (!validation) break;
               if (validation) {
-                analysisUsages.push(validation.usage);
                 validationScores.push({
                   slot: index + 1,
                   attempt: attempt + 1,
