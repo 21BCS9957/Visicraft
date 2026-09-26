@@ -33,6 +33,7 @@ interface DownloadedImage {
 
 const MAX_REFERENCE_IMAGE_BYTES = 15 * 1024 * 1024;
 const MAX_PREPARED_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_ORIGINAL_EDGE = 2560;
 const MAX_INLINE_REFERENCE_BYTES = 14 * 1024 * 1024;
 const IMAGE_DOWNLOAD_TIMEOUT_MS = 20000;
 const GEMINI_REQUEST_TIMEOUT_MS = 90000;
@@ -685,6 +686,17 @@ async function urlToBase64(imageUrl: string): Promise<DownloadedImage> {
     const mimeType = detectImageMimeType(bytes, contentType, absoluteUrl);
     if (!mimeType) {
       throw new Error(`Unsupported or invalid image response (${contentType || 'unknown type'})`);
+    }
+    // Send the original bytes untouched whenever they already fit the API's inline
+    // limits; re-encode only oversized or EXIF-rotated images.
+    const meta = await sharp(bytes, { failOn: 'none' }).metadata().catch(() => null);
+    const fits = Boolean(meta?.width && meta?.height)
+      && (meta?.width ?? 0) <= MAX_ORIGINAL_EDGE
+      && (meta?.height ?? 0) <= MAX_ORIGINAL_EDGE
+      && bytes.byteLength <= MAX_PREPARED_IMAGE_BYTES
+      && (!meta?.orientation || meta.orientation === 1);
+    if (fits) {
+      return { data: bytes.toString('base64'), mimeType, byteLength: bytes.byteLength };
     }
     const preparedBytes = await prepareReferenceImage(bytes);
     return {
