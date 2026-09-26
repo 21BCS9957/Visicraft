@@ -476,7 +476,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
             if (!isVideoGenerationConfigured()) {
               videoCreditsRefunded = video.cost;
               await refundCreditsForUser(user.id, video.cost);
-              videoWarning = 'Video generation is not configured on this server yet (GOOGLE_VIDEO_SERVICE_ACCOUNT_JSON). The hero frame and storyboard were kept; video credits were refunded.';
+              videoWarning = 'Video generation is not configured on this server yet (a GEMINI_API_KEY with billing, or GOOGLE_VIDEO_SERVICE_ACCOUNT_JSON). The hero frame and storyboard were kept; video credits were refunded.';
             } else {
               try {
                 send({ type: 'status', message: 'Rendering your video with Veo...' });

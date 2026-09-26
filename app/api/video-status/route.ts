@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleAuth } from 'google-auth-library';
+import { isGeminiOperation, pollGeminiVeoJob } from '@/lib/server/veo';
 
 export async function POST(request: NextRequest) {
   try {
@@ -7,6 +8,12 @@ export async function POST(request: NextRequest) {
 
     if (!operationId) {
       return NextResponse.json({ error: 'Operation ID is required' }, { status: 400 });
+    }
+
+    // Jobs submitted through the Gemini API (same GEMINI_API_KEY, no service account).
+    if (typeof operationId === 'string' && isGeminiOperation(operationId)) {
+      const poll = await pollGeminiVeoJob(operationId);
+      return NextResponse.json(poll.error ? { done: true, progress: 0, error: poll.error } : poll);
     }
 
     const serviceAccountJsonStr = process.env.GOOGLE_VIDEO_SERVICE_ACCOUNT_JSON;

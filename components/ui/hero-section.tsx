@@ -632,9 +632,8 @@ const IMAGE_MODELS = [
 ];
 
 const VIDEO_MODELS = [
-  { id: 'veo-3.1-generate-001', name: 'Google Veo 3.1' },
-  { id: 'veo-2.0-generate-001', name: 'Google Veo 2.0' },
-  { id: 'veo-1.0', name: 'Google Veo 1.0' },
+  // The server picks the strongest Veo the key can use; this id only marks the family.
+  { id: 'veo-3.1-generate-001', name: 'Google Veo (best available)' },
   { id: 'runway-gen3', name: 'Runway Gen-3 Alpha' },
 ];
 

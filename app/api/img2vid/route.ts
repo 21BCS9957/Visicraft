@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!isVideoGenerationConfigured()) {
-      return NextResponse.json({ error: 'Video generation is not configured yet (missing GOOGLE_VIDEO_SERVICE_ACCOUNT_JSON).' }, { status: 500 });
+      return NextResponse.json({ error: 'Video generation is not configured yet (set GEMINI_API_KEY with billing enabled, or GOOGLE_VIDEO_SERVICE_ACCOUNT_JSON).' }, { status: 500 });
     }
 
     const creditCost = getServerVideoCreditCost({ model, duration, resolution, numResults });
