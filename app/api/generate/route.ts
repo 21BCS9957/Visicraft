@@ -12,7 +12,7 @@ import {
 } from '@/lib/prompts/shopifyCreative';
 import { planAdAngles } from '@/lib/server/adAngles';
 import { compositeProduct, cutoutProduct, locateProduct } from '@/lib/server/productComposite';
-import { researchWinningAds, type AdDesign } from '@/lib/server/metaAdResearch';
+import { describeProductNiche, researchWinningAds, type AdDesign } from '@/lib/server/metaAdResearch';
 import { planVideoStoryboard } from '@/lib/server/videoStoryboard';
 import { judgeAdCreative } from '@/lib/server/adJudge';
 import { isVideoGenerationConfigured, resolveVeoModel, submitVeoJob } from '@/lib/server/veo';
@@ -186,6 +186,14 @@ export async function POST(request: NextRequest) {
 
 type AuthenticatedUser = Awaited<ReturnType<typeof requireAuthenticatedUser>>;
 
+/** The identity-defining details from the product manifest, for the "locked" chips in the UI. */
+function lockedElements(manifest: string): string[] {
+  const lines = manifest.split(/\n+/).map((l) => l.replace(/^[\s\-*•\d.)]+/, '').trim()).filter(Boolean);
+  const start = lines.findIndex((l) => /forbidden|do not change|must not change|never change/i.test(l));
+  const picked = (start >= 0 ? lines.slice(start + 1) : lines.filter((l) => /logo|text|word|colou?r|badge|label|silhouette|shape/i.test(l))).slice(0, 5);
+  return picked.map((l) => l.slice(0, 90));
+}
+
 interface CreativeSetOptions {
   user: AuthenticatedUser;
   mode: ImageGenMode;
@@ -234,11 +242,38 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
       let videoCreditsRefunded = 0;
 
       try {
-        // Winning-ad research runs concurrently with product analysis and cutout.
+        const stageStarted: Record<string, number> = {};
+        const stage = (id: string, status: 'active' | 'done' | 'failed' | 'skipped', detail?: string, data?: unknown) => {
+          if (status === 'active' && !stageStarted[id]) stageStarted[id] = Date.now();
+          send({ type: 'stage', id, status, detail, data, elapsedMs: stageStarted[id] ? Date.now() - stageStarted[id] : undefined });
+        };
+
+        // 2. Understand the product: identity spec (what to lock) and niche/competitors, from the photos.
+        stage('understand', 'active', 'Reading the product photos and listing');
+        const nichePromise = productContext
+          ? describeProductNiche(productContext, referenceImages.slice(0, 3)).catch((error: unknown) => {
+              console.warn('Niche detection failed:', error);
+              return null;
+            })
+          : Promise.resolve(null);
+
+        // 3. Winning-ad research runs concurrently with product analysis and cutout.
         const researchPromise = research && productContext
-          ? researchWinningAds(productContext, researchMediaType, country ?? 'IN', { imageUrls: referenceImages.slice(0, 3) })
-              .then((result) => ({ result, error: null as Error | null }))
-              .catch((error: unknown) => ({ result: null, error: error instanceof Error ? error : new Error('Ad research failed') }))
+          ? (async () => {
+              const nicheInfo = await nichePromise;
+              stage('research', 'active', 'Searching the Meta Ad Library', { scraped: 0, designed: 0, relevant: 0, winners: 0 });
+              return researchWinningAds(productContext, researchMediaType, country ?? 'IN', {
+                imageUrls: referenceImages.slice(0, 3),
+                niche: nicheInfo ?? undefined,
+                onProgress: (progress) => {
+                  if (progress.phase === 'scraped') stage('research', 'active', `${progress.scraped} ads scraped, ${progress.designed} designed creatives`, progress);
+                  if (progress.phase === 'screened') stage('research', 'active', `${progress.relevant} sell the same category, ${progress.winners} winners`, progress);
+                  if (progress.phase === 'analyzing') { stage('research', 'done', `${progress.winners} winners`, progress); stage('analyze', 'active', researchMediaType === 'video' ? 'Watching the winning videos' : 'Studying the winning ads'); }
+                },
+              })
+                .then((result) => ({ result, error: null as Error | null }))
+                .catch((error: unknown) => ({ result: null, error: error instanceof Error ? error : new Error('Ad research failed') }));
+            })()
           : null;
         send({
           type: 'status',
@@ -247,6 +282,8 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
             : 'Locking the exact product from your store images...',
         });
         const identity = await analyzeProductIdentity(referenceImages);
+        const nicheInfo = await nichePromise;
+        if (nicheInfo) analysisUsages.push(nicheInfo.usage);
         analysisUsages.push(identity.usage);
         const canonicalImage = referenceImages[identity.canonicalReferenceIndex] ?? referenceImages[0];
 
@@ -262,12 +299,26 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
         console.log(cutout
           ? `Product cutout ready (${cutout.width}x${cutout.height}) from ${canonicalImage}`
           : `Cutout skipped (${cut.reason}); relying on model rendering for ${canonicalImage}`);
+        stage('understand', 'done', nicheInfo ? `${nicheInfo.niche}` : 'Product identity locked', {
+          canonicalImage,
+          title: productContext?.title,
+          brand: productContext?.vendor,
+          niche: nicheInfo?.niche,
+          keywords: nicheInfo?.keywords ?? [],
+          competitors: nicheInfo?.competitors ?? [],
+          locked: lockedElements(identity.manifest),
+          productPasted: Boolean(cutout),
+        });
+        if (!researchPromise) { stage('research', 'skipped', 'Research not requested'); stage('analyze', 'skipped'); }
 
         if (researchPromise) {
           const research = await researchPromise;
           if (research.result) {
             adPatterns = research.result.patterns;
             winningDesigns = research.result.designs;
+            stage('analyze', 'done', `${research.result.designs.length} winning ${researchMediaType} ads broken down`, {
+              designs: research.result.designs.map((d) => ({ pageName: d.pageName, format: d.format, hook: d.hook, daysRunning: d.daysRunning, sequence: d.sequence })),
+            });
             send({
               type: 'research',
               research: {
@@ -300,10 +351,13 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
             }).catch((error) => console.error('Research usage logging failed:', error));
           } else {
             console.error('Ad research failed, continuing without it:', research.error);
+            stage('research', 'failed', research.error?.message ?? 'Ad research failed');
+            stage('analyze', 'skipped');
             send({ type: 'research_failed', message: research.error?.message ?? 'Ad research failed' });
           }
         }
 
+        stage('plan', 'active', video ? 'Writing the hero-frame brief' : 'Writing four ad briefs');
         send({ type: 'status', message: 'Planning four ad angles...', canonicalImage });
         const plan = await planAdAngles({
           context: productContext,
@@ -322,6 +376,18 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
             modelledOn: plan.angles[index].modelledOn,
           })),
         });
+        stage('plan', 'done', slotIndexes.map((i) => plan.angles[i].name).join(' · '), {
+          angles: slotIndexes.map((index) => ({
+            index,
+            name: plan.angles[index].name,
+            promise: plan.angles[index].promise,
+            headline: plan.angles[index].headline,
+            subline: plan.angles[index].subline,
+            withText: CREATIVE_SLOTS[index].withText,
+            modelledOn: plan.angles[index].modelledOn,
+          })),
+        });
+        stage('generate', 'active', video ? 'Generating the hero frame' : `Generating ${slotIndexes.length} creatives with the real product locked in`, { passed: 0, withheld: 0 });
         send({ type: 'status', message: video ? 'Generating the hero frame for your video...' : 'Generating four Meta ad creatives...' });
 
         const produceSlot = async (index: number) => {
@@ -450,6 +516,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
         await Promise.all(slotIndexes.map((index) => produceSlot(index)));
 
         const failedSlots = slotIndexes.length - acceptedCount;
+        stage('generate', acceptedCount > 0 ? 'done' : 'failed', `${acceptedCount} of ${slotIndexes.length} passed the product check`, { passed: acceptedCount, withheld: failedSlots });
         if (failedSlots > 0) await refundCreditsForUser(user.id, perImageCost * failedSlots);
 
         // Video ad: storyboard modelled on the winning sequences, then animate the hero frame.
@@ -461,6 +528,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
             videoCreditsRefunded = video.cost;
             await refundCreditsForUser(user.id, video.cost);
           } else {
+            stage('storyboard', 'active', 'Writing the storyboard from the winning video ads');
             send({ type: 'status', message: 'Writing the storyboard from the winning video ads...' });
             const planned = await planVideoStoryboard({
               context: productContext,
@@ -472,13 +540,16 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
             });
             if (planned.usage) analysisUsages.push(planned.usage);
             send({ type: 'storyboard', storyboard: planned.storyboard });
+            stage('storyboard', 'done', planned.storyboard.hook, { storyboard: planned.storyboard });
 
             if (!isVideoGenerationConfigured()) {
               videoCreditsRefunded = video.cost;
               await refundCreditsForUser(user.id, video.cost);
               videoWarning = 'Video generation is not configured on this server yet (a GEMINI_API_KEY with billing, or GOOGLE_VIDEO_SERVICE_ACCOUNT_JSON). The hero frame and storyboard were kept; video credits were refunded.';
+              stage('render', 'skipped', 'Video generation not configured');
             } else {
               try {
+                stage('render', 'active', 'Rendering with Veo');
                 send({ type: 'status', message: 'Rendering your video with Veo...' });
                 const job = await submitVeoJob({
                   imageUrl: heroUrl,
@@ -512,6 +583,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                 videoCreditsRefunded = video.cost;
                 await refundCreditsForUser(user.id, video.cost);
                 videoWarning = `The video could not be started (${error instanceof Error ? error.message : 'unknown error'}). The hero frame was kept; video credits were refunded.`;
+                stage('render', 'failed', error instanceof Error ? error.message : 'Veo submission failed');
               }
             }
           }

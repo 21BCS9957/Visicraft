@@ -125,15 +125,22 @@ function parseJsonObject(raw: string): Record<string, unknown> | null {
   }
 }
 
-async function deriveNicheKeywords(
-  product: ShopifyProductContext,
-  imageUrls: string[] = []
-): Promise<{
+export interface NicheInfo {
   niche: string;
   keywords: string[];
   competitors: string[];
   usage: ProviderUsage;
-}> {
+}
+
+/** What the product is, the niche it sells in, and who else sells it in this market. */
+export async function describeProductNiche(product: ShopifyProductContext, imageUrls: string[] = []): Promise<NicheInfo> {
+  return deriveNicheKeywords(product, imageUrls);
+}
+
+async function deriveNicheKeywords(
+  product: ShopifyProductContext,
+  imageUrls: string[] = []
+): Promise<NicheInfo> {
   // The photos settle what the product actually is when the listing text is vague.
   const parts: Parameters<typeof requestGeminiText>[0] = [{
     text: `You pick Meta Ad Library search keywords for competitor research in India. Study the product photos (if attached) together with the listing to understand exactly what kind of product this is, who buys it and why.
@@ -644,13 +651,24 @@ async function persistWinnerMedia(ads: WinningAd[]): Promise<WinningAd[]> {
   })));
 }
 
+/** Live counters for the UI while research runs. */
+export interface ResearchProgress {
+  phase: 'scraping' | 'scraped' | 'screened' | 'analyzing';
+  scraped?: number;
+  designed?: number;
+  relevant?: number;
+  winners?: number;
+}
+
 export async function researchWinningAds(
   product: ShopifyProductContext,
   mediaType: AdMediaType,
   country = 'IN',
-  options: { imageUrls?: string[] } = {}
+  options: { imageUrls?: string[]; onProgress?: (progress: ResearchProgress) => void; niche?: NicheInfo } = {}
 ): Promise<AdResearchResult> {
-  const { niche, keywords, competitors, usage: keywordUsage } = await deriveNicheKeywords(product, options.imageUrls ?? []);
+  const { niche, keywords, competitors, usage: keywordUsage } = options.niche ?? await deriveNicheKeywords(product, options.imageUrls ?? []);
+  const onProgress = options.onProgress ?? (() => undefined);
+  onProgress({ phase: 'scraping' });
   const cacheKey = `${process.env.AD_RESEARCH_MOCK === 'true' ? 'mock|' : ''}${country}|${mediaType}|${[...keywords, ...competitors].join(',').toLowerCase()}`;
   const cached = researchCache.get(cacheKey);
   if (cached && Date.now() - cached.createdAt < CACHE_TTL_MS) {
@@ -659,6 +677,7 @@ export async function researchWinningAds(
 
   const mock = process.env.AD_RESEARCH_MOCK === 'true';
   let ads: WinningAd[] = [];
+  let screenedRelevantCount = 0;
   let relevanceUsage: ProviderUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
   if (mock) {
     ads = rankWinningAds(sampleAdLibraryItems(niche, mediaType), mediaType);
@@ -700,6 +719,7 @@ export async function researchWinningAds(
         });
       }
     }
+    let scrapedTotal = 0;
     const tiers = await Promise.all(
       jobs.map(async (job) => {
         const started = Date.now();
@@ -707,6 +727,7 @@ export async function researchWinningAds(
           console.warn(`Ad research ${job.label} failed:`, error instanceof Error ? error.message : error);
           return [] as RawAd[];
         });
+        scrapedTotal += rawAds.length;
         const ranked = rankWinningAds(rawAds, mediaType, CANDIDATE_POOL, true, job.label.startsWith('competitor') ? 4 : 1);
         console.log(`Ad research: ${ranked.length} usable ${mediaType} ads for ${job.label} (${Math.round((Date.now() - started) / 1000)}s)`);
         return ranked;
@@ -721,9 +742,11 @@ export async function researchWinningAds(
     // Gate every candidate first: long-running junk (advertorials, novel apps) must not
     // crowd out genuine competitors that happen to refresh creatives more often.
     const candidates = [...pool.values()].sort((a, b) => b.winScore - a.winScore).slice(0, CANDIDATE_POOL);
+    onProgress({ phase: 'scraped', scraped: scrapedTotal, designed: pool.size });
     const screened = await filterRelevantAds(candidates, product, niche);
     relevanceUsage = screened.usage;
     const relevant = screened.ads.sort((a, b) => b.winScore - a.winScore);
+    screenedRelevantCount = relevant.length;
     const sameKind = relevant.filter((ad) => ad.mediaKind === mediaType);
     const otherKind = relevant.filter((ad) => ad.mediaKind !== mediaType);
     const diverse = (list: WinningAd[]) => {
@@ -748,8 +771,10 @@ export async function researchWinningAds(
   if (ads.length === 0) {
     throw new Error(`No long-running ${mediaType} ads selling ${niche} were found on Meta in ${country}.`);
   }
+  onProgress({ phase: 'screened', relevant: screenedRelevantCount, winners: ads.length });
 
   if (!mock) ads = await persistWinnerMedia(ads);
+  onProgress({ phase: 'analyzing', winners: ads.length });
   const analysis = await analyzeWinningAds(ads, mediaType, niche);
   const result: AdResearchResult = {
     niche,

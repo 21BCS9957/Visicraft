@@ -34,6 +34,15 @@ import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { getCreditCost } from '@/lib/credits/calculator';
 import { cn } from '@/lib/utils';
+import {
+  IMAGE_STAGES,
+  PipelineTimeline,
+  VIDEO_STAGES,
+  initialStages,
+  type StageId,
+  type StageState,
+  type StageStatus,
+} from '@/components/ui/PipelineTimeline';
 import { getAuthenticatedHeaders } from '@/lib/supabase/auth';
 import { uploadFileWithSignedUrl } from '@/lib/supabase/storage';
 
@@ -958,6 +967,29 @@ export function HeroSection() {
   const [productFlowStep, setProductFlowStep] = useState<ProductFlowStep>('none');
   const [adResearch, setAdResearch] = useState<AdResearch | null>(null);
   const [storyboard, setStoryboard] = useState<VideoStoryboard | null>(null);
+  // The visible pipeline for product-link runs: one row per stage, live artifacts.
+  const [pipelineOrder, setPipelineOrder] = useState<StageId[]>(IMAGE_STAGES);
+  const [pipeline, setPipeline] = useState<Record<string, StageState>>({});
+  const [showPipeline, setShowPipeline] = useState(false);
+  const [pipelineCollapsed, setPipelineCollapsed] = useState(false);
+
+  const updateStage = useCallback((id: StageId, status: StageStatus, detail?: string, data?: Record<string, unknown>) => {
+    setPipeline((current) => {
+      const previous = current[id] ?? { id, status: 'pending' as StageStatus };
+      const now = Date.now();
+      return {
+        ...current,
+        [id]: {
+          ...previous,
+          status,
+          detail: detail ?? previous.detail,
+          data: data ? { ...(previous.data ?? {}), ...data } : previous.data,
+          startedAt: previous.startedAt ?? (status !== 'pending' ? now : undefined),
+          finishedAt: status === 'done' || status === 'failed' || status === 'skipped' ? now : undefined,
+        },
+      };
+    });
+  }, []);
   const [isResearching, setIsResearching] = useState(false);
   const [generatedType, setGeneratedType] = useState<'image' | 'video'>('image');
   const [generationReferenceUrls, setGenerationReferenceUrls] = useState<string[]>([]);
@@ -987,6 +1019,25 @@ export function HeroSection() {
     return () => {
       uploadedImages.forEach((img) => URL.revokeObjectURL(img.preview));
     };
+  }, []);
+
+  // Dev-only: /?previewPipeline=1 shows the pipeline mid-run without generating.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return;
+    if (!new URLSearchParams(window.location.search).has('previewPipeline')) return;
+    const t = Date.now();
+    setShowPipeline(true);
+    setIsGenerating(true);
+    setPipelineOrder(IMAGE_STAGES);
+    setPipeline({
+      capture: { id: 'capture', status: 'done', detail: 'Night Unwind · Brew Sage', startedAt: t - 50000, finishedAt: t - 46000, data: { title: 'Night Unwind - Chamomile & Lemongrass Herbal Infusion', brand: 'Brew Sage', images: ['/Youtube%20Template/Youtube_Generated.png'], canonicalImage: '/Youtube%20Template/Youtube_Generated.png' } },
+      understand: { id: 'understand', status: 'done', detail: 'herbal sleep tea', startedAt: t - 46000, finishedAt: t - 34000, data: { niche: 'herbal sleep tea', keywords: ['sleep tea', 'chamomile tea'], competitors: ['VAHDAM India', 'Blue Tea', 'Teabox', 'Organic India'], locked: ['Brew Sage logo mark and wordmark', '"Night Unwind" title and "Chamomile & lemongrass Herbal Infusion"', 'Purple pill "Floral, soothing & gently citrusy"', '"30 Tea Bags" roundel and "60 G | 2 OZ"', '"CAFFEINE FREE" ribbon badge, lower right'], productPasted: true } },
+      research: { id: 'research', status: 'active', detail: '214 ads scraped, 61 designed creatives', startedAt: t - 34000, data: { scraped: 214, designed: 61, relevant: 0, winners: 0 } },
+      analyze: { id: 'analyze', status: 'pending' },
+      plan: { id: 'plan', status: 'pending' },
+      generate: { id: 'generate', status: 'pending' },
+      done: { id: 'done', status: 'pending' },
+    });
   }, []);
 
   // Dev-only: /?previewSlots=1 shows the four loading cards without generating.
@@ -1166,11 +1217,17 @@ export function HeroSection() {
       setSelectedProductUrls(selected);
       setProgress(24);
       setStatusMessage(`Found ${result.product.images.length} product images`);
+      setPipeline(initialStages(IMAGE_STAGES));
+      updateStage('capture', 'done', result.product.title ?? 'Product captured', {
+        title: result.product.title,
+        brand: result.product.vendor,
+        images: selected,
+      });
       return { product: result.product, selected };
     } finally {
       setIsCapturingProduct(false);
     }
-  }, []);
+  }, [updateStage]);
 
   /**
    * Product-link flow: first call captures the product and asks format + research
@@ -1260,6 +1317,20 @@ export function HeroSection() {
     setIsResearching(wantsResearch);
     setAdResearch(null);
     setStoryboard(null);
+    if (isProductFlow) {
+      const order = generationMode === 'video' ? VIDEO_STAGES : IMAGE_STAGES;
+      setPipelineOrder(order);
+      setPipeline((current) => ({
+        ...initialStages(order),
+        capture: current.capture?.status === 'done'
+          ? current.capture
+          : { id: 'capture', status: 'done', detail: activeProductCapture?.title, data: { title: activeProductCapture?.title, brand: activeProductCapture?.vendor, images: productReferenceUrls } },
+      }));
+      setShowPipeline(true);
+      setPipelineCollapsed(false);
+    } else {
+      setShowPipeline(false);
+    }
     setIsGenerating(true);
     setGeneratedResults([]);
     setCreativeSlots([]);
@@ -1372,12 +1443,20 @@ export function HeroSection() {
               if (!line.trim()) continue;
               const event = JSON.parse(line) as Record<string, unknown>;
               const index = typeof event.index === 'number' ? event.index : -1;
-              if (event.type === 'status' && typeof event.message === 'string') {
+              if (event.type === 'stage' && typeof event.id === 'string') {
+                updateStage(
+                  event.id as StageId,
+                  event.status as StageStatus,
+                  typeof event.detail === 'string' ? event.detail : undefined,
+                  event.data && typeof event.data === 'object' ? (event.data as Record<string, unknown>) : undefined
+                );
+              } else if (event.type === 'status' && typeof event.message === 'string') {
                 setStatusMessage(event.message);
                 setProgress((p) => Math.min(94, p + 6));
               } else if (event.type === 'research' && event.research) {
                 const research = event.research as AdResearch;
                 setAdResearch(research);
+                updateStage('research', 'done', `${research.ads.length} winners · ${research.niche}`, { ads: research.ads, winners: research.ads.length });
                 setIsResearching(false);
                 setStatusMessage(`Studied ${research.ads.length} winning ${research.niche} ads. Building your creatives...`);
                 setProgress((p) => Math.max(p, 45));
@@ -1395,16 +1474,30 @@ export function HeroSection() {
               } else if (event.type === 'video_submitted' && typeof event.operationId === 'string') {
                 pendingOperationId = event.operationId;
               } else if (event.type === 'creative' && index >= 0) {
+                setPipeline((current) => {
+                  const g = current.generate; if (!g) return current;
+                  const d = (g.data ?? {}) as { passed?: number; retrying?: number };
+                  return { ...current, generate: { ...g, data: { ...d, passed: (d.passed ?? 0) + 1, retrying: Math.max(0, (d.retrying ?? 0) - 1) } } };
+                });
                 setCreativeSlots((slots) => slots.map((slot, i) => (slots.length === 1 ? i === 0 : i === index)
                   ? { ...slot, url: String(event.url), retrying: false }
                   : slot));
                 setProgress((p) => Math.min(96, p + 8));
               } else if (event.type === 'retry' && index >= 0) {
+                setPipeline((current) => {
+                  const g = current.generate; if (!g) return current;
+                  const d = (g.data ?? {}) as { retrying?: number };
+                  return { ...current, generate: { ...g, data: { ...d, retrying: (d.retrying ?? 0) + 1 } } };
+                });
                 setCreativeSlots((slots) => slots.map((slot, i) => (slots.length === 1 ? i === 0 : i === index) ? { ...slot, retrying: true, retryReason: event.reason === 'quality' ? 'quality' : 'product' } : slot));
               } else if (event.type === 'slot_failed' && index >= 0) {
                 setCreativeSlots((slots) => slots.map((slot, i) => (slots.length === 1 ? i === 0 : i === index) ? { ...slot, failed: true, retrying: false } : slot));
               } else if (event.type === 'done') {
                 finished = true;
+                if (!(typeof event.operationId === 'string' && event.operationId)) {
+                  updateStage('done', typeof event.acceptedCount === 'number' && event.acceptedCount > 0 ? 'done' : 'failed', typeof event.warning === 'string' ? event.warning : 'All creatives ready');
+                  setPipelineCollapsed(true);
+                }
                 if (typeof event.warning === 'string') {
                   if (event.acceptedCount === 0) throw new Error(event.warning);
                   toast.success(event.warning);
@@ -1417,6 +1510,9 @@ export function HeroSection() {
           if (!finished) throw new Error('Generation stopped before finishing. Check your creations before retrying.');
           if (pendingOperationId) {
             setGeneratedResults(await pollVideo(pendingOperationId));
+            updateStage('render', 'done', 'Video ready');
+            updateStage('done', 'done', 'Video ready');
+            setPipelineCollapsed(true);
           }
         } else {
           const result = await res.json().catch(() => ({}));
@@ -1476,6 +1572,11 @@ export function HeroSection() {
           : 'Generation failed';
       setError(msg);
       toast.error(msg);
+      setPipeline((current) => {
+        const activeId = Object.keys(current).find((id) => current[id].status === 'active');
+        if (!activeId) return current;
+        return { ...current, [activeId]: { ...current[activeId], status: 'failed', detail: msg, finishedAt: Date.now() } };
+      });
       await refreshCredits();
     } finally {
       setIsGenerating(false);
@@ -1530,13 +1631,17 @@ export function HeroSection() {
           <div className="relative z-20 pt-8 sm:pt-10">
             {isGenerating ? (
               <div className="mx-auto w-full max-w-[1080px]">
-                <ProductCreativeProgress
-                  statusMessage={statusMessage}
-                  progress={progress}
-                  referenceUrls={generationReferenceUrls}
-                  productCapture={productCapture}
-                  researching={isResearching}
-                />
+                {showPipeline ? (
+                  <PipelineTimeline order={pipelineOrder} stages={pipeline} />
+                ) : (
+                  <ProductCreativeProgress
+                    statusMessage={statusMessage}
+                    progress={progress}
+                    referenceUrls={generationReferenceUrls}
+                    productCapture={productCapture}
+                    researching={isResearching}
+                  />
+                )}
               </div>
             ) : (
             <div className="mx-auto w-full max-w-[980px] rounded-[28px] border border-white/10 bg-[#18181b]/90 p-3 shadow-[0_28px_100px_rgba(0,0,0,0.62)] backdrop-blur-2xl">
@@ -1977,8 +2082,18 @@ export function HeroSection() {
           </div>
 
           {/* Results / Progress Section */}
-          {(generatedResults.length > 0 || creativeSlots.length > 0 || adResearch || error) && (
+          {(generatedResults.length > 0 || creativeSlots.length > 0 || adResearch || error || (showPipeline && !isGenerating)) && (
             <div ref={resultsRef} className="mx-auto w-full max-w-[1780px] pt-6">
+              {showPipeline && !isGenerating && (
+                <div className="mx-auto mb-6 w-full max-w-[1080px]">
+                  <PipelineTimeline
+                    order={pipelineOrder}
+                    stages={pipeline}
+                    collapsed={pipelineCollapsed}
+                    onToggleCollapsed={() => setPipelineCollapsed((c) => !c)}
+                  />
+                </div>
+              )}
               {/* Error */}
               {error && (
                 <p className="text-center text-sm text-red-400">{error}</p>
