@@ -204,9 +204,24 @@ export async function cutoutProduct(imageUrl: string): Promise<CutoutResult> {
     if (mask[i] === 0 && !reachable[i]) { mask[i] = 255; filledHoles += 1; }
   }
   if (filledHoles) console.log(`Product cutout: filled ${filledHoles} interior hole pixels`);
-  const erodeRadius = Math.max(1, Math.round(Math.min(W, H) / 600));
-  const eroded = erode(mask, width, height, erodeRadius);
-  const feathered = boxBlur3(eroded, width, height);
+  const bandRadius = Math.max(2, Math.round(Math.min(W, H) / 500));
+  const core = erode(mask, width, height, bandRadius);
+  // Alpha: core → 255; band (mask minus core) → the matte's own alpha, kept a hair
+  // above zero so thin edges survive; outside → 0. Then a 1px feather.
+  const alphaBand = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x;
+      if (!mask[i]) continue;
+      if (core[i]) { alphaBand[i] = 255; continue; }
+      const matte = alphaFull[(top + y) * W + left + x];
+      alphaBand[i] = Math.max(matte, 48);
+    }
+  }
+  const feathered = boxBlur3(alphaBand, width, height);
+  // Source background colour for de-fringing: only when the photo's corners agree
+  // (packshots on white or a flat colour); busy backgrounds skip this step.
+  const background = uniformBackground(rgb, W, H);
 
   const outW = best.maxX - best.minX + 1;
   const outH = best.maxY - best.minY + 1;
@@ -221,9 +236,19 @@ export async function cutoutProduct(imageUrl: string): Promise<CutoutResult> {
       const si = ((top + cy) * W + left + cx) * 3;
       const a = feathered[ci];
       const oi = (y * outW + x) * 4;
-      out[oi] = rgb[si];
-      out[oi + 1] = rgb[si + 1];
-      out[oi + 2] = rgb[si + 2];
+      let r = rgb[si];
+      let g = rgb[si + 1];
+      let b = rgb[si + 2];
+      if (background && a > 0 && a < 255) {
+        // Observed = alpha·true + (1−alpha)·background ⇒ recover the true colour.
+        const alpha = a / 255;
+        r = Math.max(0, Math.min(255, Math.round((r - (1 - alpha) * background[0]) / alpha)));
+        g = Math.max(0, Math.min(255, Math.round((g - (1 - alpha) * background[1]) / alpha)));
+        b = Math.max(0, Math.min(255, Math.round((b - (1 - alpha) * background[2]) / alpha)));
+      }
+      out[oi] = r;
+      out[oi + 1] = g;
+      out[oi + 2] = b;
       out[oi + 3] = a;
       if (a === 255) {
         lumSum += 0.2126 * rgb[si] + 0.7152 * rgb[si + 1] + 0.0722 * rgb[si + 2];
@@ -335,6 +360,23 @@ function boxBlur3(mask: Uint8Array, width: number, height: number): Uint8Array {
     }
   }
   return out;
+}
+
+/** The photo's background colour when its corners agree within a small tolerance, else null. */
+function uniformBackground(rgb: Buffer, W: number, H: number): [number, number, number] | null {
+  const pad = Math.max(2, Math.round(Math.min(W, H) * 0.02));
+  const px = (x: number, y: number): [number, number, number] => {
+    const i = (y * W + x) * 3;
+    return [rgb[i], rgb[i + 1], rgb[i + 2]];
+  };
+  const samples = [
+    px(pad, pad), px(W - 1 - pad, pad), px(pad, H - 1 - pad), px(W - 1 - pad, H - 1 - pad),
+    px(Math.floor(W / 2), pad), px(Math.floor(W / 2), H - 1 - pad), px(pad, Math.floor(H / 2)), px(W - 1 - pad, Math.floor(H / 2)),
+  ];
+  const mean: [number, number, number] = [0, 0, 0];
+  samples.forEach((c) => { mean[0] += c[0] / samples.length; mean[1] += c[1] / samples.length; mean[2] += c[2] / samples.length; });
+  const spread = Math.max(...samples.map((c) => Math.hypot(c[0] - mean[0], c[1] - mean[1], c[2] - mean[2])));
+  return spread <= 24 ? [Math.round(mean[0]), Math.round(mean[1]), Math.round(mean[2])] : null;
 }
 
 /** Binary erosion: a pixel stays opaque only if every pixel within `radius` is opaque. */

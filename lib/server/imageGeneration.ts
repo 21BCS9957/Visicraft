@@ -3,7 +3,7 @@ import type { ProviderUsage } from '@/lib/server/usage';
 import { uploadDataUrlToBucket } from '@/lib/server/supabaseStorage';
 import { supabase } from '@/lib/supabase/client';
 
-export type ReferencePolicy = 'balanced' | 'product-lock' | 'product-repair';
+export type ReferencePolicy = 'balanced' | 'product-lock' | 'product-repair' | 'subject-lock';
 
 export type ImageGenMode = 'generate' | 'thumbnail' | 'edit' | 'upscale' | 'unblur';
 

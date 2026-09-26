@@ -350,7 +350,7 @@ export async function generateThumbnail(
   model?: string,
   aspectRatio?: string,
   resolution?: string,
-  referencePolicy: 'balanced' | 'product-lock' | 'product-repair' = 'balanced'
+  referencePolicy: 'balanced' | 'product-lock' | 'product-repair' | 'subject-lock' = 'balanced'
 ): Promise<GeneratedImageData> {
   const apiKey = process.env.GEMINI_API_KEY!;
 
@@ -417,25 +417,42 @@ export async function generateThumbnail(
       await loadPreparedReferences(referenceImages);
     const fullPrompt = prompt || '';
 
-    const parts: GeminiPart[] = referencePolicy === 'product-lock' || referencePolicy === 'product-repair'
-      ? [{
-          text: referencePolicy === 'product-repair'
-            ? 'REPAIR PROTOCOL: Image 1 is the PRIMARY CANONICAL PRODUCT and the immutable identity source. Image 2 is a generated campaign composition whose scene may be retained, but whose product failed identity review. Replace only the incorrect product with a faithful copy of Image 1; never blend their packaging.'
-            : 'REFERENCE PROTOCOL: Image 1 is the PRIMARY CANONICAL PRODUCT and overrides every other image if details conflict. Images 2 onward are supporting angles of the same product. They are evidence for fidelity, not separate products and not style references.',
-        }]
+    const locked = referencePolicy !== 'balanced';
+    const protocol: Record<Exclude<typeof referencePolicy, 'balanced'>, string> = {
+      'product-lock': 'REFERENCE PROTOCOL: Image 1 is the PRIMARY CANONICAL PRODUCT and overrides every other image if details conflict. Images 2 onward are supporting angles of the same product. They are evidence for fidelity, not separate products and not style references.',
+      'product-repair': 'REPAIR PROTOCOL: Image 1 is the PRIMARY CANONICAL PRODUCT and the immutable identity source. Image 2 is a generated campaign composition whose scene may be retained, but whose product failed identity review. Replace only the incorrect product with a faithful copy of Image 1; never blend their packaging.',
+      'subject-lock': 'EDIT PROTOCOL: This is a photo edit, not a new portrait. Image 1 is a real person and the base of the edit: their face, hair, facial hair, skin, build and clothing are immutable and must appear pixel-faithful in the result. Image 2 (if present) is the product package; copy it exactly. Change only what the instructions say to change: background, props, what the hands hold, framing. Never generate a different person, a lookalike, or a cleaned-up version of this person.',
+    };
+    const labelFor = (index: number, total: number): string => {
+      switch (referencePolicy) {
+        case 'product-repair':
+          return index === 0
+            ? 'REFERENCE IMAGE 1 - PRIMARY CANONICAL PRODUCT. Its packaging pixels, shape, logo and artwork are the required final identity.'
+            : 'REFERENCE IMAGE 2 - REJECTED CAMPAIGN COMPOSITION. Preserve only its scene and art direction; discard and replace its incorrect product rendering.';
+        case 'product-lock':
+          return index === 0
+            ? 'REFERENCE IMAGE 1 - PRIMARY CANONICAL PRODUCT IDENTITY. Copy this exact real product; do not redesign or substitute it.'
+            : `REFERENCE IMAGE ${index + 1} - SUPPORTING VIEW ONLY. Use it to verify the same product's geometry, material, scale, color, construction, and artwork placement.`;
+        case 'subject-lock':
+          return index === 0
+            ? 'REFERENCE IMAGE 1 - THE PERSON (BASE OF THE EDIT). Keep this exact individual: same face, hair, facial hair, skin tone, build and clothing, including any prints or graphics on the clothes.'
+            : `REFERENCE IMAGE ${index + 1} - PRODUCT PACKAGE. Copy it exactly into the scene; never redraw its artwork or text.`;
+        default:
+          return `Reference image ${index + 1} of ${total}:`;
+      }
+    };
+    const reminder: Record<Exclude<typeof referencePolicy, 'balanced'>, string> = {
+      'product-lock': 'FINAL IDENTITY REMINDER: the set, model, pose, and lighting may change; the product from reference image 1 may not change.',
+      'product-repair': 'FINAL REPAIR CHECK: keep the campaign scene, but ensure the visible product is unmistakably and faithfully the canonical product from image 1. Do not retain any invented package text from image 2.',
+      'subject-lock': 'FINAL IDENTITY REMINDER: the background, props and framing may change; the person from reference image 1 may not. Same face, same hair, same clothes with the same prints. If a requested change would require altering the person, keep the person and simplify the change.',
+    };
+
+    const parts: GeminiPart[] = locked
+      ? [{ text: protocol[referencePolicy as Exclude<typeof referencePolicy, 'balanced'>] }]
       : [{ text: fullPrompt }];
     downloadedImages.forEach((image, index) => {
-      const label = referencePolicy === 'product-repair'
-        ? index === 0
-          ? 'REFERENCE IMAGE 1 - PRIMARY CANONICAL PRODUCT. Its packaging pixels, shape, logo and artwork are the required final identity.'
-          : 'REFERENCE IMAGE 2 - REJECTED CAMPAIGN COMPOSITION. Preserve only its scene and art direction; discard and replace its incorrect product rendering.'
-        : referencePolicy === 'product-lock'
-        ? index === 0
-          ? 'REFERENCE IMAGE 1 - PRIMARY CANONICAL PRODUCT IDENTITY. Copy this exact real product; do not redesign or substitute it.'
-          : `REFERENCE IMAGE ${index + 1} - SUPPORTING VIEW ONLY. Use it to verify the same product's geometry, material, scale, color, construction, and artwork placement.`
-        : `Reference image ${index + 1} of ${downloadedImages.length}:`;
       parts.push(
-        { text: label },
+        { text: labelFor(index, downloadedImages.length) },
         {
           inlineData: {
             mimeType: image.mimeType,
@@ -444,12 +461,10 @@ export async function generateThumbnail(
         }
       );
     });
-    if (referencePolicy === 'product-lock' || referencePolicy === 'product-repair') {
+    if (locked) {
       parts.push(
         { text: fullPrompt },
-        { text: referencePolicy === 'product-repair'
-          ? 'FINAL REPAIR CHECK: keep the campaign scene, but ensure the visible product is unmistakably and faithfully the canonical product from image 1. Do not retain any invented package text from image 2.'
-          : 'FINAL IDENTITY REMINDER: the set, model, pose, and lighting may change; the product from reference image 1 may not change.' }
+        { text: reminder[referencePolicy as Exclude<typeof referencePolicy, 'balanced'>] }
       );
     }
 
