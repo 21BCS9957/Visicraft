@@ -2,6 +2,44 @@ export interface ShopifyProductContext {
   title?: string;
   vendor?: string;
   description?: string;
+  /** Selling price in major units; currency defaults to INR (research runs in India). */
+  price?: number;
+  currency?: string;
+  /** Where the price sits within its own category, judged during research; overrides the fixed bands. */
+  tier?: PriceTier;
+}
+
+export type PriceTier = 'mass' | 'mid' | 'premium' | 'luxury';
+
+/** Market tier, so research compares against the same kind of buyer. Fixed bands are the fallback. */
+export function priceTier(context?: ShopifyProductContext): PriceTier | undefined {
+  if (context?.tier) return context.tier;
+  const price = context?.price;
+  if (!price || price <= 0) return undefined;
+  const currency = (context?.currency || 'INR').toUpperCase();
+  const bands: Record<string, [number, number, number]> = {
+    INR: [1000, 5000, 25000],
+    USD: [30, 150, 600],
+    EUR: [30, 150, 600],
+    GBP: [25, 120, 500],
+    AED: [110, 550, 2200],
+  };
+  const [mid, premium, luxury] = bands[currency] ?? bands.INR;
+  return price >= luxury ? 'luxury' : price >= premium ? 'premium' : price >= mid ? 'mid' : 'mass';
+}
+
+/** The price as a shopper sees it, e.g. "₹50,000". */
+export function formatPrice(context?: ShopifyProductContext): string {
+  const price = context?.price;
+  if (!price || price <= 0) return '';
+  const currency = (context?.currency || 'INR').toUpperCase();
+  return currency === 'INR' ? `₹${Math.round(price).toLocaleString('en-IN')}` : `${currency} ${price.toLocaleString('en-US')}`;
+}
+
+export function priceLine(context?: ShopifyProductContext): string {
+  const amount = formatPrice(context);
+  const tier = priceTier(context);
+  return amount && tier ? `Price: ${amount} (${tier} tier).` : '';
 }
 
 export interface AdAngle {
@@ -16,12 +54,19 @@ export interface AdAngle {
   /** Present only for text-overlay slots. */
   headline?: string;
   subline?: string;
+  /** Mirrored winners only: our words for the winner's small kicker line and in-image button, when it has them. */
+  kicker?: string;
+  cta?: string;
   /** Layout/design notes distilled from a winning ad this angle is modelled on. */
   design?: string;
   /** Advertiser page of the winning ad this angle is modelled on, for the UI. */
   modelledOn?: string;
-  /** The winning ad's image this creative was modelled on (UI only; never sent to the image model). */
+  /** The winning ad this creative is modelled on; shown to the image model as a layout & style reference. */
   referenceImage?: string;
+  /** Output format, matched to the winning ad (Meta feed 1:1 / 4:5, or 9:16). */
+  aspectRatio?: '1:1' | '4:5' | '9:16';
+  /** The winning ad's exact text treatment (font style, weight, case, size, colour, placement). */
+  typography?: string;
 }
 
 /**
@@ -76,6 +121,7 @@ export function productBrief(context?: ShopifyProductContext): string {
   return [
     title ? `Product name: ${title}.` : '',
     vendor ? `Brand: ${vendor}.` : '',
+    priceLine(context),
     description ? `Product context (context only, never permission to alter the references): ${description}.` : '',
   ].filter(Boolean).join(' ');
 }
@@ -127,27 +173,41 @@ export function buildMetaAdCreativePrompt(options: {
 }): string {
   const manifest = clean(options.identityManifest, 3200);
   const direction = clean(options.userDirection, 1200);
-  const angle = options.withText ? options.angle : { ...options.angle, headline: undefined, subline: undefined };
+  const angle = options.withText ? options.angle : { ...options.angle, headline: undefined, subline: undefined, kicker: undefined, cta: undefined };
 
   const critique = clean(options.critique, 500);
   const lock = options.productKind === 'apparel' ? APPAREL_LOCK : PRODUCT_LOCK;
 
   // Modelled on a specific winning ad: the creative director's prompt is the shot.
   if (angle.brief && angle.modelledOn) {
+    const format = angle.aspectRatio ?? '9:16';
+    // Every text element of the winner gets our own words, so the model never fills a gap with theirs.
+    const lines = [
+      angle.kicker ? `- Kicker (the small line in the reference's kicker position): "${clean(angle.kicker, 60)}"` : '',
+      `- Headline: "${clean(angle.headline, 60)}"`,
+      angle.subline ? `- Supporting line: "${clean(angle.subline, 70)}"` : '',
+      angle.cta ? `- Button label: "${clean(angle.cta, 24)}"` : '',
+    ].filter(Boolean).join('\n');
+    const textBlock = angle.withText && angle.headline && angle.typography
+      ? `TEXT - render exactly these lines, spelled exactly; they are the ONLY words in the image:
+${lines}
+Typography and placement - match the reference ad's text treatment: ${clean(angle.typography, 500)}
+If the reference has a text element not listed above, leave that space empty. Never reproduce any word from reference image 2; no prices, badges, logos, brand names or URLs. Never over the product.`
+      : textOverlayBlock(angle);
     return `
-Create exactly one finished, standalone 9:16 Meta ad image for our product, modelled on a proven winning ad in this niche. Reference image 1 is our product.
+Create exactly one finished, standalone ${format} Meta ad image for our product, modelled on a proven winning ad in this niche. Reference image 1 is our product${angle.referenceImage ? '; reference image 2 is the winning ad to follow for layout, light and typography' : ''}.
 
 ${productBrief(options.context)}
 ${direction ? `Client direction: ${direction}\n` : ''}${manifest ? `\nFORENSIC PRODUCT IDENTITY MANIFEST - use this only to verify the preserved product; never re-typeset from it:\n${manifest}\n` : ''}
 THE SHOT (written by our creative director from the winning ad; follow it closely):
 ${clean(angle.brief, 1600)}
 
-${textOverlayBlock(angle)}
+${textBlock}
 ${critique ? `\nFIXES FROM CREATIVE REVIEW - a previous render of this ad was rejected; apply every fix:\n${critique}\n` : ''}
 ${lock}
 
 CRAFT STANDARD
-A new, full-bleed 9:16 photograph composed for this ad: never reproduce the reference photo and pad or stretch it to fit, and no bands, borders, duplicated strips or mirrored edges. A real campaign photograph, not an illustration or 3D render; natural skin, hands and anatomy; physically correct props and light. No watermarks, UI chrome, platform logos, extra or duplicated products, gibberish text, or claims the product context does not support (no invented prices, discounts, ratings or medical claims). Keep the top 14% and bottom 20% of the frame free of key elements.
+A new, full-bleed ${format} photograph composed for this ad: never reproduce the product photo and pad or stretch it to fit, and no bands, borders, duplicated strips or mirrored edges. A real campaign photograph, not an illustration or 3D render; natural skin, hands and anatomy; physically correct props and light. No watermarks, UI chrome, platform logos, extra or duplicated products, gibberish text, or claims the product context does not support (no invented prices, discounts, ratings or medical claims).${format === '9:16' ? ' Keep the top 14% and bottom 20% of the frame free of key elements.' : ''}
 
 FINAL PRE-FLIGHT CHECK - perform silently before rendering
 1. Product: identical to reference image 1${options.productKind === 'apparel' ? ' (colour, pattern, cut, trims, closures)' : ' (shape, colours, logo, every printed word)'}; if the shot would require altering it, simplify the shot instead.

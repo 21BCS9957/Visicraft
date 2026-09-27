@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { loadPreparedReferences, requestGeminiText } from '@/lib/banana/api';
 import type { ProviderUsage } from '@/lib/server/usage';
-import type { ShopifyProductContext } from '@/lib/prompts/shopifyCreative';
+import { formatPrice, priceLine, priceTier, type PriceTier, type ShopifyProductContext } from '@/lib/prompts/shopifyCreative';
 
 export type AdMediaType = 'image' | 'video';
 
@@ -62,6 +62,8 @@ export interface AdResearchResult {
   ads: WinningAd[];
   patterns: string;
   designs: AdDesign[];
+  /** The price tier winners were screened against. */
+  tier?: PriceTier;
   /** True when sample ads were used instead of a live Ad Library scrape (AD_RESEARCH_MOCK). */
   mock: boolean;
   usage: ProviderUsage;
@@ -129,6 +131,8 @@ export interface NicheInfo {
   niche: string;
   keywords: string[];
   competitors: string[];
+  /** Where the price sits within this category in India (₹6,000 is mid for a saree, luxury for a serum). */
+  tier?: PriceTier;
   usage: ProviderUsage;
 }
 
@@ -142,15 +146,17 @@ async function deriveNicheKeywords(
   imageUrls: string[] = []
 ): Promise<NicheInfo> {
   // The photos settle what the product actually is when the listing text is vague.
+  const price = formatPrice(product);
   const parts: Parameters<typeof requestGeminiText>[0] = [{
     text: `You pick Meta Ad Library search keywords for competitor research in India. Study the product photos (if attached) together with the listing to understand exactly what kind of product this is, who buys it and why.
 
 Product name: ${clean(product.title, 180) || 'unknown'}
 Brand: ${clean(product.vendor, 120) || 'unknown'}
+${price ? `Price: ${price}` : 'Price: unknown'}
 Description: ${clean(product.description, 700) || 'unknown'}
 
-Return JSON only: {"niche":"2-4 word product category","keywords":["kw1","kw2"],"competitors":["Brand A","Brand B","Brand C","Brand D"]}
-Rules: exactly 2 keywords, each 1-3 words, generic category terms competitors would use in ad copy (e.g. "protein powder", "hair oil"). competitors: 3-4 well-known consumer brands that sell this same product category in India and advertise on Meta (D2C brands preferred), by the name their Facebook page would use. Never include this brand's own name.`,
+Return JSON only: {"niche":"2-4 word product category","keywords":["kw1","kw2"],"competitors":["Brand A","Brand B","Brand C","Brand D"]${price ? ',"tier":"mass|mid|premium|luxury"' : ''}}
+Rules: exactly 2 keywords, each 1-3 words, the terms a shopper at this price point searches and competitors at this price point use in ad copy (e.g. "protein powder", "hair oil"; for premium goods "designer saree", "luxury handbag"). competitors: 3-4 brands that sell this same product type in India at the same price tier as ours and advertise on Meta, by the name their Facebook page would use (for premium or luxury products: designer labels and premium D2C brands, never mass-market or marketplace sellers). Never include this brand's own name.${price ? ' tier: where this price sits among products of this same category in India (e.g. ₹6,000 is mid for a saree but luxury for a face serum; ₹50,000 is luxury for a saree).' : ''}`,
   }];
   if (imageUrls.length > 0) {
     const { images } = await loadPreparedReferences(imageUrls.slice(0, 3)).catch(() => ({ images: [] as Array<{ mimeType: string; data: string }> }));
@@ -168,10 +174,13 @@ Rules: exactly 2 keywords, each 1-3 words, generic category terms competitors wo
   const competitors = Array.isArray(parsed?.competitors)
     ? parsed.competitors.map((c) => clean(c, 40)).filter((c) => c && c.toLowerCase() !== ownBrand).slice(0, 4)
     : [];
+  const tiers: PriceTier[] = ['mass', 'mid', 'premium', 'luxury'];
+  const judgedTier = tiers.find((t) => t === parsed?.tier);
   return {
     niche: clean(parsed?.niche, 60) || fallback || 'product',
     keywords: keywords.length > 0 ? keywords : [fallback || 'product'],
     competitors,
+    tier: price ? judgedTier ?? priceTier(product) : undefined,
     usage: geminiUsage(response, providerModel),
   };
 }
@@ -548,6 +557,15 @@ async function loadVideoInline(url: string): Promise<{ mimeType: string; data: s
   }
 }
 
+/** For premium and luxury products, mass-market and discount-led creatives are the wrong reference. */
+function tierRule(product: ShopifyProductContext, visual = false): string {
+  const tier = priceTier(product);
+  if (tier !== 'premium' && tier !== 'luxury') return '';
+  return visual
+    ? ` Our product is ${tier}: it ALSO fails when the creative is visibly mass-market (big sale or % OFF banners, cluttered discount graphics, marketplace-listing look), because a ${tier} buyer responds to different creatives.`
+    : `\nOur product is ${tier}. An ad is relevant only if it also targets a ${tier} buyer: reject mass-market and discount-led ads (big % OFF or sale-led copy, low price points, "pack of 3", marketplace resellers such as Meesho or Amazon listings); keep brand-led, aspirational ads from brands at a similar price point.`;
+}
+
 /**
  * Keeps only ads that sell the same kind of product as ours. Longevity alone is
  * not enough: a keyword search for "sleep tea" also returns mattresses and clinics.
@@ -567,9 +585,10 @@ OUR PRODUCT
 Name: ${clean(product.title, 160) || 'unknown'}
 Brand: ${clean(product.vendor, 100) || 'unknown'}
 Category: ${niche}
+${priceLine(product)}
 Description: ${clean(product.description, 500) || 'unknown'}
 
-An ad is RELEVANT only if it is selling a consumer product of the same category as ours (for a herbal tea: other teas, herbal infusions, tea bags; not mattresses, supplements in capsule form, clinics, apps, courses, general lifestyle pages, marketplaces or unrelated products that merely mention the same benefit). Judge from the page name, domain, headline and text.
+An ad is RELEVANT only if it is selling a consumer product of the same category as ours (for a herbal tea: other teas, herbal infusions, tea bags; not mattresses, supplements in capsule form, clinics, apps, courses, general lifestyle pages, marketplaces or unrelated products that merely mention the same benefit). Judge from the page name, domain, headline and text.${tierRule(product)}
 
 ADS
 ${listing}
@@ -611,7 +630,7 @@ async function verifyWinnersVisually(
   try {
     const { images, sourceIndexes } = await loadPreparedReferences(withImages.map((ad) => ad.imageUrl as string));
     const parts: Parameters<typeof requestGeminiText>[0] = [{
-      text: `We sell: ${clean(product.title, 160) || 'unknown'} (niche: ${niche}). Below are Meta ads found by keyword. For each, look at the IMAGE and decide whether it advertises the same TYPE of product as ours, at the level a shopper browses: for a herbal tea, any tea or herbal infusion passes (green tea, chai, blue tea, tea gift boxes); for lingerie, any lingerie or intimate wear passes; for a kids ride-on car, any kids ride-on vehicle passes. It fails only when the product is a different type altogether (for a tea: fruit snacks, supplements in capsules, mattresses, apps, services, clothing), even if the ad's text mentions similar words.
+      text: `We sell: ${clean(product.title, 160) || 'unknown'} (niche: ${niche}). ${priceLine(product)} Below are Meta ads found by keyword. For each, look at the IMAGE and decide whether it advertises the same TYPE of product as ours, at the level a shopper browses: for a herbal tea, any tea or herbal infusion passes (green tea, chai, blue tea, tea gift boxes); for lingerie, any lingerie or intimate wear passes; for a kids ride-on car, any kids ride-on vehicle passes. It fails only when the product is a different type altogether (for a tea: fruit snacks, supplements in capsules, mattresses, apps, services, clothing), even if the ad's text mentions similar words.${tierRule(product, true)}
 
 Return JSON only: {"same":[n,...]} listing the # numbers that pass.`,
     }];
@@ -780,10 +799,12 @@ export async function researchWinningAds(
   country = 'IN',
   options: { imageUrls?: string[]; onProgress?: (progress: ResearchProgress) => void; niche?: NicheInfo } = {}
 ): Promise<AdResearchResult> {
-  const { niche, keywords, competitors, usage: keywordUsage } = options.niche ?? await deriveNicheKeywords(product, options.imageUrls ?? []);
+  const { niche, keywords, competitors, tier, usage: keywordUsage } = options.niche ?? await deriveNicheKeywords(product, options.imageUrls ?? []);
+  // Screen ads against the category-relative tier, not only the fixed price bands.
+  const screenFor: ShopifyProductContext = tier ? { ...product, tier } : product;
   const onProgress = options.onProgress ?? (() => undefined);
   onProgress({ phase: 'scraping' });
-  const cacheKey = `${process.env.AD_RESEARCH_MOCK === 'true' ? 'mock|' : ''}${country}|${mediaType}|${[...keywords, ...competitors].join(',').toLowerCase()}`;
+  const cacheKey = `${process.env.AD_RESEARCH_MOCK === 'true' ? 'mock|' : ''}${country}|${mediaType}|${tier ?? ''}|${[...keywords, ...competitors].join(',').toLowerCase()}`;
   const cached = researchCache.get(cacheKey);
   if (cached && Date.now() - cached.createdAt < CACHE_TTL_MS) {
     return { ...cached.result, usage: keywordUsage };
@@ -883,7 +904,7 @@ export async function researchWinningAds(
     // crowd out genuine competitors that happen to refresh creatives more often.
     const candidates = [...pool.values()].sort((a, b) => b.winScore - a.winScore).slice(0, CANDIDATE_POOL);
     onProgress({ phase: 'scraped', scraped: scrapedTotal, designed: pool.size });
-    const screened = await filterRelevantAds(candidates, product, niche);
+    const screened = await filterRelevantAds(candidates, screenFor, niche);
     relevanceUsage = screened.usage;
     let relevant = screened.ads;
 
@@ -907,7 +928,7 @@ export async function researchWinningAds(
       console.log(`Ad research: only ${relevant.length} relevant; broad pass over "${broadKeywords.join('", "')}" (all media) found ${extra.length} new candidates`);
       onProgress({ phase: 'scraped', scraped: scrapedTotal, designed: pool.size + extra.length });
       if (extra.length > 0) {
-        const second = await filterRelevantAds(extra, product, niche);
+        const second = await filterRelevantAds(extra, screenFor, niche);
         relevanceUsage = {
           inputTokens: relevanceUsage.inputTokens + second.usage.inputTokens,
           outputTokens: relevanceUsage.outputTokens + second.usage.outputTokens,
@@ -920,7 +941,7 @@ export async function researchWinningAds(
     relevant = relevant.sort((a, b) => b.winScore - a.winScore);
     // Look at the strongest finalists' creatives before trusting them.
     const finalists = relevant.slice(0, 10);
-    const visual = await verifyWinnersVisually(finalists, product, niche);
+    const visual = await verifyWinnersVisually(finalists, screenFor, niche);
     if (visual.usage) {
       relevanceUsage = {
         inputTokens: relevanceUsage.inputTokens + visual.usage.inputTokens,
@@ -968,6 +989,7 @@ export async function researchWinningAds(
     ads,
     patterns: analysis.patterns,
     designs: analysis.designs,
+    tier,
     mock,
     usage: {
       inputTokens: keywordUsage.inputTokens + relevanceUsage.inputTokens + analysis.usage.inputTokens,

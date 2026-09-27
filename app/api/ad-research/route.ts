@@ -17,10 +17,13 @@ export async function POST(request: NextRequest) {
     const raw = body.productContext && typeof body.productContext === 'object'
       ? body.productContext as Record<string, unknown>
       : {};
+    const price = Number(raw.price);
     const product = {
       title: typeof raw.title === 'string' ? raw.title : undefined,
       vendor: typeof raw.vendor === 'string' ? raw.vendor : undefined,
       description: typeof raw.description === 'string' ? raw.description : undefined,
+      price: Number.isFinite(price) && price > 0 ? price : undefined,
+      currency: typeof raw.currency === 'string' ? raw.currency : undefined,
     };
 
     if (!product.title && !product.description) {

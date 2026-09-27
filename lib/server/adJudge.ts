@@ -10,7 +10,7 @@ import type { ProviderUsage } from '@/lib/server/usage';
 export interface AdVerdict {
   passed: boolean;
   score: number;
-  scores: Record<'thumbStop' | 'clarity' | 'productHero' | 'nativeFeel' | 'craft', number>;
+  scores: Record<'thumbStop' | 'clarity' | 'productHero' | 'nativeFeel' | 'craft', number> & { referenceMatch?: number };
   critical: string[];
   fixes: string;
   usage: ProviderUsage;
@@ -33,10 +33,21 @@ export async function judgeAdCreative(options: {
   angle: AdAngle;
   withText: boolean;
   productKind?: 'packaged' | 'apparel' | 'object';
+  /** The winning ad this creative mirrors: scored for how closely layout, light and type follow it. */
+  referenceImageUrl?: string;
 }): Promise<AdVerdict> {
-  const { images } = await loadPreparedReferences([options.imageUrl]);
+  const { images } = await loadPreparedReferences(
+    options.referenceImageUrl ? [options.imageUrl, options.referenceImageUrl] : [options.imageUrl]
+  );
+  const hasReference = images.length > 1;
+  const copyLines = [
+    options.angle.kicker ? `kicker "${clean(options.angle.kicker, 80)}"` : '',
+    `headline "${clean(options.angle.headline, 80)}"`,
+    options.angle.subline ? `supporting line "${clean(options.angle.subline, 90)}"` : '',
+    options.angle.cta ? `button "${clean(options.angle.cta, 30)}"` : '',
+  ].filter(Boolean).join(', ');
   const expectedCopy = options.withText
-    ? `Expected on-image copy: headline "${clean(options.angle.headline, 80)}"${options.angle.subline ? ` and supporting line "${clean(options.angle.subline, 90)}"` : ''}.`
+    ? `Expected on-image copy, and the only words allowed outside the product itself: ${copyLines}.`
     : 'This creative is meant to carry NO text at all.';
   const { response, providerModel } = await requestGeminiText(
     [
@@ -53,13 +64,18 @@ Score 0-10 on each:
 - productHero: ${options.productKind === 'apparel' ? 'is the garment clearly the hero, fully visible on the model, its fit and details readable, tastefully shot?' : 'is the package clearly the hero, large, sharp, unobstructed, believable in the scene (contact shadow, matching light)?'}
 - nativeFeel: does it look like a real ad from a real brand in India rather than generic stock or obvious AI?
 - craft: photographic quality; no artifacts (deformed hands/faces, warped props, floating objects, extra limbs, gibberish text, seams around the product).
+${hasReference ? `- referenceMatch: image 2 is the winning ad this creative was meant to follow. How closely does image 1 follow its composition and framing, camera angle, lighting and colour grade, and text treatment (font style, size, case, placement)? The product, the person, the words and the brand are meant to differ; judge only the layout and style.
+` : ''}
+Set "critical" to a list of any deal-breakers (e.g. "deformed hand", "headline unreadable", "product cut off", "gibberish text", "product too small"); otherwise an empty list. Any overlaid ad copy, caption, button or logo beyond the expected copy${hasReference ? ' (for example a line or logo copied from image 2)' : ''} is a deal-breaker: add "unexpected text: <the words>". Print on the product itself and incidental scene text, such as a distant sign, do not count.
+"fixes": 2-4 concrete, specific instructions an image model can apply to fix the weakest points (composition, light, scale, text placement), max 60 words. Never ask for a logo, brand name or URL to be added${hasReference ? ', or for anything that identifies image 2\'s brand or model' : ''}.
 
-Set "critical" to a list of any deal-breakers (e.g. "deformed hand", "headline unreadable", "product cut off", "gibberish text", "product too small"); otherwise an empty list.
-"fixes": 2-4 concrete, specific instructions an image model can apply to fix the weakest points (composition, light, scale, text placement), max 60 words.
-
-Return JSON only: {"thumbStop":0,"clarity":0,"productHero":0,"nativeFeel":0,"craft":0,"critical":[],"fixes":""}`,
+Return JSON only: {"thumbStop":0,"clarity":0,"productHero":0,"nativeFeel":0,"craft":0,${hasReference ? '"referenceMatch":0,' : ''}"critical":[],"fixes":""}${hasReference ? '\nWhen referenceMatch is below 7, the fixes must name the specific layout or typography differences to correct.' : ''}`,
       },
+      { text: 'IMAGE 1 - THE CREATIVE TO JUDGE:' },
       { inlineData: { mimeType: images[0].mimeType, data: images[0].data } },
+      ...(hasReference
+        ? [{ text: 'IMAGE 2 - THE WINNING AD IT SHOULD FOLLOW:' }, { inlineData: { mimeType: images[1].mimeType, data: images[1].data } }]
+        : []),
     ],
     { temperature: 0 },
     'Ad creative review'
@@ -77,11 +93,13 @@ Return JSON only: {"thumbStop":0,"clarity":0,"productHero":0,"nativeFeel":0,"cra
     productHero: num(parsed.productHero),
     nativeFeel: num(parsed.nativeFeel),
     craft: num(parsed.craft),
+    ...(hasReference ? { referenceMatch: num(parsed.referenceMatch) } : {}),
   };
-  // Weighted toward what actually drives paid performance.
-  const score = Math.round(
-    (scores.thumbStop * 0.3 + scores.clarity * 0.25 + scores.productHero * 0.2 + scores.nativeFeel * 0.1 + scores.craft * 0.15) * 10
-  ) / 10;
+  // Weighted toward what actually drives paid performance; following the proven winner counts too.
+  const score = Math.round((hasReference
+    ? scores.thumbStop * 0.25 + scores.clarity * 0.2 + scores.productHero * 0.15 + scores.nativeFeel * 0.1 + scores.craft * 0.1 + (scores.referenceMatch ?? 0) * 0.2
+    : scores.thumbStop * 0.3 + scores.clarity * 0.25 + scores.productHero * 0.2 + scores.nativeFeel * 0.1 + scores.craft * 0.15
+  ) * 10) / 10;
   const critical = Array.isArray(parsed.critical) ? parsed.critical.map((c) => clean(c, 80)).filter(Boolean).slice(0, 5) : [];
   const meta = response.data.usageMetadata;
   const inputTokens = Number(meta?.promptTokenCount) || 0;

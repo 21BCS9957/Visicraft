@@ -12,6 +12,9 @@ interface ProductCapture {
   title?: string;
   vendor?: string;
   description?: string;
+  /** Selling price in major units (e.g. 49999 for ₹49,999), when the store exposes it. */
+  price?: number;
+  currency?: string;
   images: ProductImage[];
 }
 
@@ -72,6 +75,8 @@ export async function POST(request: NextRequest) {
       title: shopifyData?.title ?? pageData?.title,
       vendor: shopifyData?.vendor ?? pageData?.vendor,
       description: shopifyData?.description ?? pageData?.description,
+      price: shopifyData?.price ?? pageData?.price,
+      currency: pageData?.currency,
       images,
     };
 
@@ -230,6 +235,9 @@ async function tryFetchShopifyProduct(productUrl: URL) {
     body_html?: string;
     images?: unknown[];
     featured_image?: unknown;
+    /** Shopify's .js endpoint reports prices in minor units (paise/cents). */
+    price?: number;
+    price_min?: number;
   } | null;
 
   if (!product) return null;
@@ -239,9 +247,11 @@ async function tryFetchShopifyProduct(productUrl: URL) {
     ...(Array.isArray(product.images) ? product.images : []),
   ].filter((value): value is string => typeof value === 'string' && value.length > 0);
 
+  const minorPrice = Number(product.price ?? product.price_min);
   return {
     title: cleanText(product.title),
     vendor: cleanText(product.vendor),
+    price: Number.isFinite(minorPrice) && minorPrice > 0 ? minorPrice / 100 : undefined,
     description: cleanText(stripHtml(product.description ?? product.body_html ?? '')),
     images: imageUrls
       .map((url) => normalizeImageUrl(url, productUrl))
@@ -295,6 +305,10 @@ async function scrapeProductPage(productUrl: URL) {
     ),
     vendor: cleanText(extractMetaContent(html, ['product:brand', 'og:site_name'])[0]),
     description: cleanText(extractMetaContent(html, ['og:description', 'description'])[0]),
+    price: parsePrice(extractMetaContent(html, ['og:price:amount', 'product:price:amount'])[0]),
+    // Shopify themes also expose the storefront currency as `Shopify.currency = {"active":"INR",...}`.
+    currency: cleanText(extractMetaContent(html, ['og:price:currency', 'product:price:currency'])[0])?.toUpperCase()
+      ?? html.match(/Shopify\.currency\s*=\s*\{\s*"active"\s*:\s*"([A-Z]{3})"/)?.[1],
     images,
   };
 }
@@ -471,6 +485,11 @@ function uniqueImages(images: ProductImage[]): ProductImage[] {
   }
 
   return out;
+}
+
+function parsePrice(raw?: string): number | undefined {
+  const value = Number((raw ?? '').replace(/[^0-9.]/g, ''));
+  return Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
 function extractTitle(html: string): string | undefined {

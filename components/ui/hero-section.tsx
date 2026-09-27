@@ -105,6 +105,8 @@ interface CreativeSlot {
   url?: string;
   failed?: boolean;
   retrying?: boolean;
+  /** Output format, matched to the winning ad it mirrors. */
+  aspectRatio?: string;
   retryReason?: 'quality' | 'product' | 'safety';
   failReason?: 'product' | 'generation' | 'safety' | 'quality';
 }
@@ -119,6 +121,8 @@ interface ProductCapture {
   title?: string;
   vendor?: string;
   description?: string;
+  price?: number;
+  currency?: string;
   images: ProductImageCandidate[];
 }
 
@@ -1315,6 +1319,8 @@ export function HeroSection() {
           title: activeProductCapture.title,
           vendor: activeProductCapture.vendor,
           description: activeProductCapture.description,
+          price: activeProductCapture.price,
+          currency: activeProductCapture.currency,
         }
       : undefined;
     const wantsResearch = Boolean(isProductFlow && options?.research);
@@ -1480,10 +1486,11 @@ export function HeroSection() {
                 setIsResearching(false);
                 toast.error(`${typeof event.message === 'string' ? event.message : 'Ad research failed'} Continuing without research.`);
               } else if (event.type === 'angles' && Array.isArray(event.angles)) {
-                setCreativeSlots((event.angles as Array<{ name: string; withText: boolean; modelledOn?: string }>).map((angle) => ({
+                setCreativeSlots((event.angles as Array<{ name: string; withText: boolean; modelledOn?: string; aspectRatio?: string }>).map((angle) => ({
                   angle: angle.name,
                   withText: angle.withText,
                   modelledOn: angle.modelledOn,
+                  aspectRatio: angle.aspectRatio,
                 })));
               } else if (event.type === 'storyboard' && event.storyboard) {
                 setStoryboard(event.storyboard as VideoStoryboard);
@@ -2121,16 +2128,21 @@ export function HeroSection() {
                 <div className="mx-auto w-full overflow-x-auto pb-2 scrollbar-hide">
                   <div className={cn(
                     'mx-auto gap-3 sm:gap-4',
-                    creativeSlots.length === 1 ? 'flex max-w-[1280px] justify-center' : 'grid min-w-[920px] max-w-[1280px] grid-cols-4'
+                    creativeSlots.length === 1 ? 'flex max-w-[1280px] justify-center' : 'grid min-w-[920px] max-w-[1280px] grid-cols-4 items-start'
                   )}>
                   {creativeSlots.map((slot, i) => (
                     <div
                       key={i}
                       className={cn(
-                        'group relative aspect-[9/16] overflow-hidden rounded-[22px] border border-white/10 bg-[#151519] opacity-0 shadow-[0_22px_70px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.06)] animate-word-appear',
+                        'group relative overflow-hidden rounded-[22px] border border-white/10 bg-[#151519] opacity-0 shadow-[0_22px_70px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.06)] animate-word-appear',
                         creativeSlots.length === 1 ? 'w-[300px]' : 'w-full'
                       )}
-                      style={{ animationDelay: `${i * 0.1}s`, animationFillMode: 'forwards' }}
+                      style={{
+                        animationDelay: `${i * 0.1}s`,
+                        animationFillMode: 'forwards',
+                        // Each creative keeps the format of the winning ad it mirrors.
+                        aspectRatio: (slot.aspectRatio ?? '9:16').replace(':', ' / '),
+                      }}
                     >
                       {slot.url ? (
                         <button

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { researchWinningAds, type AdMediaType } from '@/lib/server/metaAdResearch';
+import { describeProductNiche, researchWinningAds, type AdMediaType } from '@/lib/server/metaAdResearch';
 import { writePromptsFromWinners } from '@/lib/server/winnerPrompts';
+import type { ShopifyProductContext } from '@/lib/prompts/shopifyCreative';
 
 /** Development-only harness for the winning-ad research pipeline. */
 export async function POST(request: NextRequest) {
@@ -8,15 +9,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
   const body = (await request.json()) as {
-    productContext?: { title?: string; vendor?: string; description?: string };
+    productContext?: ShopifyProductContext;
     mediaType?: AdMediaType;
     country?: string;
     imageUrls?: string[];
     /** When set, also run the winner → prompt writer for four slots with this product photo. */
     productImageUrl?: string;
+    /** Only detect niche, competitors and price tier (no scraping). */
+    nicheOnly?: boolean;
   };
   const started = Date.now();
   try {
+  if (body.nicheOnly) {
+    const niche = await describeProductNiche(body.productContext ?? {}, body.imageUrls ?? []);
+    return NextResponse.json({ ms: Date.now() - started, niche: niche.niche, tier: niche.tier, keywords: niche.keywords, competitors: niche.competitors });
+  }
   const result = await researchWinningAds(body.productContext ?? {}, body.mediaType === 'video' ? 'video' : 'image', body.country ?? 'IN', { imageUrls: body.imageUrls ?? [] });
   let prompts: unknown;
   if (body.productImageUrl) {
@@ -39,6 +46,7 @@ export async function POST(request: NextRequest) {
     prompts,
     ms: Date.now() - started,
     niche: result.niche,
+    tier: result.tier,
     keywords: result.keywords,
     ads: result.ads.map((ad) => ({ page: ad.pageName, days: ad.daysRunning, variants: ad.collationCount, kind: ad.mediaKind, domain: ad.landingDomain, title: ad.title, hasImage: Boolean(ad.imageUrl), imageUrl: ad.imageUrl })),
     designs: result.designs,

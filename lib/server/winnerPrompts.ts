@@ -1,3 +1,4 @@
+import sharp from 'sharp';
 import { loadPreparedReferences, requestGeminiText } from '@/lib/banana/api';
 import { DEFAULT_AD_ANGLES, productBrief, type AdAngle, type ShopifyProductContext } from '@/lib/prompts/shopifyCreative';
 import type { AdDesign, WinningAd } from '@/lib/server/metaAdResearch';
@@ -12,6 +13,14 @@ import type { ProviderUsage } from '@/lib/server/usage';
 
 // The strongest writer on this key (13.7 s on a test prompt vs ~20 s for flash); flash follows as fallback.
 const PROMPT_WRITER_MODELS = (process.env.PROMPT_WRITER_MODEL || 'gemini-3.1-pro-preview').split(',').map((m) => m.trim()).filter(Boolean);
+
+/** The Meta format closest to the winning ad's shape (landscape snaps to square). */
+async function winnerFormat(base64: string): Promise<'1:1' | '4:5' | '9:16'> {
+  const meta = await sharp(Buffer.from(base64, 'base64')).metadata().catch(() => null);
+  const ratio = meta?.width && meta?.height ? meta.width / meta.height : 0.5625;
+  const options: Array<['1:1' | '4:5' | '9:16', number]> = [['1:1', 1], ['4:5', 0.8], ['9:16', 0.5625]];
+  return options.reduce((best, cur) => (Math.abs(cur[1] - Math.min(ratio, 1)) < Math.abs(best[1] - Math.min(ratio, 1)) ? cur : best))[0];
+}
 
 function clean(value: unknown, maxLength: number): string {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, maxLength) : '';
@@ -34,6 +43,7 @@ async function writeOne(options: {
   if (images.length < 2) throw new Error('Could not load the winning ad and the product image');
 
   const apparel = options.productKind === 'apparel';
+  const format = await winnerFormat(images[0].data);
   const { response, providerModel } = await requestGeminiText(
     [
       {
@@ -42,17 +52,19 @@ async function writeOne(options: {
 IMAGE A is a Meta ad for a competing product. It has been live for ${winner.daysRunning} days${winner.collationCount > 1 ? ` across ${winner.collationCount} ad variants` : ''} and is still running: the advertiser keeps paying for it, so it sells.${design ? ` Our analyst's read of it: format "${clean(design.format, 120)}"; hook "${clean(design.hook, 160)}"; why it works: ${clean(design.whyItWorks, 200)}` : ''}${winner.mediaKind === 'video' ? ' (Image A is the cover frame of a video ad.)' : ''}
 IMAGE B is OUR product: ${productBrief(options.context)}${options.identityManifest ? `\nIdentity notes on our product: ${clean(options.identityManifest, 900)}` : ''}
 ${options.userDirection ? `Client direction: ${clean(options.userDirection, 400)}\n` : ''}
-Write the prompt an image model will use to create OUR ad. Recreate what makes IMAGE A work: its format, composition and framing, camera angle and lens feel, subject and styling, setting, lighting, colour palette, mood, and how big and where the product sits. Put OUR product (IMAGE B, which the image model will receive as its reference) where their product is, and nothing of theirs.
+Write the prompt an image model will use to create OUR ad. The image model will ALSO see IMAGE A as a layout and style reference and IMAGE B as the product, so be precise and concrete about what must match. Recreate what makes IMAGE A work, as closely as possible: its composition and framing (where the subject sits, how much of the frame it fills, crop), camera angle and lens feel, subject pose and styling, the kind of setting, lighting direction and quality, colour grade, mood, and how big and where the product sits. Put OUR product (IMAGE B) where their product is, and nothing of theirs.
 
 Rules:
-- TEXT: look carefully at IMAGE A. If it has no on-image text (no headline or overlay copy; ignore small logos and packaging print), our ad has none: "hasText": false and empty headline/subline. If it carries on-image copy, mirror its structure (placement, amount, hierarchy, type style) with OUR OWN words: headline max 6 words that make a promise or a sharp hook (never just the brand or product name; the pack already shows it), optional subline max 8 words giving the reason to believe, only claims our product context supports. Never reuse their wording, prices, offers or brand.
+- TEXT: look carefully at IMAGE A. If it has no on-image text (no headline or overlay copy; ignore small logos and packaging print), our ad has none: "hasText": false and every text field empty. If it carries on-image copy, mirror its structure with OUR OWN words, one field for each text element IMAGE A actually has and empty for the rest: "kicker" = a small line set above or beside the headline (max 6 words); "headline" = the dominant line (max 6 words), a promise or a sharp hook, never just the brand or product name; "subline" = the secondary line (max 8 words), the reason to believe; "cta" = in-image button text (max 3 words, e.g. "Shop now", "Explore the edit"). Match the length and register of each of their elements (a one-word headline gets a one-word headline; understated luxury copy gets understated copy). Only claims our product context supports. Never reuse their wording, prices, offers, brand, URL or logo; a brand-name or URL element in IMAGE A gets no counterpart.
 - Never mention or describe the competitor's brand, logo, product, packaging, watermark or any app/UI chrome.
 - ${apparel ? 'Our product is a garment: an adult model wears it exactly as in IMAGE B (colour, fabric, lace/print, cut, trims, closures), shown completely; tasteful editorial styling that complies with Meta policy (no nudity, no sexualised posing).' : 'Our product must appear exactly as in IMAGE B (shape, colours, logo, all printed text); say where it sits, how large, and how it is held or used, and that it stays identical to the reference.'}
 - Indian setting and people where the ad has a setting or people; adults only.
-- Vertical 9:16; keep the top 14% and bottom 20% free of key elements.
+- Format: ${format}, the same as IMAGE A${format === '9:16' ? '; keep the top 14% and bottom 20% free of key elements' : ''}.
 ${options.variation > 0 ? `- This is variation #${options.variation + 1} of this format: keep the winning format, but change the moment, setting or action so it is a clearly different creative.\n` : ''}- The prompt: 110-170 words, present tense, concrete, describing the shot for a photoreal image model. No reasoning, no references to "image A" or "the competitor".
 
-Return JSON only: {"name":"2-4 word angle name","promise":"the one promise in the shopper's words","hasText":false,"headline":"","subline":"","format":"format of IMAGE A in <=10 words","prompt":"..."}`,
+- "typography" (only when hasText is true): describe IMAGE A's text treatment precisely enough to reproduce it, element by element using the names kicker, headline, subline and button: font style (e.g. high-contrast didone serif, condensed grotesque sans, flowing script), weight, case, letter spacing, size relative to the frame, colour, any highlight box or outline, alignment, line breaks, and exact position both in the frame and relative to the subject (e.g. "split into two words either side of the model's head at eye level", "lower-left, over the car seat, below the kicker"). Describe only elements we filled. Empty string when hasText is false.
+
+Return JSON only: {"name":"2-4 word angle name","promise":"the one promise in the shopper's words","hasText":false,"kicker":"","headline":"","subline":"","cta":"","typography":"","format":"format of IMAGE A in <=10 words","prompt":"..."}`,
       },
       { text: 'IMAGE A - WINNING AD:' },
       { inlineData: { mimeType: images[0].mimeType, data: images[0].data } },
@@ -86,9 +98,13 @@ Return JSON only: {"name":"2-4 word angle name","promise":"the one promise in th
       withText: hasText,
       headline: hasText ? headline : undefined,
       subline: hasText ? clean(parsed.subline, 70) || undefined : undefined,
+      kicker: hasText ? clean(parsed.kicker, 60) || undefined : undefined,
+      cta: hasText ? clean(parsed.cta, 24) || undefined : undefined,
+      typography: hasText ? clean(parsed.typography, 500) || undefined : undefined,
       brief: prompt,
       modelledOn: winner.pageName,
       referenceImage: winner.imageUrl,
+      aspectRatio: format,
     },
     usage: { inputTokens, outputTokens, totalTokens: Number(meta?.totalTokenCount) || inputTokens + outputTokens, providerModel },
   };

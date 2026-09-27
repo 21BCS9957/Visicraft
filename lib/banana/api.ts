@@ -389,7 +389,7 @@ export async function generateThumbnail(
   model?: string,
   aspectRatio?: string,
   resolution?: string,
-  referencePolicy: 'balanced' | 'product-lock' | 'product-repair' | 'subject-lock' = 'balanced'
+  referencePolicy: 'balanced' | 'product-lock' | 'product-repair' | 'subject-lock' | 'product-plus-style' = 'balanced'
 ): Promise<GeneratedImageData> {
   const apiKey = process.env.GEMINI_API_KEY!;
 
@@ -411,6 +411,10 @@ export async function generateThumbnail(
     '1:1': '1:1',
     '4:3': '4:3',
     '9:16': '9:16',
+    // Meta feed formats (verified on gemini-3-pro-image: 4:5 → 928x1152, 3:4 → 896x1200 at 1K).
+    '4:5': '4:5',
+    '3:4': '3:4',
+    '2:3': '2:3',
     '21:9': '16:9', // Fallback to 16:9 for ultrawide
   };
 
@@ -460,6 +464,7 @@ export async function generateThumbnail(
     const protocol: Record<Exclude<typeof referencePolicy, 'balanced'>, string> = {
       'product-lock': 'REFERENCE PROTOCOL: Image 1 is the PRIMARY CANONICAL PRODUCT and overrides every other image if details conflict. Images 2 onward are supporting angles of the same product. They are evidence for fidelity, not separate products and not style references.',
       'product-repair': 'REPAIR PROTOCOL: Image 1 is the PRIMARY CANONICAL PRODUCT and the immutable identity source. Image 2 is a generated campaign composition whose scene may be retained, but whose product failed identity review. Replace only the incorrect product with a faithful copy of Image 1; never blend their packaging.',
+      'product-plus-style': 'REFERENCE PROTOCOL: Image 1 is OUR PRODUCT, the only product that may appear, reproduced exactly. Image 2 is a LAYOUT AND STYLE REFERENCE: a proven ad from another brand. Match image 2 closely in composition and framing, camera angle and lens feel, the pose and styling direction, the kind of setting, the lighting and colour grade, and the typography treatment of its text (font style, weight, case, size, colour, placement). Never copy anything that identifies image 2\'s brand: not its product, logo, brand name, watermark, words, prices or offers, and not the face or identity of any person in it (cast a different person).',
       'subject-lock': 'EDIT PROTOCOL: This is a photo edit, not a new portrait. Image 1 is a real person and the base of the edit: their face, hair, facial hair, skin, build and clothing are immutable and must appear pixel-faithful in the result. Image 2 (if present) is the product package; copy it exactly. Change only what the instructions say to change: background, props, what the hands hold, framing. Never generate a different person, a lookalike, or a cleaned-up version of this person.',
     };
     const labelFor = (index: number, total: number): string => {
@@ -472,6 +477,10 @@ export async function generateThumbnail(
           return index === 0
             ? 'REFERENCE IMAGE 1 - PRIMARY CANONICAL PRODUCT IDENTITY. Copy this exact real product; do not redesign or substitute it.'
             : `REFERENCE IMAGE ${index + 1} - SUPPORTING VIEW ONLY. Use it to verify the same product's geometry, material, scale, color, construction, and artwork placement.`;
+        case 'product-plus-style':
+          return index === 0
+            ? 'REFERENCE IMAGE 1 - OUR PRODUCT. Exact identity: shape, colours, materials, pattern, logo and every printed word.'
+            : 'REFERENCE IMAGE 2 - LAYOUT & STYLE REFERENCE ONLY (another brand\'s ad). Follow its look and layout; copy nothing that identifies that brand, its product or its model.';
         case 'subject-lock':
           return index === 0
             ? 'REFERENCE IMAGE 1 - THE PERSON (BASE OF THE EDIT). Keep this exact individual: same face, hair, facial hair, skin tone, build and clothing, including any prints or graphics on the clothes.'
@@ -483,6 +492,7 @@ export async function generateThumbnail(
     const reminder: Record<Exclude<typeof referencePolicy, 'balanced'>, string> = {
       'product-lock': 'FINAL IDENTITY REMINDER: the set, model, pose, and lighting may change; the product from reference image 1 may not change.',
       'product-repair': 'FINAL REPAIR CHECK: keep the campaign scene, but ensure the visible product is unmistakably and faithfully the canonical product from image 1. Do not retain any invented package text from image 2.',
+      'product-plus-style': 'FINAL CHECK: the product is exactly image 1; composition, light and typography follow image 2; nothing that identifies image 2\'s brand, product or model appears.',
       'subject-lock': 'FINAL IDENTITY REMINDER: the background, props and framing may change; the person from reference image 1 may not. Same face, same hair, same clothes with the same prints. If a requested change would require altering the person, keep the person and simplify the change.',
     };
 

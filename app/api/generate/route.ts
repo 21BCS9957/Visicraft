@@ -8,6 +8,8 @@ import { analyzeProductIdentity, validateProductIdentity } from '@/lib/banana/ap
 import {
   buildMetaAdCreativePrompt,
   CREATIVE_SLOTS,
+  formatPrice,
+  priceTier,
   safeCompositionBrief,
   type AdAngle,
   type ShopifyProductContext,
@@ -51,10 +53,13 @@ function parseMode(raw: unknown): ImageGenMode {
 function readProductContext(raw: unknown): ShopifyProductContext | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const value = raw as Record<string, unknown>;
+  const price = Number(value.price);
   return {
     title: typeof value.title === 'string' ? value.title : undefined,
     vendor: typeof value.vendor === 'string' ? value.vendor : undefined,
     description: typeof value.description === 'string' ? value.description : undefined,
+    price: Number.isFinite(price) && price > 0 ? price : undefined,
+    currency: typeof value.currency === 'string' && /^[A-Za-z]{3}$/.test(value.currency) ? value.currency.toUpperCase() : undefined,
   };
 }
 
@@ -316,6 +321,8 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
         const identity = await analyzeProductIdentity(referenceImages);
         const nicheInfo = await nichePromise;
         if (nicheInfo) analysisUsages.push(nicheInfo.usage);
+        // Every prompt from here on positions the product at its category-relative tier.
+        if (productContext && nicheInfo?.tier) productContext.tier = nicheInfo.tier;
         analysisUsages.push(identity.usage);
         const canonicalImage = referenceImages[identity.canonicalReferenceIndex] ?? referenceImages[0];
 
@@ -339,6 +346,8 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           title: productContext?.title,
           brand: productContext?.vendor,
           niche: nicheInfo?.niche,
+          price: formatPrice(productContext) || undefined,
+          tier: priceTier(productContext),
           keywords: nicheInfo?.keywords ?? [],
           competitors: nicheInfo?.competitors ?? [],
           locked: lockedElements(identity.manifest),
@@ -441,6 +450,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
             name: plan.angles[index].name,
             withText: plan.angles[index].withText ?? CREATIVE_SLOTS[index].withText,
             modelledOn: plan.angles[index].modelledOn,
+            aspectRatio: video ? '9:16' : plan.angles[index].aspectRatio ?? '9:16',
           })),
         });
         stage('plan', 'done', slotIndexes.map((i) => plan.angles[i].name).join(' · '), {
@@ -450,6 +460,8 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
             promise: plan.angles[index].promise,
             headline: plan.angles[index].headline,
             subline: plan.angles[index].subline,
+            kicker: plan.angles[index].kicker,
+            cta: plan.angles[index].cta,
             withText: plan.angles[index].withText ?? CREATIVE_SLOTS[index].withText,
             modelledOn: plan.angles[index].modelledOn,
             referenceImage: plan.angles[index].referenceImage,
@@ -477,12 +489,18 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
             withText: false,
             headline: undefined,
             subline: undefined,
+            kicker: undefined,
+            cta: undefined,
+            typography: undefined,
+            // A person-free shot must not follow a reference built around a model.
+            referenceImage: undefined,
           });
           // Video models refuse people in intimate wear, so a sensitive product's hero frame
           // starts as a still life rather than spending renders on a frame Veo will reject.
           const stillLife = () => safetyBlocks >= 2 || (Boolean(video) && identity.sensitive);
+          const activeAngle = () => (stillLife() ? safeAngle() : angle);
           const promptFor = () => {
-            const active = stillLife() ? safeAngle() : angle;
+            const active = activeAngle();
             return buildMetaAdCreativePrompt({
               context: productContext,
               userDirection,
@@ -503,15 +521,21 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
             if (attempt > 0 && deadline - Date.now() < MIN_TIME_FOR_ATTEMPT_MS) break;
             const repair = !cutout && attempt === 1 && rejectedUrl !== null;
             try {
+              // Mirroring a winner: the image model sees our product (1) and the winning ad (2)
+              // as a layout & style reference, and renders in the winner's format.
+              const current = activeAngle();
+              const styleRef = !repair && current.referenceImage ? current.referenceImage : undefined;
               const generated = await runImageGeneration({
                 mode,
-                referenceImages: repair ? [canonicalImage, rejectedUrl as string] : [canonicalImage],
+                referenceImages: repair
+                  ? [canonicalImage, rejectedUrl as string]
+                  : styleRef ? [canonicalImage, styleRef] : [canonicalImage],
                 prompt: promptFor(),
                 model,
-                aspectRatio: '9:16',
+                aspectRatio: video ? '9:16' : current.aspectRatio ?? '9:16',
                 resolution,
                 persistToGenerationsTable: false,
-                referencePolicy: repair ? 'product-repair' : 'product-lock',
+                referencePolicy: repair ? 'product-repair' : styleRef ? 'product-plus-style' : 'product-lock',
                 userId: user.id,
               });
               generationUsages.push(generated.usage);
@@ -575,9 +599,10 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                 const verdict = await judgeAdCreative({
                   imageUrl,
                   context: productContext,
-                  angle,
-                  withText: slot.withText,
+                  angle: activeAngle(),
+                  withText: stillLife() ? false : slot.withText,
                   productKind: identity.productKind,
+                  referenceImageUrl: activeAngle().referenceImage,
                 }).catch((error) => {
                   console.warn(`Slot ${index + 1} creative review unavailable:`, error);
                   return null;
