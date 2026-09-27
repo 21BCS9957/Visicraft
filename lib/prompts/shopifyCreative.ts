@@ -93,7 +93,8 @@ The complete product must be fully visible, tack-sharp, correctly scaled, and in
 
 const APPAREL_LOCK = `
 PRODUCT IDENTITY LOCK - HIGHEST PRIORITY
-Reference image 1 shows the exact garment being advertised. The garment is immutable: its colour, fabric, lace or print pattern, cut and silhouette, panels and boning, straps, hems, ruffles, trims, lacing, ribbons, hooks, garters and any label or logo must appear exactly as in the reference. Do not recolour, restyle, simplify, embellish, or swap it for a similar garment. Show it completely and clearly on the model, as the hero of the frame, with its construction visible. The model, pose, styling, setting and camera may change; the garment may not. Add no text on the garment.
+Reference image 1 (with any closer views of it) shows the exact garment being advertised. The garment is immutable: its colour, fabric, weave, lace, print, embroidery and border patterns, cut and silhouette, blouse or lining, panels and boning, straps, hems, ruffles, trims, lacing, ribbons, hooks, garters and any label or logo must appear exactly as in the reference. Do not recolour, restyle, simplify, embellish, or swap it for a similar garment. Show it completely and clearly on the model, as the hero of the frame, with its construction visible. The model, pose, styling, setting and camera may change; the garment may not. Add no text on the garment.
+SCALE: fine patterns must be copied, never invented, so frame the garment no tighter than the product photos show its detail. If the only photo is full length, keep the garment from at least the waist down to the knees in frame; go closer only where a closer product view shows that part.
 `.trim();
 
 const PERFORMANCE_STANDARD = `
@@ -195,7 +196,7 @@ Typography and placement - match the reference ad's text treatment: ${clean(angl
 If the reference has a text element not listed above, leave that space empty. Never reproduce any word from reference image 2; no prices, badges, logos, brand names or URLs. Never over the product.`
       : textOverlayBlock(angle);
     return `
-Create exactly one finished, standalone ${format} Meta ad image for our product, modelled on a proven winning ad in this niche. Reference image 1 is our product${angle.referenceImage ? '; reference image 2 is the winning ad to follow for layout, light and typography' : ''}.
+Create exactly one finished, standalone ${format} Meta ad image for our product, modelled on a proven winning ad in this niche. Reference image 1 (and any closer views of it) is our product${angle.referenceImage ? '; the last reference image is the winning ad to follow for layout, light and typography' : ''}.
 
 ${productBrief(options.context)}
 ${direction ? `Client direction: ${direction}\n` : ''}${manifest ? `\nFORENSIC PRODUCT IDENTITY MANIFEST - use this only to verify the preserved product; never re-typeset from it:\n${manifest}\n` : ''}

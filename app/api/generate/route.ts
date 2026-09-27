@@ -19,6 +19,7 @@ import { writePromptsFromWinners } from '@/lib/server/winnerPrompts';
 import { compositeProduct, compositeProductPerspective, cutoutProduct, locateProductQuad } from '@/lib/server/productComposite';
 import { describeProductNiche, researchWinningAds, type AdDesign, type WinningAd } from '@/lib/server/metaAdResearch';
 import { heroFrameDirection, planVideoStoryboard, resolveVideoStyle } from '@/lib/server/videoStoryboard';
+import { trimPaddedBands } from '@/lib/server/paddedBands';
 import { parseVideoStyle, videoStyleLabel, type VideoStyle } from '@/lib/videoStyles';
 import { judgeAdCreative } from '@/lib/server/adJudge';
 import { isVideoGenerationConfigured, resolveVeoModel, submitVeoJob } from '@/lib/server/veo';
@@ -39,6 +40,8 @@ import {
 const MAX_ATTEMPTS_PER_SLOT = 3;
 const REQUEST_BUDGET_MS = 280_000;
 const MIN_TIME_FOR_ATTEMPT_MS = 75_000;
+// A video renders one frame and writes its storyboard in parallel, so an attempt needs less headroom.
+const MIN_TIME_FOR_VIDEO_ATTEMPT_MS = 55_000;
 
 const MODES: ImageGenMode[] = ['generate', 'thumbnail', 'edit', 'upscale', 'unblur'];
 
@@ -202,9 +205,12 @@ function failureSummary(
   reasons: Array<'product' | 'generation' | 'safety' | 'quality'>,
   verifierErrors: number,
   productKind: 'packaged' | 'apparel' | 'object',
-  video: boolean
+  video: boolean,
+  /** What the product check found on the last rejected render, in its own words. */
+  lastProductIssue?: string
 ): string {
   const what = video ? 'the hero frame for your video' : 'any creative';
+  const found = lastProductIssue ? ` The last check found: ${lastProductIssue.replace(/\s+/g, ' ').trim().slice(0, 220)}` : '';
   const count = (r: string) => reasons.filter((x) => x === r).length;
   if (reasons.length === 0 || (verifierErrors > 0 && count('product') === reasons.length)) {
     return 'The product check service was unavailable, so nothing could be verified. Your credits were refunded; please try again in a minute.';
@@ -219,8 +225,8 @@ function failureSummary(
     return `No version of ${what} passed our creative review. Your credits were refunded; try again or add a direction in the prompt box.`;
   }
   return productKind === 'apparel'
-    ? `Every version of ${what} changed the garment (colour, cut or trims), so nothing was kept and your credits were refunded. A clear, full view of the garment as the first store image helps.`
-    : `Every version of ${what} changed the product packaging, so nothing was kept and your credits were refunded. A clear, front-facing product image helps.`;
+    ? `Every version of ${what} changed the garment, so nothing was kept and your credits were refunded.${found} Close-up store photos of the fabric, border and blouse help the model copy fine patterns exactly.`
+    : `Every version of ${what} changed the product packaging, so nothing was kept and your credits were refunded.${found} A clear, front-facing product image helps.`;
 }
 
 /** The identity-defining details from the product manifest, for the "locked" chips in the UI. */
@@ -264,6 +270,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
   let winnerImages: string[] = [];
   let winnerAds: WinningAd[] = [];
   const deadline = Date.now() + REQUEST_BUDGET_MS;
+  const minTimeForAttempt = video ? MIN_TIME_FOR_VIDEO_ATTEMPT_MS : MIN_TIME_FOR_ATTEMPT_MS;
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
@@ -330,6 +337,13 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
         if (productContext && nicheInfo?.tier) productContext.tier = nicheInfo.tier;
         analysisUsages.push(identity.usage);
         const canonicalImage = referenceImages[identity.canonicalReferenceIndex] ?? referenceImages[0];
+        // Closer store views (fabric, border, back): the image model copies fine detail from
+        // them instead of inventing it, and the product check judges against them too.
+        const detailImages = identity.detailReferenceIndexes
+          .map((i) => referenceImages[i])
+          .filter((url): url is string => Boolean(url) && url !== canonicalImage);
+        const productRefs = [canonicalImage, ...detailImages];
+        console.log(`Product references: canonical #${identity.canonicalReferenceIndex + 1}${detailImages.length ? `, close-ups #${identity.detailReferenceIndexes.map((i) => i + 1).join(', #')}` : ', no close-ups in the store images'}`);
 
         // Real product pixels get pasted over the model's rendition so label text stays exact.
         // Only the analyzer's packshot is trusted as the paste source: other store images
@@ -539,11 +553,13 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           };
 
           // With the real product pasted in, a failure means occlusion or a bad box, so
-          // one clean regeneration is enough; without it, allow a repair pass too.
+          // one clean regeneration is enough; without it, allow a repair pass too. A garment
+          // is never "repaired": editing the rejected frame drifts or pads it, so it gets a
+          // fresh render told exactly what the product check found.
           const maxAttempts = cutout ? 2 : MAX_ATTEMPTS_PER_SLOT;
           for (let attempt = 0; attempt < maxAttempts; attempt++) {
-            if (attempt > 0 && deadline - Date.now() < MIN_TIME_FOR_ATTEMPT_MS) break;
-            const repair = !cutout && attempt === 1 && rejectedUrl !== null;
+            if (attempt > 0 && deadline - Date.now() < minTimeForAttempt) break;
+            const repair = !cutout && identity.productKind !== 'apparel' && attempt === 1 && rejectedUrl !== null;
             try {
               // Mirroring a winner: the image model sees our product (1) and the winning ad (2)
               // as a layout & style reference, and renders in the winner's format.
@@ -553,7 +569,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                 mode,
                 referenceImages: repair
                   ? [canonicalImage, rejectedUrl as string]
-                  : styleRef ? [canonicalImage, styleRef] : [canonicalImage],
+                  : styleRef ? [...productRefs, styleRef] : productRefs,
                 prompt: promptFor(),
                 model,
                 aspectRatio: video ? '9:16' : current.aspectRatio ?? '9:16',
@@ -568,11 +584,31 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
               if (!imageUrl) continue;
               let composited = false;
 
+              // The model sometimes keeps a reference photo's shape and fills the rest of the frame
+              // with a blurred, stretched strip. Trim it back to full bleed; a frame with copy is
+              // re-rendered instead, since trimming could cut the text.
+              const padded = await trimPaddedBands(imageUrl).catch((error) => {
+                console.warn(`Slot ${index + 1}: padded-band check failed:`, error);
+                return null;
+              });
+              if (padded && (padded.trimmed || padded.tooLarge)) {
+                const hasCopy = slot.withText && !stillLife();
+                console.log(`Slot ${index + 1} attempt ${attempt + 1}: padded band (top ${padded.bands.top.toFixed(2)}, bottom ${padded.bands.bottom.toFixed(2)}); ${padded.trimmed && !hasCopy ? 'trimmed' : 're-rendering'}`);
+                if (padded.trimmed && !hasCopy) {
+                  imageUrl = padded.url;
+                } else {
+                  failReason = 'quality';
+                  critique = 'The previous render filled part of the frame with a blurred, stretched strip. Compose one new, full-bleed photograph that fills the whole frame edge to edge.';
+                  send({ type: 'retry', index, attempt: attempt + 1, reason: 'quality' });
+                  continue;
+                }
+              }
+
               const verify = (url: string) => validateProductIdentity(
                 canonicalImage,
                 url,
                 identity.manifest,
-                { overlayTextExpected: slot.withText, productKind: identity.productKind }
+                { overlayTextExpected: slot.withText, productKind: identity.productKind, detailImageUrls: detailImages }
               ).catch((error) => {
                 console.error(`Slot ${index + 1} verification failed:`, error);
                 verifierErrors += 1;
@@ -636,7 +672,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                   analysisUsages.push(verdict.usage);
                   console.log(`Slot ${index + 1} attempt ${attempt + 1} review: ${verdict.score}/10`, verdict.scores, verdict.critical.length ? `critical: ${verdict.critical.join('; ')}` : '');
                 }
-                const canReroll = attempt < maxAttempts - 1 && deadline - Date.now() >= MIN_TIME_FOR_ATTEMPT_MS;
+                const canReroll = attempt < maxAttempts - 1 && deadline - Date.now() >= minTimeForAttempt;
                 const hasDealBreaker = Boolean(verdict && verdict.critical.length > 0);
                 // Deal-breakers (artifacts, duplicated heads, padded bands) are never kept; a merely
                 // weak creative gets one re-roll and is kept after that.
@@ -667,6 +703,10 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
               }
               rejectedUrl = imageUrl;
               failReason = 'product';
+              console.log(`Slot ${index + 1} attempt ${attempt + 1}: product check failed (${validation.score}/100): ${validation.reason}`);
+              if (identity.productKind === 'apparel' && validation.reason) {
+                critique = `The product check rejected the previous render because the garment changed: ${validation.reason} Copy every one of these details exactly from the product photos, and frame the garment no tighter than those photos show it.`;
+              }
               send({ type: 'retry', index, attempt: attempt + 1 });
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error);
@@ -690,6 +730,21 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           return null;
         };
 
+        // The storyboard does not depend on the hero frame, so it is written while the frame renders.
+        const storyboardPromise = video
+          ? planVideoStoryboard({
+              context: productContext,
+              identityManifest: identity.manifest,
+              userDirection,
+              adPatterns,
+              winningDesigns,
+              durationSeconds: video.durationSeconds,
+              sensitive: identity.sensitive,
+              style: video.style,
+              productKind: identity.productKind,
+            })
+          : null;
+
         await Promise.all(slotIndexes.map((index) => produceSlot(index)));
 
         const failedSlots = slotIndexes.length - acceptedCount;
@@ -701,24 +756,14 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
         let videoWarning: string | undefined;
         if (video) {
           const heroUrl = acceptedUrls.get(slotIndexes[0]);
+          const planned = await (storyboardPromise as NonNullable<typeof storyboardPromise>);
+          if (planned.usage) analysisUsages.push(planned.usage);
           if (!heroUrl) {
             videoCreditsRefunded = video.cost;
             await refundCreditsForUser(user.id, video.cost);
           } else {
             stage('storyboard', 'active', 'Writing the storyboard from the winning video ads');
             send({ type: 'status', message: 'Writing the storyboard from the winning video ads...' });
-            const planned = await planVideoStoryboard({
-              context: productContext,
-              identityManifest: identity.manifest,
-              userDirection,
-              adPatterns,
-              winningDesigns,
-              durationSeconds: video.durationSeconds,
-              sensitive: identity.sensitive,
-              style: video.style,
-              productKind: identity.productKind,
-            });
-            if (planned.usage) analysisUsages.push(planned.usage);
             send({ type: 'storyboard', storyboard: planned.storyboard });
             stage('storyboard', 'done', planned.storyboard.hook, { storyboard: planned.storyboard });
 
@@ -782,7 +827,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           operationId,
           creditsDeducted: perImageCost * acceptedCount + (video ? video.cost - videoCreditsRefunded : 0),
           warning: acceptedCount === 0
-            ? failureSummary([...slotFailReasons.values()], verifierErrors, identity.productKind, Boolean(video))
+            ? failureSummary([...slotFailReasons.values()], verifierErrors, identity.productKind, Boolean(video), validationScores.filter((v) => !v.passed).at(-1)?.reason)
             : videoWarning
               ? videoWarning
               : failedSlots > 0

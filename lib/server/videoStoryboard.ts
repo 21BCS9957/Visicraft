@@ -43,15 +43,18 @@ export function resolveVideoStyle(requested: VideoStyle | undefined, designs: Ad
 
 /** How the hero frame (the clip's first frame) must be staged for the style. */
 export function heroFrameDirection(style: MadeStyle, productKind?: 'packaged' | 'apparel' | 'object'): string {
+  // A worn garment is framed wide enough that its patterns stay at the scale the store photos show.
   const garment = productKind === 'apparel';
-  const withProduct = garment ? 'wearing the product, shown clearly' : 'holding the product up near their face or chest, its front fully visible to the lens';
+  const withProduct = garment ? 'wearing the product, framed from the waist up or wider so the garment reads clearly' : 'holding the product up near their face or chest, its front fully visible to the lens';
   switch (style) {
     case 'ugc':
-      return `This image is the first frame of a UGC-style video: an everyday Indian creator filming themselves on a phone at arm's length (front-camera framing, slightly wide lens, natural window light, a real lived-in home), ${withProduct}, looking straight into the lens with a friendly, natural expression, lips closed, about to speak. It must look like a real customer's phone video, not an ad shoot.`;
+      return `This image is the first frame of a UGC-style video: an everyday Indian creator filming themselves on a phone${garment ? ' propped up or held at arm\'s length' : ' at arm\'s length'} (front-camera look, slightly wide lens, natural window light, a real lived-in home), ${withProduct}, looking straight into the lens with a friendly, natural expression, lips closed, about to speak. It must look like a real customer's phone video, not an ad shoot.`;
     case 'talking_head':
-      return `This image is the first frame of a talking-head video: one presenter (founder, expert or stylist) framed chest-up at eye level on a steady camera, clean real setting, ${withProduct}, looking straight into the lens with a confident, warm expression, lips closed, about to speak.`;
+      return `This image is the first frame of a talking-head video: one presenter (founder, expert or stylist) ${garment ? 'framed from the waist up' : 'framed chest-up'} at eye level on a steady camera, clean real setting, ${withProduct}, looking straight into the lens with a confident, warm expression, lips closed, about to speak.`;
     case 'demo':
-      return `This image is the first frame of a product demo video: the product in use, close up, ${garment ? 'the fabric being draped or held so its drape and detail read clearly' : 'hands about to use it, the product front-facing and unobstructed'}, clean natural light.`;
+      return garment
+        ? 'This image is the first frame of a product demo video: a model draping, adjusting or showing the garment, framed from the knees up so its whole pattern, border and blouse read clearly at the scale the product photos show them, clean natural light.'
+        : 'This image is the first frame of a product demo video: the product in use, close up, hands about to use it, the product front-facing and unobstructed, clean natural light.';
     default:
       return '';
   }

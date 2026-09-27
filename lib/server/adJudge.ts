@@ -51,7 +51,11 @@ export async function judgeAdCreative(options: {
   ].filter(Boolean).join(', ');
   // A person who will speak on camera needs their face in frame, whatever the reference crops.
   const speakingFrame = isSpeakingStyle(options.videoStyle)
-    ? `\nThis image is the first frame of a ${videoStyleLabel(options.videoStyle)} video in which the person speaks to the camera, so their face must stay fully visible and facing the lens. Never suggest cropping out, turning away or hiding the face${options.referenceImageUrl ? '; referenceMatch judges the setting, light, styling and palette, not the crop' : ''}.`
+    ? `\nThis image is the first frame of a ${videoStyleLabel(options.videoStyle)} video in which the person speaks to the camera, so their face must stay fully visible and facing the lens. Never suggest cropping out, turning away or hiding the face${options.referenceImageUrl ? '; referenceMatch judges the setting, light and styling, not the crop' : ''}.`
+    : '';
+  // A garment is framed no tighter than its store photos show it, so fine patterns are copied, not invented.
+  const garmentScale = options.productKind === 'apparel'
+    ? `\nThe garment is deliberately framed no tighter than its product photos show it, so its patterns are copied rather than invented. Never ask for a tighter crop or a close-up of the garment${options.referenceImageUrl ? '; referenceMatch judges setting, light and styling, not how tight the crop is' : ''}.`
     : '';
   const expectedCopy = options.withText
     ? `Expected on-image copy, and the only words allowed outside the product itself: ${copyLines}.`
@@ -63,7 +67,7 @@ export async function judgeAdCreative(options: {
 
 Product: ${clean(options.context?.title, 140) || 'unknown'}${options.context?.vendor ? ` by ${clean(options.context.vendor, 60)}` : ''}.
 Intended angle: ${clean(options.angle.name, 60)} — ${clean(options.angle.scene, 300)}
-${expectedCopy}${speakingFrame}
+${expectedCopy}${speakingFrame}${garmentScale}
 
 Score 0-10 on each:
 - thumbStop: would an Indian shopper scrolling Instagram stop on this within one second? (contrast, focal point, hook)
@@ -71,10 +75,10 @@ Score 0-10 on each:
 - productHero: ${options.productKind === 'apparel' ? 'is the garment clearly the hero, fully visible on the model, its fit and details readable, tastefully shot?' : 'is the package clearly the hero, large, sharp, unobstructed, believable in the scene (contact shadow, matching light)?'}
 - nativeFeel: does it look like a real ad from a real brand in India rather than generic stock or obvious AI?
 - craft: photographic quality; no artifacts (deformed hands/faces, warped props, floating objects, extra limbs, gibberish text, seams around the product).
-${hasReference ? `- referenceMatch: image 2 is the winning ad this creative was meant to follow. How closely does image 1 follow its composition and framing, camera angle, lighting and colour grade, and text treatment (font style, size, case, placement)? The product, the person, the words and the brand are meant to differ; judge only the layout and style.
+${hasReference ? `- referenceMatch: image 2 is the winning ad this creative was meant to follow. How closely does image 1 follow its composition and framing, camera angle, lighting and colour grade of the scene, and text treatment (font style, size, case, placement)? The product (including its colours), the person, the words and the brand are meant to differ; judge only the layout and style.
 ` : ''}
-Set "critical" to a list of any deal-breakers (e.g. "deformed hand", "headline unreadable", "product cut off", "gibberish text", "product too small"); otherwise an empty list. Any overlaid ad copy, caption, button or logo beyond the expected copy${hasReference ? ' (for example a line or logo copied from image 2)' : ''} is a deal-breaker: add "unexpected text: <the words>". Print on the product itself and incidental scene text, such as a distant sign, do not count.
-"fixes": 2-4 concrete, specific instructions an image model can apply to fix the weakest points (composition, light, scale, text placement), max 60 words. Never ask for a logo, brand name or URL to be added${hasReference ? ', or for anything that identifies image 2\'s brand or model' : ''}.
+Set "critical" to a list of any deal-breakers (e.g. "deformed hand", "headline unreadable", "product cut off", "gibberish text", "product too small", "padded band": part of the frame filled with a blurred, stretched or duplicated strip along an edge); otherwise an empty list. Any overlaid ad copy, caption, button or logo beyond the expected copy${hasReference ? ' (for example a line or logo copied from image 2)' : ''} is a deal-breaker: add "unexpected text: <the words>". Print on the product itself and incidental scene text, such as a distant sign, do not count.
+"fixes": 2-4 concrete, specific instructions an image model can apply to fix the weakest points (composition, light, scale, text placement), max 60 words. Never ask to change the product's own colours, fabric, pattern or design, or to grade them toward another look: the product must stay true to its photos. Never ask for a logo, brand name or URL to be added${hasReference ? ', or for anything that identifies image 2\'s brand or model' : ''}.
 
 Return JSON only: {"thumbStop":0,"clarity":0,"productHero":0,"nativeFeel":0,"craft":0,${hasReference ? '"referenceMatch":0,' : ''}"critical":[],"fixes":""}${hasReference ? '\nWhen referenceMatch is below 7, the fixes must name the specific layout or typography differences to correct.' : ''}`,
       },
