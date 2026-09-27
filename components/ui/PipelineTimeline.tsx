@@ -115,7 +115,7 @@ interface CaptureData { title?: string; brand?: string; images?: string[]; canon
 interface UnderstandData { canonicalImage?: string; title?: string; brand?: string; niche?: string; keywords?: string[]; competitors?: string[]; locked?: string[]; productPasted?: boolean }
 interface ResearchData { scraped?: number; designed?: number; relevant?: number; winners?: number; ads?: Array<{ id: string; pageName: string; daysRunning: number; collationCount?: number; imageUrl?: string; libraryUrl: string; mediaKind?: string }> }
 interface AnalyzeData { designs?: Array<{ pageName: string; format: string; hook: string; daysRunning: number; sequence?: Array<{ t: string; shot: string }> }> }
-interface PlanData { angles?: Array<{ index: number; name: string; promise?: string; headline?: string; subline?: string; withText: boolean; modelledOn?: string }> }
+interface PlanData { angles?: Array<{ index: number; name: string; promise?: string; headline?: string; subline?: string; withText: boolean; modelledOn?: string; referenceImage?: string; brief?: string }> }
 interface GenerateData { passed?: number; withheld?: number; retrying?: number }
 interface StoryboardData { storyboard?: { hook: string; shots: Array<{ t: string; action: string; camera: string }>; modelledOn?: string } }
 
@@ -208,15 +208,29 @@ function StageBody({ stage }: { stage: StageState }) {
       return (
         <div className="grid gap-2 text-left sm:grid-cols-2">
           {(d.angles ?? []).map((a) => (
-            <div key={a.index} className="rounded-xl border border-white/8 bg-black/25 px-3 py-2">
-              <div className="flex items-center justify-between gap-2">
-                <p className="truncate text-[11px] font-medium text-white/85">{a.name}</p>
-                <span className="shrink-0 text-[10px] text-white/40">{a.withText ? 'Ad copy' : 'Clean'}</span>
+            <div key={a.index} className="flex gap-3 rounded-xl border border-white/8 bg-black/25 p-2.5">
+              {a.referenceImage && (
+                <div className="flex shrink-0 flex-col items-center gap-1">
+                  <span className="h-20 w-14 overflow-hidden rounded-lg border border-white/10 bg-white/5">
+                    <img src={a.referenceImage} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" />
+                  </span>
+                  <span className="text-[9px] uppercase tracking-[0.12em] text-white/35">winner</span>
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="truncate text-[11px] font-medium text-white/85">{a.name}</p>
+                  <span className="shrink-0 text-[10px] text-white/40">{a.withText ? 'Ad copy' : 'Clean'}</span>
+                </div>
+                {a.headline && <p className="mt-1 text-sm leading-tight text-[#fbf2a0]">“{a.headline}”</p>}
+                {a.subline && <p className="text-[11px] text-white/60">{a.subline}</p>}
+                {a.brief ? (
+                  <p className="mt-1 line-clamp-4 text-[11px] leading-relaxed text-white/55">{a.brief}</p>
+                ) : a.promise && !a.headline ? (
+                  <p className="mt-1 text-[11px] text-white/60">{a.promise}</p>
+                ) : null}
+                {a.modelledOn && <p className="mt-1 text-[10px] text-white/35">Modelled on {a.modelledOn}</p>}
               </div>
-              {a.headline && <p className="mt-1 text-sm leading-tight text-[#fbf2a0]">“{a.headline}”</p>}
-              {a.subline && <p className="text-[11px] text-white/60">{a.subline}</p>}
-              {a.promise && !a.headline && <p className="mt-1 text-[11px] text-white/60">{a.promise}</p>}
-              {a.modelledOn && <p className="mt-1 text-[10px] text-white/35">Modelled on {a.modelledOn}</p>}
             </div>
           ))}
         </div>

@@ -236,6 +236,14 @@ export function getResearchProvider(): ResearchProvider | null {
 }
 
 // ---------- self-hosted sidecar (scraper/app.py) ----------
+/** When Meta throttles our IP, skip the sidecar for a while and use the API directly. */
+const SELFHOSTED_COOLDOWN_MS = 15 * 60 * 1000;
+let selfhostedCooldownUntil = 0;
+
+function selfhostedAvailable(): boolean {
+  return Date.now() >= selfhostedCooldownUntil;
+}
+
 async function shGet<T>(path: string, params: Record<string, string | number | undefined>): Promise<T> {
   const base = (process.env.AD_SCRAPER_URL || '').replace(/\/$/, '');
   if (!base) throw new Error('AD_SCRAPER_URL is not configured.');
@@ -243,9 +251,14 @@ async function shGet<T>(path: string, params: Record<string, string | number | u
   const headers: Record<string, string> = {};
   if (process.env.SCRAPER_TOKEN) headers['x-scraper-token'] = process.env.SCRAPER_TOKEN;
   const response = await axios.get<T>(`${base}/${path}?${query}`, { headers, timeout: 170000 }).catch((error: unknown) => {
+    const status = axios.isAxiosError(error) ? error.response?.status : undefined;
     const message = axios.isAxiosError(error)
       ? (error.response?.data as { detail?: string } | undefined)?.detail || error.message
       : String(error);
+    if (status === 429 || !status) {
+      selfhostedCooldownUntil = Date.now() + SELFHOSTED_COOLDOWN_MS;
+      console.warn(`Self-hosted scraper unavailable (${status ?? 'no response'}: ${message}); using the API for the next ${SELFHOSTED_COOLDOWN_MS / 60000} minutes`);
+    }
     throw new Error(`Self-hosted scraper ${path} failed: ${message}`);
   });
   return response.data;
@@ -471,7 +484,8 @@ export function rankWinningAds(
     const snapshotForFormat = pick(raw, 'snapshot') as RawAd | undefined;
     const displayFormat = String(pick(snapshotForFormat, 'displayFormat', 'display_format') ?? '').toUpperCase();
     const title = String(pick(snapshotForFormat, 'title') ?? '');
-    if (displayFormat === 'DPA' || displayFormat === 'DCO' || /\{\{.*\}\}/.test(title)) { dropped.catalog += 1; continue; }
+    // DPA = tiles generated from a product feed; DCO ads are real uploaded creatives Meta mixes, so they stay.
+    if (displayFormat === 'DPA' || /\{\{.*\}\}/.test(title)) { dropped.catalog += 1; continue; }
     const start = toStartDate(raw);
     if (!start) { dropped.noDate += 1; continue; }
     const snapshot = pick(raw, 'snapshot') as RawAd | undefined;
@@ -544,7 +558,7 @@ async function filterRelevantAds(
   niche: string
 ): Promise<{ ads: WinningAd[]; usage: ProviderUsage }> {
   if (candidates.length === 0) return { ads: [], usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } };
-  const listing = candidates.map((ad, i) => `${i + 1}. id=${ad.id} | page: ${ad.pageName} | domain: ${ad.landingDomain || 'n/a'} | headline: ${ad.title || 'n/a'} | text: ${(ad.body || 'n/a').slice(0, 260)}`).join('\n');
+  const listing = candidates.map((ad, i) => `#${i + 1} | page: ${ad.pageName} | domain: ${ad.landingDomain || 'n/a'} | headline: ${ad.title || 'n/a'} | text: ${(ad.body || 'n/a').slice(0, 260)}`).join('\n');
   const { response, providerModel } = await requestGeminiText(
     [{
       text: `You are screening Meta ads for competitor research.
@@ -560,7 +574,7 @@ An ad is RELEVANT only if it is selling a consumer product of the same category 
 ADS
 ${listing}
 
-Return JSON only: {"relevant":[{"id":"...","reason":"<=12 words"}]} listing only the relevant ads, most relevant first.`,
+Return JSON only: {"relevant":[{"n":1,"reason":"<=12 words"}]} where n is the ad's # number from the list above, listing only the relevant ads, most relevant first.`,
     }],
     { temperature: 0 },
     'Ad relevance screening'
@@ -568,14 +582,55 @@ Return JSON only: {"relevant":[{"id":"...","reason":"<=12 words"}]} listing only
   const parsed = parseJsonObject(geminiText(response));
   console.log('Ad relevance candidates:\n' + candidates.map((ad) => `  ${ad.daysRunning}d x${ad.collationCount} | ${ad.pageName} | ${ad.landingDomain || 'n/a'} | ${(ad.title || '').slice(0, 60)} | ${(ad.body || '').slice(0, 90)}`).join('\n'));
   console.log('Ad relevance verdict:', JSON.stringify(parsed?.relevant ?? parsed).slice(0, 1500));
-  const relevantIds = new Set(
-    (Array.isArray(parsed?.relevant) ? parsed.relevant : [])
-      .map((item) => (item && typeof item === 'object' ? String((item as Record<string, unknown>).id ?? '') : ''))
-      .filter(Boolean)
-  );
-  const ads = candidates.filter((ad) => relevantIds.has(ad.id));
+  // Accept the list number (asked for) or an ad id (models sometimes answer with either).
+  const byId = new Map(candidates.map((ad) => [ad.id, ad]));
+  const picked: WinningAd[] = [];
+  (Array.isArray(parsed?.relevant) ? parsed.relevant : []).forEach((item) => {
+    const record = (item && typeof item === 'object' ? item : { n: item }) as Record<string, unknown>;
+    const raw = String(record.n ?? record.id ?? record.index ?? '').replace(/^#/, '').trim();
+    const ad = byId.get(raw) ?? (/^\d{1,3}$/.test(raw) ? candidates[Number(raw) - 1] : undefined);
+    if (ad && !picked.includes(ad)) picked.push(ad);
+  });
+  const ads = picked;
   console.log(`Ad research: ${ads.length} of ${candidates.length} long-running ads sell the same category (${niche})`);
   return { ads, usage: geminiUsage(response, providerModel) };
+}
+
+/**
+ * The text gate cannot see creatives, so a finalist can be a different product that
+ * merely mentions the right words (a fruit-snack ad in a tea search). One look at
+ * the finalists' images settles it. On failure, the text gate's result stands.
+ */
+async function verifyWinnersVisually(
+  finalists: WinningAd[],
+  product: ShopifyProductContext,
+  niche: string
+): Promise<{ ads: WinningAd[]; usage?: ProviderUsage }> {
+  const withImages = finalists.filter((ad) => ad.imageUrl);
+  if (withImages.length === 0) return { ads: finalists };
+  try {
+    const { images, sourceIndexes } = await loadPreparedReferences(withImages.map((ad) => ad.imageUrl as string));
+    const parts: Parameters<typeof requestGeminiText>[0] = [{
+      text: `We sell: ${clean(product.title, 160) || 'unknown'} (niche: ${niche}). Below are Meta ads found by keyword. For each, look at the IMAGE and decide whether it advertises the same TYPE of product as ours, at the level a shopper browses: for a herbal tea, any tea or herbal infusion passes (green tea, chai, blue tea, tea gift boxes); for lingerie, any lingerie or intimate wear passes; for a kids ride-on car, any kids ride-on vehicle passes. It fails only when the product is a different type altogether (for a tea: fruit snacks, supplements in capsules, mattresses, apps, services, clothing), even if the ad's text mentions similar words.
+
+Return JSON only: {"same":[n,...]} listing the # numbers that pass.`,
+    }];
+    images.forEach((image, i) => {
+      parts.push({ text: `#${sourceIndexes[i] + 1} (${withImages[sourceIndexes[i]].pageName}):` }, { inlineData: { mimeType: image.mimeType, data: image.data } });
+    });
+    const { response, providerModel } = await requestGeminiText(parts, { temperature: 0 }, 'Winner visual check');
+    const parsed = parseJsonObject(geminiText(response));
+    const same = new Set((Array.isArray(parsed?.same) ? parsed.same : []).map((n) => Number(String(n).replace(/^#/, ''))).filter((n) => Number.isInteger(n)));
+    const loaded = new Set(sourceIndexes);
+    // Keep ads that passed, plus any whose image could not be loaded (no evidence against them).
+    const kept = withImages.filter((ad, i) => same.has(i + 1) || !loaded.has(i));
+    const dropped = withImages.filter((ad) => !kept.includes(ad)).map((ad) => ad.pageName);
+    if (dropped.length) console.log(`Ad research: visual check dropped ${dropped.length} off-category ad(s): ${dropped.join(', ')}`);
+    return { ads: [...kept, ...finalists.filter((ad) => !ad.imageUrl)], usage: geminiUsage(response, providerModel) };
+  } catch (error) {
+    console.warn('Winner visual check failed; keeping the text screening result:', error instanceof Error ? error.message : error);
+    return { ads: finalists };
+  }
 }
 
 async function analyzeWinningAds(
@@ -751,6 +806,8 @@ export async function researchWinningAds(
       const withFallback = (label: string, primary: () => Promise<RawAd[]>, fallback?: () => Promise<RawAd[]>) => ({
         label,
         run: async () => {
+          // Throttled recently: go straight to the API.
+          if (!selfhostedAvailable() && fallback && process.env.SCRAPECREATORS_API_KEY) return fallback();
           try {
             return await primary();
           } catch (error) {
@@ -828,7 +885,51 @@ export async function researchWinningAds(
     onProgress({ phase: 'scraped', scraped: scrapedTotal, designed: pool.size });
     const screened = await filterRelevantAds(candidates, product, niche);
     relevanceUsage = screened.usage;
-    const relevant = screened.ads.sort((a, b) => b.winScore - a.winScore);
+    let relevant = screened.ads;
+
+    // Thin niche: broaden once. Search every media type (brands often run video; their
+    // cover frames are valid references) and add the niche phrase itself as a keyword.
+    if (relevant.length < MIN_USABLE_ADS && provider !== 'apify') {
+      const broadKeywords = Array.from(new Set([...keywords, niche].map((k) => k.toLowerCase())));
+      const seen = new Set(candidates.map((ad) => ad.id));
+      const extraTiers = await Promise.all(broadKeywords.map(async (keyword) => {
+        const rawAds = await (provider === 'selfhosted' && selfhostedAvailable()
+          ? shSearchAds(keyword, country, 'all', 40).catch(() => (process.env.SCRAPECREATORS_API_KEY ? scSearchAds(keyword, country, 'all', 2) : []))
+          : process.env.SCRAPECREATORS_API_KEY ? scSearchAds(keyword, country, 'all', 2) : Promise.resolve([] as RawAd[])
+        ).catch((error) => {
+          console.warn(`Ad research broad "${keyword}" failed:`, error instanceof Error ? error.message : error);
+          return [] as RawAd[];
+        });
+        scrapedTotal += rawAds.length;
+        return rankWinningAds(rawAds, mediaType, CANDIDATE_POOL, true, 2);
+      }));
+      const extra = extraTiers.flat().filter((ad) => !seen.has(ad.id) && (seen.add(ad.id), true)).sort((a, b) => b.winScore - a.winScore).slice(0, CANDIDATE_POOL);
+      console.log(`Ad research: only ${relevant.length} relevant; broad pass over "${broadKeywords.join('", "')}" (all media) found ${extra.length} new candidates`);
+      onProgress({ phase: 'scraped', scraped: scrapedTotal, designed: pool.size + extra.length });
+      if (extra.length > 0) {
+        const second = await filterRelevantAds(extra, product, niche);
+        relevanceUsage = {
+          inputTokens: relevanceUsage.inputTokens + second.usage.inputTokens,
+          outputTokens: relevanceUsage.outputTokens + second.usage.outputTokens,
+          totalTokens: relevanceUsage.totalTokens + second.usage.totalTokens,
+          providerModel: relevanceUsage.providerModel,
+        };
+        relevant = [...relevant, ...second.ads];
+      }
+    }
+    relevant = relevant.sort((a, b) => b.winScore - a.winScore);
+    // Look at the strongest finalists' creatives before trusting them.
+    const finalists = relevant.slice(0, 10);
+    const visual = await verifyWinnersVisually(finalists, product, niche);
+    if (visual.usage) {
+      relevanceUsage = {
+        inputTokens: relevanceUsage.inputTokens + visual.usage.inputTokens,
+        outputTokens: relevanceUsage.outputTokens + visual.usage.outputTokens,
+        totalTokens: relevanceUsage.totalTokens + visual.usage.totalTokens,
+        providerModel: relevanceUsage.providerModel,
+      };
+    }
+    relevant = [...visual.ads, ...relevant.slice(10)].sort((a, b) => b.winScore - a.winScore);
     screenedRelevantCount = relevant.length;
     const sameKind = relevant.filter((ad) => ad.mediaKind === mediaType);
     const otherKind = relevant.filter((ad) => ad.mediaKind !== mediaType);

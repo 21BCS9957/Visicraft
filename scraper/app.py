@@ -18,8 +18,35 @@ import time
 from dataclasses import asdict
 from typing import Any, Optional
 
+import logging
+
 from fastapi import FastAPI, Header, HTTPException, Query
 from meta_ads_collector import MetaAdsCollector
+
+# The library logs "Max retries exceeded due to rate limiting" and then returns no ads.
+# Flag that per request thread so we can answer 429 and let the app fall back.
+_tls = threading.local()
+
+
+class _RateLimitFlag(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        msg = record.getMessage()
+        if "Max retries exceeded" in msg or "rate limit" in msg.lower():
+            _tls.rate_limited = True
+
+
+_rl_logger = logging.getLogger("meta_ads_collector")
+_rl_logger.addHandler(_RateLimitFlag())
+_rl_logger.setLevel(logging.WARNING)
+
+
+def _reset_flag() -> None:
+    _tls.rate_limited = False
+
+
+def _raise_if_throttled(count: int) -> None:
+    if getattr(_tls, "rate_limited", False) and count == 0:
+        raise HTTPException(status_code=429, detail="Meta rate-limited this IP; use a proxy or the API fallback")
 
 app = FastAPI(title="visicraft-ad-scraper", version="1.0")
 
@@ -43,7 +70,8 @@ class CollectorPool:
             rate_limit_delay=float(os.getenv("SCRAPER_RATE_DELAY", "0.6")),
             jitter=float(os.getenv("SCRAPER_JITTER", "0.4")),
             timeout=30,
-            max_retries=3,
+            # Fail fast when throttled: the app falls back to the API instead of waiting ~45 s.
+            max_retries=int(os.getenv("SCRAPER_MAX_RETRIES", "1")),
         )
 
     def acquire(self) -> MetaAdsCollector:
@@ -168,11 +196,13 @@ def search(
     """Keyword search, sorted by impressions, post-filtered by media type."""
     require_token(x_scraper_token)
     started = time.time()
+    _reset_flag()
     with borrowed() as c:
         try:
             ads = c.collect(query=query, country=country.upper(), status=status.upper(), max_results=max, page_size=30)
         except Exception as exc:  # session/rate-limit/proxy errors surface as 502 for the caller to fall back
             raise HTTPException(status_code=502, detail=f"{type(exc).__name__}: {exc}") from exc
+    _raise_if_throttled(len(ads))
     items = [normalise(a) for a in ads]
     items = filter_media(items, media_type)
     return {"items": items, "count": len(items), "elapsed_ms": int((time.time() - started) * 1000)}
@@ -181,11 +211,13 @@ def search(
 @app.get("/companies")
 def companies(query: str = Query(..., min_length=1), country: str = "IN", x_scraper_token: Optional[str] = Header(default=None)) -> dict:
     require_token(x_scraper_token)
+    _reset_flag()
     with borrowed() as c:
         try:
             pages = c.search_pages(query, country=country.upper())
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"{type(exc).__name__}: {exc}") from exc
+    _raise_if_throttled(len(pages))
     return {"items": [{"page_id": p.page_id, "name": p.page_name, "alias": p.page_alias, "likes": p.page_like_count, "verified": p.page_verified} for p in pages]}
 
 
@@ -201,11 +233,13 @@ def page_ads(
     """All active ads of one advertiser page, sorted by impressions."""
     require_token(x_scraper_token)
     started = time.time()
+    _reset_flag()
     with borrowed() as c:
         try:
             ads = c.collect(query="", country=country.upper(), status=status.upper(), search_type="PAGE", page_ids=[page_id], max_results=max, page_size=30)
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"{type(exc).__name__}: {exc}") from exc
+    _raise_if_throttled(len(ads))
     items = filter_media([normalise(a) for a in ads], media_type)
     return {"items": items, "count": len(items), "elapsed_ms": int((time.time() - started) * 1000)}
 

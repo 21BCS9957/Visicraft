@@ -8,11 +8,13 @@ import { analyzeProductIdentity, validateProductIdentity } from '@/lib/banana/ap
 import {
   buildMetaAdCreativePrompt,
   CREATIVE_SLOTS,
+  type AdAngle,
   type ShopifyProductContext,
 } from '@/lib/prompts/shopifyCreative';
 import { planAdAngles } from '@/lib/server/adAngles';
+import { writePromptsFromWinners } from '@/lib/server/winnerPrompts';
 import { compositeProduct, compositeProductPerspective, cutoutProduct, locateProductQuad } from '@/lib/server/productComposite';
-import { describeProductNiche, researchWinningAds, type AdDesign } from '@/lib/server/metaAdResearch';
+import { describeProductNiche, researchWinningAds, type AdDesign, type WinningAd } from '@/lib/server/metaAdResearch';
 import { planVideoStoryboard } from '@/lib/server/videoStoryboard';
 import { judgeAdCreative } from '@/lib/server/adJudge';
 import { isVideoGenerationConfigured, resolveVeoModel, submitVeoJob } from '@/lib/server/veo';
@@ -225,6 +227,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
   let adPatterns = options.adPatterns;
   let winningDesigns: AdDesign[] = [];
   let winnerImages: string[] = [];
+  let winnerAds: WinningAd[] = [];
   const deadline = Date.now() + REQUEST_BUDGET_MS;
   const encoder = new TextEncoder();
 
@@ -322,6 +325,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
             adPatterns = research.result.patterns;
             winningDesigns = research.result.designs;
             winnerImages = research.result.ads.map((ad) => ad.imageUrl).filter((url): url is string => Boolean(url));
+            winnerAds = research.result.ads.filter((ad) => Boolean(ad.imageUrl));
             stage('analyze', 'done', `${research.result.designs.length} winning ${researchMediaType} ads broken down`, {
               designs: research.result.designs.map((d) => ({ pageName: d.pageName, format: d.format, hook: d.hook, daysRunning: d.daysRunning, sequence: d.sequence })),
             });
@@ -363,18 +367,44 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           }
         }
 
-        stage('plan', 'active', video ? 'Writing the hero-frame brief' : 'Writing four ad briefs');
+        stage('plan', 'active', winnerAds.length
+          ? `Writing ${video ? 'the hero-frame prompt' : 'a prompt from each winning ad'}`
+          : (video ? 'Writing the hero-frame brief' : 'Writing four ad briefs'));
         send({ type: 'status', message: 'Planning four ad angles...', canonicalImage });
-        const plan = await planAdAngles({
-          context: productContext,
-          identityManifest: identity.manifest,
-          userDirection,
-          adPatterns,
-          winningDesigns,
-          winnerImages,
-          productKind: identity.productKind,
-        });
-        if (plan.usage) analysisUsages.push(plan.usage);
+        // Winners available: each winning ad image → Gemini writes our prompt from it.
+        // Otherwise the planner writes clean briefs from the product alone.
+        let plan: { angles: AdAngle[] } = { angles: [] };
+        if (winnerAds.length) {
+          const written = await writePromptsFromWinners({
+            winners: winnerAds,
+            designs: winningDesigns,
+            slots: slotIndexes,
+            productImageUrl: canonicalImage,
+            context: productContext,
+            identityManifest: identity.manifest,
+            productKind: identity.productKind,
+            userDirection,
+          });
+          written.usages.forEach((u) => analysisUsages.push(u));
+          plan = { angles: written.angles };
+          if (written.failed === slotIndexes.length) {
+            console.warn('Every winner prompt failed; falling back to the planner');
+            plan = { angles: [] };
+          }
+        }
+        if (plan.angles.length === 0) {
+          const planned = await planAdAngles({
+            context: productContext,
+            identityManifest: identity.manifest,
+            userDirection,
+            adPatterns,
+            winningDesigns,
+            winnerImages,
+            productKind: identity.productKind,
+          });
+          if (planned.usage) analysisUsages.push(planned.usage);
+          plan = { angles: planned.angles };
+        }
         send({
           type: 'angles',
           angles: slotIndexes.map((index) => ({
@@ -393,6 +423,8 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
             subline: plan.angles[index].subline,
             withText: plan.angles[index].withText ?? CREATIVE_SLOTS[index].withText,
             modelledOn: plan.angles[index].modelledOn,
+            referenceImage: plan.angles[index].referenceImage,
+            brief: plan.angles[index].brief,
           })),
         });
         stage('generate', 'active', video ? 'Generating the hero frame' : `Generating ${slotIndexes.length} creatives with the real product locked in`, { passed: 0, withheld: 0 });
@@ -412,7 +444,8 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
             angle,
             withText: slot.withText,
             critique,
-            frontalProduct: Boolean(cutout),
+            // A mirrored winner decides its own camera angle; the perspective paste follows it.
+            frontalProduct: Boolean(cutout) && !angle.modelledOn,
             productKind: identity.productKind,
           });
 

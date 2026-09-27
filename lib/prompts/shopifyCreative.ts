@@ -20,12 +20,17 @@ export interface AdAngle {
   design?: string;
   /** Advertiser page of the winning ad this angle is modelled on, for the UI. */
   modelledOn?: string;
+  /** The winning ad's image this creative was modelled on (UI only; never sent to the image model). */
+  referenceImage?: string;
 }
 
-/** Slots 1-2 carry Meta-style text overlays, slots 3-4 are clean. */
+/**
+ * Default copy decision per slot when nothing better is known: clean. Copy comes only
+ * from mirroring a winning ad that carries copy (or from the planner with winners).
+ */
 export const CREATIVE_SLOTS = [
-  { withText: true },
-  { withText: true },
+  { withText: false },
+  { withText: false },
   { withText: false },
   { withText: false },
 ] as const;
@@ -125,6 +130,31 @@ export function buildMetaAdCreativePrompt(options: {
   const angle = options.withText ? options.angle : { ...options.angle, headline: undefined, subline: undefined };
 
   const critique = clean(options.critique, 500);
+  const lock = options.productKind === 'apparel' ? APPAREL_LOCK : PRODUCT_LOCK;
+
+  // Modelled on a specific winning ad: the creative director's prompt is the shot.
+  if (angle.brief && angle.modelledOn) {
+    return `
+Create exactly one finished, standalone 9:16 Meta ad image for our product, modelled on a proven winning ad in this niche. Reference image 1 is our product.
+
+${productBrief(options.context)}
+${direction ? `Client direction: ${direction}\n` : ''}${manifest ? `\nFORENSIC PRODUCT IDENTITY MANIFEST - use this only to verify the preserved product; never re-typeset from it:\n${manifest}\n` : ''}
+THE SHOT (written by our creative director from the winning ad; follow it closely):
+${clean(angle.brief, 1600)}
+
+${textOverlayBlock(angle)}
+${critique ? `\nFIXES FROM CREATIVE REVIEW - a previous render of this ad was rejected; apply every fix:\n${critique}\n` : ''}
+${lock}
+
+CRAFT STANDARD
+A real campaign photograph, not an illustration or 3D render; natural skin, hands and anatomy; physically correct props and light. No watermarks, UI chrome, platform logos, extra or duplicated products, gibberish text, or claims the product context does not support (no invented prices, discounts, ratings or medical claims). Keep the top 14% and bottom 20% of the frame free of key elements.
+
+FINAL PRE-FLIGHT CHECK - perform silently before rendering
+1. Product: identical to reference image 1${options.productKind === 'apparel' ? ' (colour, pattern, cut, trims, closures)' : ' (shape, colours, logo, every printed word)'}; if the shot would require altering it, simplify the shot instead.
+2. Text: ${angle.withText && angle.headline ? 'exactly the specified copy, legible on a phone, never over the product' : 'none anywhere in the image'}.
+Output only the final image.
+`.trim();
+  }
 
   return `
 You are the creative director of a top Indian D2C performance agency, making a Meta ad that has to earn its media spend. Create exactly one finished standalone 9:16 ad image by preserving the canonical product asset and building the scene around it.
@@ -137,7 +167,7 @@ The one promise this ad makes: ${clean(angle.promise, 160) || 'the product\'s co
 ${angle.brief ? `CREATIVE BRIEF (written by the strategist after studying the winning ads in this niche; follow it closely):\n${clean(angle.brief, 1200)}\n` : `Scene: ${clean(angle.scene, 600)}\n`}${angle.design ? `Design reference (structure of a long-running ad in this niche; reproduce the layout logic, product placement and visual hierarchy, never any brand, wording or claim from it): ${clean(angle.design, 500)}\n` : ''}
 ${textOverlayBlock(angle)}
 ${options.frontalProduct ? `\nCAMERA ON THE PRODUCT: shoot the package at its own height with its front face parallel to the image plane (no top-down or three-quarter views of the pack); it stands on a level surface with a soft contact shadow. Props, people and the environment may be angled freely; only the package stays square-on.\n` : ''}${critique ? `\nFIXES FROM CREATIVE REVIEW - a previous render of this ad was rejected; apply every fix:\n${critique}\n` : ''}
-${options.productKind === 'apparel' ? APPAREL_LOCK : PRODUCT_LOCK}
+${lock}
 
 ${PERFORMANCE_STANDARD}
 

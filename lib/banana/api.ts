@@ -91,13 +91,16 @@ export interface ProductIdentityValidation {
 export async function requestGeminiText(
   parts: GeminiPart[],
   generationConfig: NonNullable<GeminiRequest['generationConfig']>,
-  operation: string
+  operation: string,
+  /** Tried first, in order (e.g. a pro model for prompt writing); the defaults follow. */
+  preferredModels: string[] = []
 ): Promise<{ response: { data: GeminiResponse }; providerModel: string }> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
 
   // Google retired gemini-2.5-flash(-lite) for new API keys; keep them as late fallbacks only.
   const modelCandidates = Array.from(new Set([
+    ...preferredModels,
     process.env.GEMINI_ANALYSIS_MODEL,
     'gemini-3.8-flash',
     'gemini-3.5-flash-lite',
@@ -137,9 +140,11 @@ export async function requestGeminiText(
       const unavailableModel = status === 404 || (
         status === 400 && /model|not found|not supported/i.test(upstreamMessage)
       );
+      // Timeouts, overload and rate limits are transient: try the next model instead of failing the step.
+      const transient = !status || status === 429 || status >= 500 || error.code === 'ECONNABORTED' || /timeout/i.test(error.message);
 
-      console.warn(`${operation} failed with ${providerModel}:`, status, upstreamMessage);
-      if (unavailableModel) continue;
+      console.warn(`${operation} failed with ${providerModel}:`, status ?? error.code, upstreamMessage);
+      if (unavailableModel || transient) continue;
 
       throw new Error(`Google ${operation.toLowerCase()} failed${status ? ` (${status})` : ''}: ${upstreamMessage}`);
     }
