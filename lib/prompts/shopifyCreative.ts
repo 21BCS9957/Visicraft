@@ -51,6 +51,8 @@ export interface AdAngle {
   withText?: boolean;
   /** The planner's full expert image brief for this creative (composition, subject, light, palette, type). */
   brief?: string;
+  /** Mirrored winners: the creative director's detailed JSON shot spec (camera, lens, light, wardrobe...). */
+  shot?: Record<string, unknown>;
   /** Present only for text-overlay slots. */
   headline?: string;
   subline?: string;
@@ -171,8 +173,13 @@ export function buildMetaAdCreativePrompt(options: {
   /** Real product pixels will be pasted in afterwards: keep the pack face square to the camera. */
   frontalProduct?: boolean;
   productKind?: 'packaged' | 'apparel' | 'object';
+  /** Garments: the exact pattern spec (compact JSON) written from the store photos. */
+  productSpec?: string;
 }): string {
   const manifest = clean(options.identityManifest, 3200);
+  const specBlock = options.productSpec
+    ? `\nGARMENT SPEC - reproduce every listed detail exactly; the product photos win if anything differs:\n${options.productSpec.slice(0, 4000)}\n`
+    : '';
   const direction = clean(options.userDirection, 1200);
   const angle = options.withText ? options.angle : { ...options.angle, headline: undefined, subline: undefined, kicker: undefined, cta: undefined };
 
@@ -193,15 +200,15 @@ export function buildMetaAdCreativePrompt(options: {
       ? `TEXT - render exactly these lines, spelled exactly; they are the ONLY words in the image:
 ${lines}
 Typography and placement - match the reference ad's text treatment: ${clean(angle.typography, 500)}
-If the reference has a text element not listed above, leave that space empty. Never reproduce any word from reference image 2; no prices, badges, logos, brand names or URLs. Never over the product.`
+If the reference has a text element not listed above, leave that space empty. Never reproduce any word from the reference ad; no prices, badges, logos, brand names or URLs. Never over the product.`
       : textOverlayBlock(angle);
     return `
 Create exactly one finished, standalone ${format} Meta ad image for our product, modelled on a proven winning ad in this niche. Reference image 1 (and any closer views of it) is our product${angle.referenceImage ? '; the last reference image is the winning ad to follow for layout, light and typography' : ''}.
 
 ${productBrief(options.context)}
-${direction ? `Client direction: ${direction}\n` : ''}${manifest ? `\nFORENSIC PRODUCT IDENTITY MANIFEST - use this only to verify the preserved product; never re-typeset from it:\n${manifest}\n` : ''}
-THE SHOT (written by our creative director from the winning ad; follow it closely):
-${clean(angle.brief, 1600)}
+${direction ? `Client direction: ${direction}\n` : ''}${manifest ? `\nFORENSIC PRODUCT IDENTITY MANIFEST - use this only to verify the preserved product; never re-typeset from it:\n${manifest}\n` : ''}${specBlock}
+THE SHOT (${angle.shot ? 'JSON spec' : 'brief'} written by our creative director from the winning ad; follow every detail):
+${angle.shot ? JSON.stringify(angle.shot).slice(0, 6000) : clean(angle.brief, 1600)}
 
 ${textBlock}
 ${critique ? `\nFIXES FROM CREATIVE REVIEW - a previous render of this ad was rejected; apply every fix:\n${critique}\n` : ''}
@@ -222,7 +229,7 @@ You are the creative director of a top Indian D2C performance agency, making a M
 
 ${productBrief(options.context)}
 ${direction ? `User art direction: ${direction}` : ''}
-${manifest ? `\nFORENSIC PRODUCT IDENTITY MANIFEST - use this only to verify the preserved pixels; never re-typeset from it:\n${manifest}\n` : ''}
+${manifest ? `\nFORENSIC PRODUCT IDENTITY MANIFEST - use this only to verify the preserved pixels; never re-typeset from it:\n${manifest}\n` : ''}${specBlock}
 CREATIVE ANGLE - ${clean(angle.name, 60)}
 The one promise this ad makes: ${clean(angle.promise, 160) || 'the product\'s core benefit, shown not told'}
 ${angle.brief ? `CREATIVE BRIEF (written by the strategist after studying the winning ads in this niche; follow it closely):\n${clean(angle.brief, 1200)}\n` : `Scene: ${clean(angle.scene, 600)}\n`}${angle.design ? `Design reference (structure of a long-running ad in this niche; reproduce the layout logic, product placement and visual hierarchy, never any brand, wording or claim from it): ${clean(angle.design, 500)}\n` : ''}

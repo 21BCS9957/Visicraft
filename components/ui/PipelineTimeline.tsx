@@ -103,6 +103,33 @@ function Chip({ children, tone = 'neutral' }: { children: React.ReactNode; tone?
   );
 }
 
+/** A generated JSON prompt, collapsed by default, that the user can read and copy. */
+export function PromptJson({ label, value }: { label: string; value: unknown }) {
+  const [copied, setCopied] = useState(false);
+  const text = JSON.stringify(value, null, 2);
+  return (
+    <details className="mt-2 rounded-lg border border-white/8 bg-black/30">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-1.5 text-[10px] uppercase tracking-[0.14em] text-white/45">
+        <span>{label}</span>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.preventDefault();
+            navigator.clipboard?.writeText(text).then(() => {
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 1500);
+            }).catch(() => undefined);
+          }}
+          className="rounded-full border border-white/15 px-2 py-0.5 normal-case tracking-normal text-white/60 transition-colors hover:text-white"
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </summary>
+      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words px-2.5 pb-2.5 text-[10px] leading-relaxed text-white/60">{text}</pre>
+    </details>
+  );
+}
+
 function Counter({ label, value, active }: { label: string; value: number | string; active?: boolean }) {
   return (
     <div className={cn('rounded-xl border px-3 py-2 text-left', active ? 'border-[#fff05a]/25 bg-[#fff05a]/[0.06]' : 'border-white/8 bg-black/25')}>
@@ -116,9 +143,9 @@ interface CaptureData { title?: string; brand?: string; images?: string[]; canon
 interface UnderstandData { canonicalImage?: string; title?: string; brand?: string; niche?: string; price?: string; tier?: string; keywords?: string[]; competitors?: string[]; locked?: string[]; productPasted?: boolean }
 interface ResearchData { scraped?: number; designed?: number; relevant?: number; styled?: number; winners?: number; ads?: Array<{ id: string; pageName: string; daysRunning: number; collationCount?: number; imageUrl?: string; videoUrl?: string; libraryUrl: string; mediaKind?: string; style?: string; styleConfirmed?: boolean }> }
 interface AnalyzeData { designs?: Array<{ pageName: string; format: string; hook: string; daysRunning: number; sequence?: Array<{ t: string; shot: string }> }> }
-interface PlanData { angles?: Array<{ index: number; name: string; promise?: string; headline?: string; subline?: string; kicker?: string; cta?: string; withText: boolean; modelledOn?: string; referenceImage?: string; brief?: string }> }
+interface PlanData { angles?: Array<{ index: number; name: string; promise?: string; headline?: string; subline?: string; kicker?: string; cta?: string; withText: boolean; modelledOn?: string; referenceImage?: string; brief?: string; shot?: Record<string, unknown> }> }
 interface GenerateData { passed?: number; withheld?: number; retrying?: number }
-interface StoryboardData { storyboard?: { hook: string; shots: Array<{ t: string; action: string; camera: string }>; modelledOn?: string; style?: string; script?: string } }
+interface StoryboardData { storyboard?: { hook: string; shots: Array<{ t: string; action: string; camera: string }>; modelledOn?: string; style?: string; script?: string; promptJson?: Record<string, unknown> } }
 
 function StageBody({ stage }: { stage: StageState }) {
   const data = (stage.data ?? {}) as Record<string, unknown>;
@@ -249,6 +276,7 @@ function StageBody({ stage }: { stage: StageState }) {
                   <p className="mt-1 text-[11px] text-white/60">{a.promise}</p>
                 ) : null}
                 {a.modelledOn && <p className="mt-1 text-[10px] text-white/35">Modelled on {a.modelledOn}</p>}
+                {a.shot && <PromptJson label="Image prompt (JSON)" value={a.shot} />}
               </div>
             </div>
           ))}
@@ -282,6 +310,7 @@ function StageBody({ stage }: { stage: StageState }) {
               </li>
             ))}
           </ol>
+          {sb.promptJson && <PromptJson label="Veo prompt (JSON)" value={sb.promptJson} />}
         </div>
       );
     }

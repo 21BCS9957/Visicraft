@@ -38,6 +38,7 @@ import { VIDEO_STYLES, videoStyleLabel, type VideoStyle } from '@/lib/videoStyle
 import {
   IMAGE_STAGES,
   PipelineTimeline,
+  PromptJson,
   VIDEO_STAGES,
   initialStages,
   type StageId,
@@ -105,6 +106,8 @@ interface VideoStoryboard {
   style?: string;
   /** UGC and talking-head videos: the line the person says. */
   script?: string;
+  /** The detailed JSON prompt sent to Veo. */
+  promptJson?: Record<string, unknown>;
 }
 
 interface CreativeSlot {
@@ -117,6 +120,8 @@ interface CreativeSlot {
   retrying?: boolean;
   /** Output format, matched to the winning ad it mirrors. */
   aspectRatio?: string;
+  /** The garment was kept from the store photo (edited setting) rather than redrawn. */
+  exactGarment?: boolean;
   retryReason?: 'quality' | 'product' | 'safety';
   failReason?: 'product' | 'generation' | 'safety' | 'quality';
 }
@@ -1060,6 +1065,18 @@ export function HeroSection() {
       generate: { id: 'generate', status: 'pending' },
       done: { id: 'done', status: 'pending' },
     });
+    // ?previewPipeline=video also shows a finished plan and storyboard with their JSON prompts.
+    if (new URLSearchParams(window.location.search).get('previewPipeline') === 'video') {
+      const sampleShot = { subject: 'Everyday Indian woman, late 20s, looking into the lens, lips closed', product: 'Worn exactly as in the store photo: rust-to-red metallic tissue saree, narrow gold border of small dark-centred flowers on gold vines, red blouse in diagonal bands of cream floral jaal', camera: 'Smartphone front-camera look, 24mm equivalent, eye level', lighting: 'Soft window light from the left, 5600K' };
+      const samplePrompt = { format: { duration_s: 8, aspect_ratio: '9:16', look: 'Cinematic portrait video', fps: 30 }, first_frame: 'Full body shot of a young Indian woman in a sunlit hallway, right hand on hip', camera: { rig: 'Tripod', lens: '50mm', framing: 'Full body, locked-off', movement: 'Static' }, timeline: [{ t: '0.0-2.0s', action: 'Smiles, begins speaking with a slight head tilt', camera: 'Locked-off', line: 'Want an authentic handwoven tissue saree?' }], audio: { dialogue: 'Speaker says: “Want an authentic handwoven tissue saree?”', music: 'none' } };
+      setPipelineOrder(VIDEO_STAGES);
+      setPipeline((current) => ({
+        ...current,
+        research: { id: 'research', status: 'done', detail: '1 winner', data: { scraped: 214, relevant: 19, styled: 2, winners: 1 } },
+        plan: { id: 'plan', status: 'done', detail: 'Heritage hallway', data: { angles: [{ index: 2, name: 'Heritage hallway', withText: false, modelledOn: 'HMR Handlooms', brief: 'A creator in a sunlit hallway, the saree exactly as in the store photo.', shot: sampleShot }] } },
+        storyboard: { id: 'storyboard', status: 'done', detail: 'Hook', data: { storyboard: { hook: 'A warm, direct question to camera', style: 'ugc', script: 'Want an authentic handwoven tissue saree?', shots: [{ t: '0.0-2.0s', action: 'Smiles, begins speaking', camera: 'Locked-off' }], promptJson: samplePrompt } } },
+      }));
+    }
   }, []);
 
   // Dev-only: /?previewSlots=1 shows the four loading cards without generating.
@@ -1517,7 +1534,7 @@ export function HeroSection() {
                   return { ...current, generate: { ...g, data: { ...d, passed: (d.passed ?? 0) + 1, retrying: Math.max(0, (d.retrying ?? 0) - 1) } } };
                 });
                 setCreativeSlots((slots) => slots.map((slot, i) => (slots.length === 1 ? i === 0 : i === index)
-                  ? { ...slot, url: String(event.url), retrying: false }
+                  ? { ...slot, url: String(event.url), retrying: false, exactGarment: event.exactGarment === true, withText: typeof event.withText === 'boolean' ? event.withText : slot.withText }
                   : slot));
                 setProgress((p) => Math.min(96, p + 8));
               } else if (event.type === 'retry' && index >= 0) {
@@ -2207,7 +2224,7 @@ export function HeroSection() {
                             {slot.angle}
                           </span>
                           <span className="rounded-full border border-white/10 bg-black/55 px-2.5 py-1 text-[10px] font-medium text-white/60 backdrop-blur">
-                            {slot.withText ? 'Ad copy' : 'Clean'}
+                            {slot.exactGarment ? 'Exact garment' : slot.withText ? 'Ad copy' : 'Clean'}
                           </span>
                         </div>
                       )}
@@ -2267,6 +2284,7 @@ export function HeroSection() {
                       ))}
                     </ol>
                     {storyboard.mood && <p className="mt-3 text-[11px] text-white/40">Mood: {storyboard.mood}</p>}
+                    {storyboard.promptJson && <PromptJson label="Veo prompt (JSON)" value={storyboard.promptJson} />}
                   </div>
                 </div>
               )}

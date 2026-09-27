@@ -15,9 +15,13 @@ export type VideoProvider = 'gemini' | 'vertex';
 
 export interface VeoJobOptions {
   imageUrl: string;
+  /** Pins the clip's final frame (Veo 3.1 first/last-frame mode, 8 s): for a garment, the exact frame again. */
+  lastFrameUrl?: string;
   prompt: string;
   negativePrompt?: string;
   model?: string;
+  /** Overrides the model's default output resolution (Veo 3.1: "720p", "1080p" or "4k"). */
+  resolution?: string;
   aspectRatio?: string;
   duration?: string | number;
   numResults?: number;
@@ -127,7 +131,11 @@ export async function submitVeoJob(options: VeoJobOptions): Promise<VeoJob> {
   }
   const dataUrl = await imageToBase64(options.imageUrl);
   const imageBase64 = dataUrl.split(',')[1];
-  const durationSeconds = clampDuration(options.duration);
+  const lastFrame = options.lastFrameUrl
+    ? { bytesBase64Encoded: (options.lastFrameUrl === options.imageUrl ? dataUrl : await imageToBase64(options.lastFrameUrl)).split(',')[1], mimeType: 'image/jpeg' }
+    : undefined;
+  // First/last-frame mode only runs 8-second clips.
+  const durationSeconds = lastFrame ? 8 : clampDuration(options.duration);
 
   if (provider === 'gemini') {
     const apiKey = process.env.GEMINI_API_KEY as string;
@@ -136,10 +144,10 @@ export async function submitVeoJob(options: VeoJobOptions): Promise<VeoJob> {
     const response = await axios.post<{ name?: string }>(
       `${GEMINI_BASE}/models/${model}:predictLongRunning`,
       {
-        instances: [{ prompt: options.prompt || 'A smooth cinematic tracking shot', image: { bytesBase64Encoded: imageBase64, mimeType: 'image/jpeg' } }],
+        instances: [{ prompt: options.prompt || 'A smooth cinematic tracking shot', image: { bytesBase64Encoded: imageBase64, mimeType: 'image/jpeg' }, ...(lastFrame ? { lastFrame } : {}) }],
         parameters: {
           aspectRatio: options.aspectRatio || '16:9',
-          resolution: capabilities.resolution,
+          resolution: options.resolution || capabilities.resolution,
           durationSeconds,
           negativePrompt: options.negativePrompt || undefined,
           personGeneration: 'allow_adult',
@@ -168,7 +176,7 @@ export async function submitVeoJob(options: VeoJobOptions): Promise<VeoJob> {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      instances: [{ prompt: options.prompt || 'A smooth cinematic tracking shot', image: { bytesBase64Encoded: imageBase64, mimeType: 'image/jpeg' } }],
+      instances: [{ prompt: options.prompt || 'A smooth cinematic tracking shot', image: { bytesBase64Encoded: imageBase64, mimeType: 'image/jpeg' }, ...(lastFrame ? { lastFrame } : {}) }],
       parameters: {
         sampleCount: options.numResults || 1,
         durationSeconds,

@@ -3,6 +3,7 @@ import { loadPreparedReferences, requestGeminiText } from '@/lib/banana/api';
 import { DEFAULT_AD_ANGLES, productBrief, type AdAngle, type ShopifyProductContext } from '@/lib/prompts/shopifyCreative';
 import type { AdDesign, WinningAd } from '@/lib/server/metaAdResearch';
 import type { ProviderUsage } from '@/lib/server/usage';
+import { PROMPT_WRITER_MODELS } from '@/lib/server/writerModels';
 
 /**
  * One winning ad in, one generation prompt out. Gemini looks at a proven ad from the
@@ -11,8 +12,6 @@ import type { ProviderUsage } from '@/lib/server/usage';
  * product photo, so the competitor's product and branding never reach it.
  */
 
-// The strongest writer on this key (13.7 s on a test prompt vs ~20 s for flash); flash follows as fallback.
-const PROMPT_WRITER_MODELS = (process.env.PROMPT_WRITER_MODEL || 'gemini-3.1-pro-preview').split(',').map((m) => m.trim()).filter(Boolean);
 
 /** The Meta format closest to the winning ad's shape (landscape snaps to square). */
 async function winnerFormat(base64: string): Promise<'1:1' | '4:5' | '9:16'> {
@@ -34,6 +33,8 @@ async function writeOne(options: {
   identityManifest?: string;
   productKind?: 'packaged' | 'apparel' | 'object';
   userDirection?: string;
+  /** Garments: exact pattern spec (compact JSON) from the store photos. */
+  productSpec?: string;
   /** 0 = the winner's format as it is; 1+ = same format, different moment, for a distinct creative. */
   variation: number;
 }): Promise<{ angle: AdAngle; usage: ProviderUsage }> {
@@ -50,7 +51,7 @@ async function writeOne(options: {
         text: `You are the creative director of a top Indian D2C performance agency. Your ads are judged on revenue.
 
 IMAGE A is a Meta ad for a competing product. It has been live for ${winner.daysRunning} days${winner.collationCount > 1 ? ` across ${winner.collationCount} ad variants` : ''} and is still running: the advertiser keeps paying for it, so it sells.${design ? ` Our analyst's read of it: format "${clean(design.format, 120)}"; hook "${clean(design.hook, 160)}"; why it works: ${clean(design.whyItWorks, 200)}` : ''}${winner.mediaKind === 'video' ? ' (Image A is the cover frame of a video ad.)' : ''}
-IMAGE B is OUR product: ${productBrief(options.context)}${options.identityManifest ? `\nIdentity notes on our product: ${clean(options.identityManifest, 900)}` : ''}
+IMAGE B is OUR product: ${productBrief(options.context)}${options.identityManifest ? `\nIdentity notes on our product: ${clean(options.identityManifest, 900)}` : ''}${options.productSpec ? `\nExact garment spec of our product (every detail must appear in shot.product, word for word where it names patterns):\n${options.productSpec.slice(0, 3000)}` : ''}
 ${options.userDirection ? `Client direction: ${clean(options.userDirection, 400)}\n` : ''}
 Write the prompt an image model will use to create OUR ad. The image model will ALSO see IMAGE A as a layout and style reference and IMAGE B as the product, so be precise and concrete about what must match. Recreate what makes IMAGE A work, as closely as possible: its composition and framing (where the subject sits, how much of the frame it fills, crop), camera angle and lens feel, subject pose and styling, the kind of setting, lighting direction and quality, colour grade, mood, and how big and where the product sits. Put OUR product (IMAGE B) where their product is, and nothing of theirs.
 
@@ -60,18 +61,28 @@ Rules:
 - ${apparel ? 'Our product is a garment: an adult model wears it exactly as in IMAGE B (colour, fabric, lace/print, cut, trims, closures), shown completely; tasteful editorial styling that complies with Meta policy (no nudity, no sexualised posing).' : 'Our product must appear exactly as in IMAGE B (shape, colours, logo, all printed text); say where it sits, how large, and how it is held or used, and that it stays identical to the reference.'}
 - Indian setting and people where the ad has a setting or people; adults only.
 - Format: ${format}, the same as IMAGE A${format === '9:16' ? '; keep the top 14% and bottom 20% free of key elements' : ''}.
-${options.variation > 0 ? `- This is variation #${options.variation + 1} of this format: keep the winning format, but change the moment, setting or action so it is a clearly different creative.\n` : ''}- The prompt: 110-170 words, present tense, concrete, describing the shot for a photoreal image model. No reasoning, no references to "image A" or "the competitor".
+${options.variation > 0 ? `- This is variation #${options.variation + 1} of this format: keep the winning format, but change the moment, setting or action so it is a clearly different creative.\n` : ''}- "shot": the detailed JSON shot spec a photoreal image model will follow, as concrete as a photographer's call sheet (real values, not adjectives like "beautiful" or "stunning"), present tense, 250-400 words in total, never mentioning "image A" or the competitor:
+  "subject": who is in frame: age range, look, hair and makeup, expression, pose and gesture (adults; Indian where people appear),
+  "product": how OUR product appears: worn, held or placed; its position and share of the frame; every identifying detail (colours, fabric, pattern motifs with their size and arrangement, borders, trims, logo, printed words) exactly as IMAGE B and the spec show,
+  "composition": framing and crop, where the subject and product sit, negative space for any text,
+  "camera": body and lens (e.g. "full-frame, 85mm at f/2"), angle and height, focus point, depth of field,
+  "lighting": key, fill and rim with direction, quality and colour temperature; practical lights; time of day,
+  "setting": location and set dressing, background elements and how soft they are,
+  "colour_grade": palette and grade of the scene (never recolour the product),
+  "realism": skin texture, how the fabric or material behaves (drape, sheen, transparency, folds), natural imperfections, lens character,
+  "mood": the feeling in 5-8 words.
+- "summary": one sentence describing the shot, for the client.
 
 - "typography" (only when hasText is true): describe IMAGE A's text treatment precisely enough to reproduce it, element by element using the names kicker, headline, subline and button: font style (e.g. high-contrast didone serif, condensed grotesque sans, flowing script), weight, case, letter spacing, size relative to the frame, colour, any highlight box or outline, alignment, line breaks, and exact position both in the frame and relative to the subject (e.g. "split into two words either side of the model's head at eye level", "lower-left, over the car seat, below the kicker"). Describe only elements we filled. Empty string when hasText is false.
 
-Return JSON only: {"name":"2-4 word angle name","promise":"the one promise in the shopper's words","hasText":false,"kicker":"","headline":"","subline":"","cta":"","typography":"","format":"format of IMAGE A in <=10 words","prompt":"..."}`,
+Return JSON only: {"name":"2-4 word angle name","promise":"the one promise in the shopper's words","hasText":false,"kicker":"","headline":"","subline":"","cta":"","typography":"","format":"format of IMAGE A in <=10 words","summary":"","shot":{"subject":"","product":"","composition":"","camera":"","lighting":"","setting":"","colour_grade":"","realism":"","mood":""}}`,
       },
       { text: 'IMAGE A - WINNING AD:' },
       { inlineData: { mimeType: images[0].mimeType, data: images[0].data } },
       { text: 'IMAGE B - OUR PRODUCT:' },
       { inlineData: { mimeType: images[1].mimeType, data: images[1].data } },
     ],
-    { temperature: 0.5 },
+    { temperature: 0.5, responseMimeType: 'application/json' },
     'Winner prompt writing',
     PROMPT_WRITER_MODELS
   );
@@ -82,8 +93,13 @@ Return JSON only: {"name":"2-4 word angle name","promise":"the one promise in th
   const end = json.lastIndexOf('}');
   if (start < 0 || end <= start) throw new Error('Prompt writer returned no JSON');
   const parsed = JSON.parse(json.slice(start, end + 1)) as Record<string, unknown>;
-  const prompt = clean(parsed.prompt, 1600);
-  if (!prompt) throw new Error('Prompt writer returned an empty prompt');
+  // The shot spec keeps its structure: each field is cleaned, empty ones dropped.
+  const shotRaw = parsed.shot && typeof parsed.shot === 'object' && !Array.isArray(parsed.shot) ? parsed.shot as Record<string, unknown> : null;
+  const shot = shotRaw
+    ? Object.fromEntries(Object.entries(shotRaw).map(([k, v]) => [k, clean(v, 900)]).filter(([, v]) => v))
+    : undefined;
+  const summary = clean(parsed.summary, 300) || clean(parsed.prompt, 1600);
+  if (!summary && !shot) throw new Error('Prompt writer returned an empty prompt');
   const headline = clean(parsed.headline, 60);
   const hasText = parsed.hasText === true && Boolean(headline);
 
@@ -101,7 +117,8 @@ Return JSON only: {"name":"2-4 word angle name","promise":"the one promise in th
       kicker: hasText ? clean(parsed.kicker, 60) || undefined : undefined,
       cta: hasText ? clean(parsed.cta, 24) || undefined : undefined,
       typography: hasText ? clean(parsed.typography, 500) || undefined : undefined,
-      brief: prompt,
+      brief: summary || clean(shot?.subject, 300),
+      shot: shot && Object.keys(shot).length >= 4 ? shot : undefined,
       modelledOn: winner.pageName,
       referenceImage: winner.imageUrl,
       aspectRatio: format,
@@ -124,6 +141,7 @@ export async function writePromptsFromWinners(options: {
   identityManifest?: string;
   productKind?: 'packaged' | 'apparel' | 'object';
   userDirection?: string;
+  productSpec?: string;
 }): Promise<{ angles: AdAngle[]; usages: ProviderUsage[]; failed: number }> {
   // Round-robin by advertiser so four slots come from four different winners when possible.
   const withImages = options.winners.filter((ad) => ad.imageUrl);
@@ -153,6 +171,7 @@ export async function writePromptsFromWinners(options: {
         identityManifest: options.identityManifest,
         productKind: options.productKind,
         userDirection: options.userDirection,
+        productSpec: options.productSpec,
         variation: Math.floor(k / pool.length),
       });
       angles[slot] = written.angle;
