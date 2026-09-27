@@ -84,6 +84,10 @@ export interface ProductIdentityAnalysis {
   detailReferenceIndexes: number[];
   /** Garments: the canonical photo shows a person wearing it, so it can be the base of an exact edit. */
   onModel: boolean;
+  /** Garments on a model: the photo to animate, with the face visible and the garment largest. */
+  heroReferenceIndex: number;
+  /** Garments on a model: front or three-quarter photos with the face visible, best first (bases for exact edits). */
+  modelShotIndexes: number[];
   /** packaged = printed packaging; apparel = worn on the body; object = unpackaged item. */
   productKind: ProductKind;
   /** Intimate wear, swimwear or adult products: video models refuse people wearing/using them. */
@@ -266,7 +270,7 @@ export async function analyzeProductIdentity(referenceImages: string[]): Promise
   const parts: GeminiPart[] = [{
     text: `Act as a forensic packaging and product-identity analyst. Inspect every supplied reference, determine which single image gives the clearest, largest, most front-facing and least-obstructed view of the actual product, then return a concise PRODUCT IDENTITY MANIFEST for another image model.
 
-The first line must be exactly CANONICAL_REFERENCE_INDEX: N, where N is the one-based reference number you selected. The second line must be exactly PRODUCT_KIND: packaged, apparel or object (packaged = a product with printed packaging such as a pouch, box, bottle, jar or tube; apparel = clothing, lingerie, footwear, bags or accessories worn on the body; object = an unpackaged physical item such as furniture, a gadget, cookware or jewellery). The third line must be exactly SENSITIVE: yes or no (yes = lingerie, bras, underwear, shapewear, swimwear, sleepwear that is revealing, or adult/intimate products). The fourth line must be exactly DETAIL_REFERENCE_INDEXES: followed by up to 2 other reference numbers, comma-separated, that show this SAME product closer or from another side (fabric, weave, print or embroidery close-up, border, blouse, back view, label), best first; never collages, infographics, size charts, images with marketing text or a different product; write none if there are none. The fifth line must be exactly ON_MODEL: yes or no (yes = the selected image shows a person wearing the product, full or three-quarter length, face visible).
+The first line must be exactly CANONICAL_REFERENCE_INDEX: N, where N is the one-based reference number you selected. The second line must be exactly PRODUCT_KIND: packaged, apparel or object (packaged = a product with printed packaging such as a pouch, box, bottle, jar or tube; apparel = clothing, lingerie, footwear, bags or accessories worn on the body; object = an unpackaged physical item such as furniture, a gadget, cookware or jewellery). The third line must be exactly SENSITIVE: yes or no (yes = lingerie, bras, underwear, shapewear, swimwear, sleepwear that is revealing, or adult/intimate products). The fourth line must be exactly DETAIL_REFERENCE_INDEXES: followed by up to 2 other reference numbers, comma-separated, that show this SAME product closer or from another side (fabric, weave, print or embroidery close-up, border, blouse, back view, label), best first; never collages, infographics, size charts, images with marketing text or a different product; write none if there are none. The fifth line must be exactly ON_MODEL: yes or no (yes = the selected image shows a person wearing the product, full or three-quarter length, face visible). The sixth line must be exactly HERO_REFERENCE_INDEX: N, the one photo to turn into a video: for a product worn by a model, the photo where the model's face is visible and the product is shown largest while its key features stay visible (prefer a front or three-quarter shot from head to mid-thigh over a full-length one; never a back view, a close-up without the face, or a flat lay); otherwise the same N as the canonical. The seventh line must be exactly MODEL_SHOT_INDEXES: up to 4 reference numbers of photos showing the model's face and the product from the front or three-quarter (no back views, no face-less close-ups), best first, or none.
 Choose the image where the product is largest, sharpest, most complete and least obstructed. For packaged goods strongly prefer a plain front-facing packshot; for apparel prefer the clearest full view of the garment (on a model or flat) showing its construction. Rank lower: collages, infographics, and images with added icons, badges, arrows or marketing text. Do not automatically select image 1.
 
 Include:
@@ -314,6 +318,13 @@ Do not propose a campaign scene. Do not improve or rewrite copy. Keep the respon
   const productKind = (kindMatch?.[1]?.toLowerCase() as ProductKind | undefined) ?? 'packaged';
   const sensitive = /SENSITIVE\s*:\s*yes/i.test(analysisText);
   const onModel = /ON_MODEL\s*:\s*yes/i.test(analysisText);
+  const toSource = (n: number) => (Number.isInteger(n) && n >= 1 && n <= images.length ? sourceIndexes[n - 1] : undefined);
+  const heroReferenceIndex = toSource(Number(analysisText.match(/HERO_REFERENCE_INDEX\s*:\s*(\d+)/i)?.[1])) ?? canonicalReferenceIndex;
+  const modelShotIndexes = (analysisText.match(/MODEL_SHOT_INDEXES\s*:\s*([^\n]*)/i)?.[1] ?? '')
+    .split(/[,\s]+/)
+    .map((n) => toSource(Number(n)))
+    .filter((index, i, all): index is number => index !== undefined && all.indexOf(index) === i)
+    .slice(0, 4);
   const detailReferenceIndexes = (analysisText.match(/DETAIL_REFERENCE_INDEXES\s*:\s*([^\n]*)/i)?.[1] ?? '')
     .split(/[,\s]+/)
     .map((n) => Number(n))
@@ -327,6 +338,8 @@ Do not propose a campaign scene. Do not improve or rewrite copy. Keep the respon
     .replace(/^\s*SENSITIVE\s*:\s*\w+\s*/i, '')
     .replace(/^\s*DETAIL_REFERENCE_INDEXES\s*:[^\n]*\s*/i, '')
     .replace(/^\s*ON_MODEL\s*:\s*\w+\s*/i, '')
+    .replace(/^\s*HERO_REFERENCE_INDEX\s*:\s*\d+\s*/i, '')
+    .replace(/^\s*MODEL_SHOT_INDEXES\s*:[^\n]*\s*/i, '')
     .trim();
 
   const usageMetadata = response.data.usageMetadata;
@@ -338,6 +351,8 @@ Do not propose a campaign scene. Do not improve or rewrite copy. Keep the respon
     canonicalReferenceIndex,
     detailReferenceIndexes,
     onModel,
+    heroReferenceIndex,
+    modelShotIndexes: modelShotIndexes.length ? modelShotIndexes : onModel ? [heroReferenceIndex] : [],
     productKind,
     sensitive,
     usage: {
@@ -475,7 +490,7 @@ export async function generateThumbnail(
   model?: string,
   aspectRatio?: string,
   resolution?: string,
-  referencePolicy: 'balanced' | 'product-lock' | 'product-repair' | 'subject-lock' | 'product-plus-style' | 'garment-repair' = 'balanced'
+  referencePolicy: 'balanced' | 'product-lock' | 'product-repair' | 'subject-lock' | 'product-plus-style' = 'balanced'
 ): Promise<GeneratedImageData> {
   const apiKey = process.env.GEMINI_API_KEY!;
 
@@ -551,7 +566,6 @@ export async function generateThumbnail(
       'product-lock': 'REFERENCE PROTOCOL: Image 1 is the PRIMARY CANONICAL PRODUCT and overrides every other image if details conflict. Images 2 onward are supporting angles of the same product. They are evidence for fidelity, not separate products and not style references.',
       'product-repair': 'REPAIR PROTOCOL: Image 1 is the PRIMARY CANONICAL PRODUCT and the immutable identity source. Image 2 is a generated campaign composition whose scene may be retained, but whose product failed identity review. Replace only the incorrect product with a faithful copy of Image 1; never blend their packaging.',
       'product-plus-style': 'REFERENCE PROTOCOL: Image 1 is OUR PRODUCT, the only product that may appear, reproduced exactly; any images after it except the last are closer views of the same product, for its fine detail. The LAST image is a LAYOUT AND STYLE REFERENCE: a proven ad from another brand. Match it closely in composition and framing, camera angle and lens feel, the pose and styling direction, the kind of setting, the lighting and colour grade, and the typography treatment of its text (font style, weight, case, size, colour, placement). Never copy anything that identifies that brand: not its product, logo, brand name, watermark, words, prices or offers, and not the face or identity of any person in it (cast a different person). When it shows a similar product (another garment, another pack), none of that product\'s colours, fabric, weave, motifs, borders, embroidery, prints or trims may carry over to ours.',
-      'garment-repair': 'EDIT PROTOCOL: This is a local edit of a finished frame, not a new image. Image 1 is the frame and the base of the edit: its person, face, hair, pose, hands, framing, background, lighting and colour grade stay exactly as they are, and so do the garment\'s drape, folds, fit, shading and silhouette. Images 2 onward show our real garment (its main photo and enlarged crops of its details). Repaint only the garment\'s fabric pattern, weave, embroidery and border so they match images 2 onward exactly (motif type, size, arrangement and colours), following the folds and lighting of image 1. Output the same frame with the same size and aspect ratio.',
       'subject-lock': 'EDIT PROTOCOL: This is a photo edit, not a new portrait. Image 1 is a real person and the base of the edit: their face, hair, facial hair, skin, build and clothing are immutable and must appear pixel-faithful in the result. Image 2 (if present) is the product package; copy it exactly. Change only what the instructions say to change: background, props, what the hands hold, framing. Never generate a different person, a lookalike, or a cleaned-up version of this person.',
     };
     const labelFor = (index: number, total: number): string => {
@@ -570,10 +584,6 @@ export async function generateThumbnail(
             : index === total - 1
               ? `REFERENCE IMAGE ${index + 1} - LAYOUT & STYLE REFERENCE ONLY (another brand's ad). Follow its look and layout; copy nothing that identifies that brand, its product or its model.`
               : `REFERENCE IMAGE ${index + 1} - OUR PRODUCT, CLOSER VIEW. Copy its fabric, pattern, embroidery, trims and printed detail exactly.`;
-        case 'garment-repair':
-          return index === 0
-            ? 'REFERENCE IMAGE 1 - THE FRAME TO EDIT. Keep everything; change only the garment\'s pattern and embroidery.'
-            : `REFERENCE IMAGE ${index + 1} - OUR REAL GARMENT${index === 1 ? ' (MAIN PHOTO)' : ' (ENLARGED DETAIL)'}. Copy its pattern, weave, embroidery and border exactly onto the garment in image 1.`;
         case 'subject-lock':
           return index === 0
             ? 'REFERENCE IMAGE 1 - THE PERSON (BASE OF THE EDIT). Keep this exact individual: same face, hair, facial hair, skin tone, build and clothing, including any prints or graphics on the clothes.'
@@ -586,7 +596,6 @@ export async function generateThumbnail(
       'product-lock': 'FINAL IDENTITY REMINDER: the set, model, pose, and lighting may change; the product from reference image 1 may not change.',
       'product-repair': 'FINAL REPAIR CHECK: keep the campaign scene, but ensure the visible product is unmistakably and faithfully the canonical product from image 1. Do not retain any invented package text from image 2.',
       'product-plus-style': 'FINAL CHECK: the product is exactly image 1 and its closer views; composition, light and typography follow the last image; nothing that identifies that brand, its product or its model appears.',
-      'garment-repair': 'FINAL CHECK: the frame is unchanged except the garment\'s pattern, which now matches the real garment exactly, following the original folds and light; same size and aspect ratio, no borders or padding.',
       'subject-lock': 'FINAL IDENTITY REMINDER: the background, props and framing may change; the person from reference image 1 may not. Same face, same hair, same clothes with the same prints. If a requested change would require altering the person, keep the person and simplify the change.',
     };
 

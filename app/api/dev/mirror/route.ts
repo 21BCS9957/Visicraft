@@ -6,7 +6,7 @@ import { writePromptsFromWinners } from '@/lib/server/winnerPrompts';
 import { judgeAdCreative } from '@/lib/server/adJudge';
 import { heroFrameDirection, resolveVideoStyle } from '@/lib/server/videoStoryboard';
 import { cropGarmentDetails, describeGarmentSpec } from '@/lib/server/productSpec';
-import { exactGarmentFramePrompt, garmentRepairPrompt } from '@/lib/server/garmentRepair';
+import { buildExactCanvas, exactCanvasPrompt } from '@/lib/server/exactFrame';
 import { trimPaddedBands } from '@/lib/server/paddedBands';
 import type { VideoStyle } from '@/lib/videoStyles';
 
@@ -39,14 +39,14 @@ export async function POST(request: NextRequest) {
     storeImageUrls?: string[];
     /** Stop after the identity analysis. */
     identityOnly?: boolean;
-    /** Repaint the garment pattern of this rendered frame from the store photos, then check it. */
-    repairFrameUrl?: string;
-    repairIssue?: string;
     /** Exact-garment test: edit the main store photo into this setting (person and garment kept). */
     exactEditSetting?: string;
     /** Exact-garment edit driven by a creative's JSON shot spec, as the generate route does. */
     exactShot?: Record<string, unknown>;
-    exactFraming?: string;
+    /** Hand-made exact edit: this store photo as the base, this prompt, this resolution. */
+    exactBaseUrl?: string;
+    exactPrompt?: string;
+    resolution?: string;
   };
   const started = Date.now();
   const direction = [body.userDirection, body.videoStyle ? heroFrameDirection(resolveVideoStyle(body.videoStyle), body.productKind) : '']
@@ -66,14 +66,18 @@ export async function POST(request: NextRequest) {
     if (body.identityOnly) {
       return NextResponse.json({ canonical, details, crops, productKind: identity?.productKind, manifest: identity?.manifest, spec });
     }
-    if ((body.exactEditSetting || body.exactShot) && identity) {
+    if ((body.exactEditSetting || body.exactShot || body.exactPrompt || body.exactBaseUrl) && identity) {
+      // As the generate route: the base photo at its own scale on a 9:16 canvas, strips painted.
+      const base = body.exactBaseUrl ?? (body.storeImageUrls?.[identity.heroReferenceIndex] ?? canonical);
+      const canvas = body.exactPrompt ? { url: base, padded: false } : await buildExactCanvas(base, '9:16');
+      const setting = typeof body.exactShot?.setting === 'string' ? body.exactShot.setting : body.exactEditSetting;
       const edited = await runImageGeneration({
         mode: 'generate',
-        referenceImages: [canonical],
-        prompt: exactGarmentFramePrompt({ shot: body.exactShot, brief: body.exactEditSetting, format: '9:16', framing: body.exactFraming }),
+        referenceImages: [canvas.url],
+        prompt: body.exactPrompt ?? exactCanvasPrompt({ padded: canvas.padded, garment: spec?.signature.join('; '), setting }),
         model: 'nano-banana-pro',
         aspectRatio: '9:16',
-        resolution: '2K',
+        resolution: body.resolution ?? '2K',
         persistToGenerationsTable: false,
         referencePolicy: 'subject-lock',
       });
@@ -81,7 +85,7 @@ export async function POST(request: NextRequest) {
       const trimmed = editedUrl ? await trimPaddedBands(editedUrl) : null;
       if (trimmed?.trimmed) editedUrl = trimmed.url;
       const check = editedUrl
-        ? await validateProductIdentity(canonical, editedUrl, identity.manifest, {
+        ? await validateProductIdentity(base, editedUrl, identity.manifest, {
             productKind: identity.productKind,
             detailImageUrls: details,
             garmentChecks: spec ? { signature: spec.signature, never: spec.never } : undefined,
@@ -90,34 +94,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         ms: Date.now() - started,
         url: editedUrl,
-        bands: trimmed?.bands,
-        check: check ? { passed: check.passed, score: check.score, checks: check.checks, reason: check.reason } : undefined,
-      });
-    }
-    if (body.repairFrameUrl && identity) {
-      const repaired = await runImageGeneration({
-        mode: 'generate',
-        referenceImages: [body.repairFrameUrl, ...productRefs],
-        prompt: garmentRepairPrompt({ issue: body.repairIssue, productSpec: spec?.json }),
-        model: 'nano-banana-pro',
-        aspectRatio: '9:16',
-        resolution: '2K',
-        persistToGenerationsTable: false,
-        referencePolicy: 'garment-repair',
-      });
-      let fixedUrl = repaired.images[0];
-      const trimmed = fixedUrl ? await trimPaddedBands(fixedUrl) : null;
-      if (trimmed?.trimmed) fixedUrl = trimmed.url;
-      const check = fixedUrl
-        ? await validateProductIdentity(canonical, fixedUrl, identity.manifest, {
-            productKind: identity.productKind,
-            detailImageUrls: details,
-            garmentChecks: spec ? { signature: spec.signature, never: spec.never } : undefined,
-          })
-        : undefined;
-      return NextResponse.json({
-        ms: Date.now() - started,
-        url: fixedUrl,
+        spec: spec ? { signature: spec.signature, never: spec.never } : undefined,
         bands: trimmed?.bands,
         check: check ? { passed: check.passed, score: check.score, checks: check.checks, reason: check.reason } : undefined,
       });

@@ -228,6 +228,8 @@ export function estimateGoogleVideoCostUsd(options: {
   model?: string;
   duration?: string | number;
   numResults?: number;
+  /** Veo 3.1 at 4K costs $0.60/s instead of $0.40/s. */
+  resolution?: string;
 }): number {
   const model = options.model || 'veo-2.0-generate-001';
   const seconds = parseDurationSeconds(options.duration, 5);
@@ -235,7 +237,9 @@ export function estimateGoogleVideoCostUsd(options: {
 
   let perSecond = readNumberEnv('GOOGLE_VEO_2_USD_PER_SECOND', 0.35);
   if (model.includes('veo-3.1') || model.includes('veo-3')) {
-    perSecond = readNumberEnv('GOOGLE_VEO_3_1_USD_PER_SECOND', 0.4);
+    perSecond = /4k/i.test(options.resolution ?? '')
+      ? readNumberEnv('GOOGLE_VEO_3_1_4K_USD_PER_SECOND', 0.6)
+      : readNumberEnv('GOOGLE_VEO_3_1_USD_PER_SECOND', 0.4);
   } else if (model.includes('veo-1')) {
     perSecond = readNumberEnv('GOOGLE_VEO_1_USD_PER_SECOND', 0.2);
   }

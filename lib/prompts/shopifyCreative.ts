@@ -162,6 +162,25 @@ TEXT OVERLAY - render exactly this ad copy, spelled exactly, nothing else:
 ${subline ? `- Supporting line: "${subline}"\n` : ''}Typography like a top D2C brand's paid ad: a bold, modern sans-serif headline (large enough to read on a phone at feed size, roughly 6-9% of frame height per line, maximum two lines), the supporting line smaller and lighter beneath it, tight consistent spacing, left- or centre-aligned as the composition demands. Guarantee legibility with real contrast (light type on a darker area or a subtle, natural darkening behind the type), never a slapped-on box. Place the copy in clear negative space in the upper-middle or lower-middle of the frame, never overlapping the product and never inside the top 14% or bottom 20%. No other words, prices, badges, logos or buttons.`.trim();
 }
 
+/**
+ * The on-image copy for a creative: every text element of a mirrored winner with our own
+ * words and its typography, or the house style when there is no typography to follow.
+ */
+export function adCopyBlock(angle: AdAngle): string {
+  if (!(angle.withText && angle.headline && angle.typography)) return textOverlayBlock(angle);
+  // Every text element of the winner gets our own words, so the model never fills a gap with theirs.
+  const lines = [
+    angle.kicker ? `- Kicker (the small line in the reference's kicker position): "${clean(angle.kicker, 60)}"` : '',
+    `- Headline: "${clean(angle.headline, 60)}"`,
+    angle.subline ? `- Supporting line: "${clean(angle.subline, 70)}"` : '',
+    angle.cta ? `- Button label: "${clean(angle.cta, 24)}"` : '',
+  ].filter(Boolean).join('\n');
+  return `TEXT - render exactly these lines, spelled exactly; they are the ONLY words in the image:
+${lines}
+Typography and placement - match the reference ad's text treatment: ${clean(angle.typography, 500)}
+If the reference has a text element not listed above, leave that space empty. Never reproduce any word from the reference ad; no prices, badges, logos, brand names or URLs. Never over the product.`;
+}
+
 export function buildMetaAdCreativePrompt(options: {
   context?: ShopifyProductContext;
   userDirection?: string;
@@ -189,19 +208,7 @@ export function buildMetaAdCreativePrompt(options: {
   // Modelled on a specific winning ad: the creative director's prompt is the shot.
   if (angle.brief && angle.modelledOn) {
     const format = angle.aspectRatio ?? '9:16';
-    // Every text element of the winner gets our own words, so the model never fills a gap with theirs.
-    const lines = [
-      angle.kicker ? `- Kicker (the small line in the reference's kicker position): "${clean(angle.kicker, 60)}"` : '',
-      `- Headline: "${clean(angle.headline, 60)}"`,
-      angle.subline ? `- Supporting line: "${clean(angle.subline, 70)}"` : '',
-      angle.cta ? `- Button label: "${clean(angle.cta, 24)}"` : '',
-    ].filter(Boolean).join('\n');
-    const textBlock = angle.withText && angle.headline && angle.typography
-      ? `TEXT - render exactly these lines, spelled exactly; they are the ONLY words in the image:
-${lines}
-Typography and placement - match the reference ad's text treatment: ${clean(angle.typography, 500)}
-If the reference has a text element not listed above, leave that space empty. Never reproduce any word from the reference ad; no prices, badges, logos, brand names or URLs. Never over the product.`
-      : textOverlayBlock(angle);
+    const textBlock = adCopyBlock(angle);
     return `
 Create exactly one finished, standalone ${format} Meta ad image for our product, modelled on a proven winning ad in this niche. Reference image 1 (and any closer views of it) is our product${angle.referenceImage ? '; the last reference image is the winning ad to follow for layout, light and typography' : ''}.
 

@@ -83,16 +83,42 @@ const SILENT_SOUND = 'Sound: natural ambient sound and a soft, warm music bed on
 const speakingSound = (script: string) =>
   `Sound: only the on-camera person's own voice saying exactly "${script}", clear, natural and lip-synced, with light room tone; no music, no other voices.`;
 
-/** How each style is shot, for the storyboard writer. */
-const STYLE_DIRECTION: Record<MadeStyle, string> = {
-  ugc: 'UGC STYLE: it must look like a real customer\'s phone video, not an ad shoot. Handheld front-camera framing at arm\'s length with slight natural shake, natural daylight, a real Indian home (or wherever the winner films). The person talks to the camera like a friend and shows the product to the lens. One continuous take.',
-  talking_head: 'TALKING-HEAD STYLE: one presenter (founder, expert or stylist) framed chest-up at eye level, steady camera with at most a slow push-in, clean real setting, confident and warm delivery straight into the lens. The product stays fully visible in their hands, on them or beside them.',
-  demo: 'DEMO STYLE: the product being used (hands interacting with it; for a garment, a slow, gentle turn of the body or a hand resting on the pallu so its fall and sheen show, never lifting or re-draping it) in a clear chain of motions within one continuous shot, building to the moment the benefit is visible.',
-  cinematic: 'CINEMATIC STYLE: a polished, premium brand film: purposeful camera moves, beautiful light, no one addresses the camera.',
-};
+/** How each style is shot, for the storyboard writer. A worn garment is always filmed still. */
+function styleDirection(style: MadeStyle, garment: boolean): string {
+  switch (style) {
+    case 'ugc':
+      return garment
+        ? 'UGC STYLE: it must feel like a real customer\'s own video, not an ad shoot: a phone propped at eye level (static, no shake), natural daylight, a real Indian home. The person talks to the camera like a friend. One continuous take.'
+        : 'UGC STYLE: it must look like a real customer\'s phone video, not an ad shoot. Handheld front-camera framing at arm\'s length with slight natural shake, natural daylight, a real Indian home (or wherever the winner films). The person talks to the camera like a friend and shows the product to the lens. One continuous take.';
+    case 'talking_head':
+      return `TALKING-HEAD STYLE: one presenter (founder, expert or stylist) at eye level, ${garment ? 'on a locked-off camera' : 'steady camera with at most a slow push-in'}, clean real setting, confident and warm delivery straight into the lens. The product stays fully visible ${garment ? 'as they wear it' : 'in their hands, on them or beside them'}.`;
+    case 'demo':
+      return garment
+        ? 'DEMO STYLE: the garment shown as it is worn: a still, graceful pose in which its drape, border and sheen read clearly, the light doing the work, one continuous take.'
+        : 'DEMO STYLE: the product being used (hands interacting with it) in a clear chain of motions within one continuous shot, building to the moment the benefit is visible.';
+    default:
+      return garment
+        ? 'CINEMATIC STYLE: a premium fashion film shot as a living photograph: beautiful, constant light and a locked-off frame; at most a glance to the lens.'
+        : 'CINEMATIC STYLE: a polished, premium brand film: purposeful camera moves, beautiful light, no one addresses the camera.';
+  }
+}
 
-function fallbackStoryboard(context: ShopifyProductContext | undefined, durationSeconds: number): VideoStoryboard {
+function fallbackStoryboard(context: ShopifyProductContext | undefined, durationSeconds: number, garment = false): VideoStoryboard {
   const name = clean(context?.title, 120) || 'the product';
+  if (garment) {
+    return {
+      hook: 'A living photograph of the garment as it is worn',
+      shots: [
+        { t: '0-3s', action: 'The exact pose of the first frame, still, breathing softly', camera: 'locked-off', purpose: 'hook' },
+        { t: '3-5.5s', action: 'Her eyes meet the lens with a faint smile and a slow blink', camera: 'locked-off', purpose: 'connection' },
+        { t: `5.5-${durationSeconds}s`, action: 'She settles back into the starting pose', camera: 'locked-off', purpose: 'hold' },
+      ],
+      mood: 'calm, premium, intimate',
+      style: 'cinematic',
+      prompt: `Vertical 9:16 fashion film, ${durationSeconds} seconds, one continuous take on a locked-off tripod camera. The person in the first frame holds that exact pose: soft natural breathing, her eyes glide to meet the lens with a head movement of a few degrees, a faint closed-lip smile and one slow blink, then she settles back into the starting pose. Her body, arms, hands and ${name} stay exactly as in the first frame; constant soft light. ${GARMENT_MOTION} ${PRODUCT_LOCK_FOR_VIDEO} ${SILENT_SOUND}`,
+      negativePrompt: GARMENT_NEGATIVE,
+    };
+  }
   return {
     hook: 'Slow reveal of the product in a warm, real setting',
     shots: [
@@ -111,7 +137,21 @@ function fallbackStoryboard(context: ShopifyProductContext | undefined, duration
  * Video models redraw a garment's weave whenever it moves or the camera gets closer than
  * the first frame showed it, so fine patterns morph. For clothing the motion stays small.
  */
-const GARMENT_MOTION = 'GARMENT FIDELITY IN MOTION: the camera never moves closer than the first frame\'s framing (a locked-off frame or a slow, slight drift); the person\'s movements stay small and natural (speaking, smiling, a slight head tilt, a small hand gesture, a gentle weight shift). No twirling, walking, spinning, lifting or spreading the pallu, touching, stretching or re-draping the fabric: the pattern must stay exactly as in the first frame.';
+const GARMENT_MOTION = 'GARMENT FIDELITY - the clip is a living photograph: the camera is locked off on a tripod and the framing is identical in the first and last frame (no zoom, push-in, dolly or reframing). The person\'s body, shoulders, hips, arms, hands and the garment stay exactly where they are for the whole clip; only natural breathing, blinks, the eyes, a head movement of a few degrees, the lips when speaking, and a faint smile move. No turning, twirling, walking, stepping, gesturing, lifting or touching the fabric; the light stays perfectly constant (no glints or flicker on the fabric).';
+/** Used with Veo's pinned last frame (the first frame again), which stops drift and zoom. */
+const GARMENT_RETURN = 'The clip\'s last frame is identical to its first: the final beat settles back into exactly the starting pose, gaze and expression.';
+/** What Veo does to a worn garment when it is not held back, in the plain nouns its negative prompt wants. */
+const GARMENT_NEGATIVE = 'turning, spinning, twirling, body rotation, profile view, stepping, walking, changing pose, gesturing, moving arms, moving hands, fabric movement, fabric shimmer, camera movement, zoom, push-in, dolly, reframing, cuts, morphing, warping, melting fabric, changing pattern, changing embroidery, extra fingers, distorted hands, distorted face, face change, flicker, text, captions, logos, watermark, cartoon, CGI, plastic skin, blur';
+
+/** Comma lists merged without duplicates, first list first. */
+function mergeTerms(...lists: string[]): string {
+  const seen = new Set<string>();
+  return lists
+    .flatMap((list) => list.split(','))
+    .map((term) => term.trim())
+    .filter((term) => term && !seen.has(term.toLowerCase()) && (seen.add(term.toLowerCase()), true))
+    .join(', ');
+}
 
 /** Veo 3.1 reads at most 1,024 prompt tokens; compact JSON of this size stays under it. */
 const MAX_VEO_PROMPT_CHARS = 3400;
@@ -223,11 +263,14 @@ export async function planVideoStoryboard(options: {
   /** Garments: the exact pattern spec (compact JSON) and the wrong versions to avoid. */
   productSpec?: string;
   never?: string[];
+  /** Veo's last frame is pinned to the first (a worn garment's exact frame). */
+  pinnedLastFrame?: boolean;
 }): Promise<{ storyboard: VideoStoryboard; usage?: ProviderUsage }> {
   const durationSeconds = options.durationSeconds ?? 8;
   const designs = (options.winningDesigns ?? []).filter((d) => d.sequence?.length).slice(0, 3);
   const style = resolveVideoStyle(options.style, options.winningDesigns, options.sensitive);
   const speaking = isSpeakingStyle(style);
+  const garment = options.productKind === 'apparel';
   const maxWords = Math.max(10, Math.round(durationSeconds * 2.2));
   const frame = heroFrameDirection(style, options.productKind);
   const designBlock = designs.length
@@ -241,15 +284,15 @@ export async function planVideoStoryboard(options: {
       [{
         text: `You are the creative director and director of photography of a top Indian D2C video studio. Write a ${durationSeconds}-second, vertical 9:16 Meta Reels ad for this product as ONE detailed JSON prompt for Google Veo 3.1 (image-to-video with native audio). Your goal is the most realistic, scroll-stopping, revenue-driving clip possible.
 
-${STYLE_DIRECTION[style]}
+${styleDirection(style, garment)}
 
 ${productBrief(options.context)}
 Product identity notes: ${clean(options.identityManifest, 1200) || 'n/a'}
 ${options.productSpec ? `Exact garment spec (subject.wardrobe must name these patterns precisely, as they appear in the product photos):\n${options.productSpec.slice(0, 3000)}\n` : ''}${frame ? `The first frame (already being rendered) is staged like this: ${frame}\n` : ''}${options.userDirection ? `Client direction: ${clean(options.userDirection, 600)}\n` : ''}${options.adPatterns ? `\nWHAT THE LONGEST-RUNNING ADS IN THIS NICHE DO:\n${clean(options.adPatterns, 1800)}\n` : ''}${designBlock}
 How to write it:
 - Fill every field of the JSON shape below with concrete, filmable values, as a DoP would on a call sheet: real lens and rig choices, light directions and colour temperatures, exact actions and gestures. No vague adjectives ("beautiful", "stunning", "high quality").
-- "timeline": ${Math.max(3, Math.min(5, Math.round(durationSeconds / 2)))} beats covering 0-${durationSeconds}s. The clip starts from the supplied first frame, so beat 1 begins from that exact pose and framing. One continuous take: smooth camera moves and natural motion, no hard cuts, no new locations, no outfit or lighting changes.
-- The product stays identical and clearly visible throughout${options.productKind === 'apparel' ? ' as worn in the first frame; name its fabric, colours and pattern motifs exactly in subject.wardrobe, and describe its sheen and how light plays on it in realism' : ', front-facing and unobstructed'}. No on-screen text, captions, subtitles or logos.${options.productKind === 'apparel' ? `\n- ${GARMENT_MOTION}` : ''}
+- "timeline": ${Math.max(3, Math.min(5, Math.round(durationSeconds / 2)))} beats covering 0-${durationSeconds}s. The clip starts from the supplied first frame, so beat 1 begins from that exact pose and framing. ${garment ? 'One continuous take on a locked-off camera: no cuts, no new locations, no outfit or lighting changes.' : 'One continuous take: smooth camera moves and natural motion, no hard cuts, no new locations, no outfit or lighting changes.'}
+- The product stays identical and clearly visible throughout${options.productKind === 'apparel' ? ' as worn in the first frame; name its fabric, colours and pattern motifs exactly in subject.wardrobe, and describe its sheen and how light plays on it in realism' : ', front-facing and unobstructed'}. No on-screen text, captions, subtitles or logos.${garment ? `\n- ${GARMENT_MOTION}${options.pinnedLastFrame ? ` ${GARMENT_RETURN}` : ''}` : ''}
 - Photoreal and Indian where people or places appear; only claims the product context supports.
 ${speaking ? `- The person speaks ONE line (the "script"): at most ${maxWords} words so it fits ${durationSeconds} seconds at a natural pace; its first words are the hook; ${style === 'ugc' ? 'first person, like a real customer talking to a friend' : 'the presenter\'s confident voice, speaking to the viewer'}; one concrete benefit; no prices, discounts or competitor names; never mention a city, store, market, visit or event unless the product context names it (the brand sells online). Language: the winning ad's spoken language when it is English or Hinglish (Hinglish in Latin script), otherwise natural Indian English. Put it verbatim in audio.dialogue as Speaker says: “...” and split it across the timeline beats' "line" fields. Lips move in sync; only their voice with light room tone, no music.
 - "avoid" must never list people, faces, speech or voices.` : `- The first 1.5 seconds must stop the scroll (motion, reveal, contrast); the end holds calmly on the product.
@@ -289,15 +332,17 @@ Return JSON only: {"hook":"one sentence for the client","mood":"","modelledOn":1
         script: script || undefined,
         promptJson: compiled.json,
         prompt: compiled.prompt,
-        negativePrompt: speaking
-          ? speakingNegative(compiled.negative)
-          : compiled.negative || 'text, captions, subtitles, logos, watermark, warped packaging, morphing, extra products, flicker, low quality',
+        negativePrompt: garment
+          ? speakingNegative(mergeTerms(GARMENT_NEGATIVE, compiled.negative))
+          : speaking
+            ? speakingNegative(compiled.negative)
+            : compiled.negative || 'text, captions, subtitles, logos, watermark, warped packaging, morphing, extra products, flicker, low quality',
       },
       usage: usageOf(response, providerModel),
     };
   } catch (error) {
     console.warn('Video storyboard planning failed, using fallback:', error);
-    const fallback = fallbackStoryboard(options.context, durationSeconds);
+    const fallback = fallbackStoryboard(options.context, durationSeconds, options.productKind === 'apparel');
     return { storyboard: options.sensitive ? { ...fallback, prompt: neutralise(fallback.prompt) } : fallback };
   }
 }
@@ -309,7 +354,7 @@ Return JSON only: {"hook":"one sentence for the client","mood":"","modelledOn":1
  */
 export async function groundVideoStoryboard(
   storyboard: VideoStoryboard,
-  options: { heroUrl: string; productSpec?: string; never?: string[]; sensitive?: boolean; garment?: boolean }
+  options: { heroUrl: string; productSpec?: string; never?: string[]; sensitive?: boolean; garment?: boolean; pinnedLastFrame?: boolean }
 ): Promise<{ storyboard: VideoStoryboard; usage?: ProviderUsage } | null> {
   if (!storyboard.promptJson) return null;
   const { images } = await loadPreparedReferences([options.heroUrl]);
@@ -323,7 +368,7 @@ export async function groundVideoStoryboard(
       {
         text: `You are the director of photography who wrote this JSON prompt for Google Veo 3.1. The image is the exact first frame Veo will animate (already rendered with the real product). Update the JSON so it matches this frame exactly:
 - "first_frame", "subject.who" (the same person: age, face, hair, expression), "subject.wardrobe" (exactly as worn here${options.productSpec ? ', using the garment spec\'s pattern names' : ''}), "scene", "camera.framing" and lens feel, "lighting" and "colour_grade" as they are in the frame.
-- Timeline beat 1 starts from this exact pose and framing; every later beat must be physically possible from it (no outfit, location or lighting changes; only smooth camera moves and natural motion).${options.garment ? `\n- ${GARMENT_MOTION} Rewrite any beat or camera move that breaks this.` : ''}
+- Timeline beat 1 starts from this exact pose and framing; every later beat must be physically possible from it (no outfit, location or lighting changes; ${options.garment ? 'only natural motion on a locked-off camera' : 'only smooth camera moves and natural motion'}).${options.garment ? `\n- ${GARMENT_MOTION}${options.pinnedLastFrame ? ` ${GARMENT_RETURN}` : ''} Rewrite any beat or camera move that breaks this.` : ''}
 - Keep the style, the beats' intent${speaking ? ', the spoken line word for word' : ''} and the audio plan. Keep it under 2,600 characters.
 ${options.productSpec ? `\nGarment spec:\n${options.productSpec.slice(0, 2500)}\n` : ''}
 Return JSON only: {"veo":{...the full updated JSON, same shape, including "avoid"...}}
@@ -355,7 +400,9 @@ ${JSON.stringify({ ...draft, avoid: storyboard.negativePrompt.split(',').map((a)
       shots: shots.length ? shots : storyboard.shots,
       promptJson: compiled.json,
       prompt: compiled.prompt,
-      negativePrompt: compiled.negative ? (speaking ? speakingNegative(compiled.negative) : compiled.negative) : storyboard.negativePrompt,
+      negativePrompt: options.garment
+        ? speakingNegative(mergeTerms(GARMENT_NEGATIVE, compiled.negative))
+        : compiled.negative ? (speaking ? speakingNegative(compiled.negative) : compiled.negative) : storyboard.negativePrompt,
     },
     usage: usageOf(response, providerModel),
   };

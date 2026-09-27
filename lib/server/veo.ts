@@ -1,4 +1,5 @@
 import axios from 'axios';
+import sharp from 'sharp';
 import { GoogleAuth } from 'google-auth-library';
 import { imageToBase64 } from '@/lib/banana/api';
 import { uploadBufferToBucket } from '@/lib/server/supabaseStorage';
@@ -119,6 +120,25 @@ export function safeVeoPrompt(): string {
   return 'A slow, steady cinematic push-in toward the product shown in the first frame. Soft warm light glides gently across it and a subtle sheen moves over the material. The product stays perfectly still, sharp and unchanged, centred in frame. No people appear. No text, captions or logos. Calm ambient room tone with a soft, warm music bed; no voice.';
 }
 
+/** Veo's output frame size, so the first and last frames are given at exactly that size. */
+function veoFrameSize(aspectRatio: string, resolution: string): { width: number; height: number } | null {
+  const short = /4k/i.test(resolution) ? 2160 : resolution === '720p' ? 720 : 1080;
+  const long = Math.round((short * 16) / 9);
+  if (aspectRatio === '9:16') return { width: short, height: long };
+  if (aspectRatio === '16:9') return { width: long, height: short };
+  return null;
+}
+
+/** A frame for Veo, cover-fitted to the output size (no resampling or letterboxing on Veo's side). */
+async function veoFrame(url: string, size: { width: number; height: number } | null): Promise<{ bytesBase64Encoded: string; mimeType: string }> {
+  const dataUrl = await imageToBase64(url);
+  const bytes = Buffer.from(dataUrl.split(',')[1] ?? '', 'base64');
+  const fitted = size
+    ? await sharp(bytes).resize(size.width, size.height, { fit: 'cover', position: 'centre', kernel: 'lanczos3' }).jpeg({ quality: 95, chromaSubsampling: '4:4:4' }).toBuffer()
+    : bytes;
+  return { bytesBase64Encoded: fitted.toString('base64'), mimeType: 'image/jpeg' };
+}
+
 function clampDuration(duration: string | number | undefined): number {
   const raw = typeof duration === 'number' ? duration : parseFloat(String(duration || '8')) || 8;
   return Math.min(8, Math.max(4, Math.round(raw)));
@@ -129,25 +149,32 @@ export async function submitVeoJob(options: VeoJobOptions): Promise<VeoJob> {
   if (!provider) {
     throw new Error('Video generation is not configured yet (set GEMINI_API_KEY with billing, or GOOGLE_VIDEO_SERVICE_ACCOUNT_JSON).');
   }
-  const dataUrl = await imageToBase64(options.imageUrl);
-  const imageBase64 = dataUrl.split(',')[1];
-  const lastFrame = options.lastFrameUrl
-    ? { bytesBase64Encoded: (options.lastFrameUrl === options.imageUrl ? dataUrl : await imageToBase64(options.lastFrameUrl)).split(',')[1], mimeType: 'image/jpeg' }
-    : undefined;
+  const aspectRatio = options.aspectRatio || '16:9';
   // First/last-frame mode only runs 8-second clips.
-  const durationSeconds = lastFrame ? 8 : clampDuration(options.duration);
+  const durationSeconds = options.lastFrameUrl ? 8 : clampDuration(options.duration);
+  // Both frames at Veo's exact output size.
+  const frames = async (resolution: string) => {
+    const size = veoFrameSize(aspectRatio, resolution);
+    const image = await veoFrame(options.imageUrl, size);
+    const lastFrame = options.lastFrameUrl
+      ? options.lastFrameUrl === options.imageUrl ? image : await veoFrame(options.lastFrameUrl, size)
+      : undefined;
+    return { image, lastFrame };
+  };
 
   if (provider === 'gemini') {
     const apiKey = process.env.GEMINI_API_KEY as string;
     const model = await resolveGeminiVeoModel();
     const capabilities = veoCapabilities(model);
+    const resolution = options.resolution || capabilities.resolution;
+    const { image, lastFrame } = await frames(resolution);
     const response = await axios.post<{ name?: string }>(
       `${GEMINI_BASE}/models/${model}:predictLongRunning`,
       {
-        instances: [{ prompt: options.prompt || 'A smooth cinematic tracking shot', image: { bytesBase64Encoded: imageBase64, mimeType: 'image/jpeg' }, ...(lastFrame ? { lastFrame } : {}) }],
+        instances: [{ prompt: options.prompt || 'A smooth cinematic tracking shot', image, ...(lastFrame ? { lastFrame } : {}) }],
         parameters: {
-          aspectRatio: options.aspectRatio || '16:9',
-          resolution: options.resolution || capabilities.resolution,
+          aspectRatio,
+          resolution,
           durationSeconds,
           negativePrompt: options.negativePrompt || undefined,
           personGeneration: 'allow_adult',
@@ -171,17 +198,18 @@ export async function submitVeoJob(options: VeoJobOptions): Promise<VeoJob> {
   const accessToken = await vertexAccessToken(credentials);
   const model = resolveVeoModel(options.model);
   const capabilities = veoCapabilities(model);
+  const { image, lastFrame } = await frames(capabilities.resolution);
   const endpoint = `https://${LOCATION}-aiplatform.googleapis.com/v1beta1/projects/${projectId}/locations/${LOCATION}/publishers/google/models/${model}:predictLongRunning`;
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      instances: [{ prompt: options.prompt || 'A smooth cinematic tracking shot', image: { bytesBase64Encoded: imageBase64, mimeType: 'image/jpeg' }, ...(lastFrame ? { lastFrame } : {}) }],
+      instances: [{ prompt: options.prompt || 'A smooth cinematic tracking shot', image, ...(lastFrame ? { lastFrame } : {}) }],
       parameters: {
         sampleCount: options.numResults || 1,
         durationSeconds,
         resolution: capabilities.resolution,
-        aspectRatio: options.aspectRatio || '16:9',
+        aspectRatio,
         negativePrompt: options.negativePrompt || undefined,
         generateAudio: capabilities.generateAudio,
         personGeneration: 'allow_adult',

@@ -6,6 +6,7 @@ import {
 } from '@/lib/server/imageGeneration';
 import { analyzeProductIdentity, validateProductIdentity } from '@/lib/banana/api';
 import {
+  adCopyBlock,
   buildMetaAdCreativePrompt,
   CREATIVE_SLOTS,
   formatPrice,
@@ -21,7 +22,8 @@ import { describeProductNiche, researchWinningAds, type AdDesign, type WinningAd
 import { groundVideoStoryboard, heroFrameDirection, planVideoStoryboard, resolveVideoStyle } from '@/lib/server/videoStoryboard';
 import { cropGarmentDetails, describeGarmentSpec } from '@/lib/server/productSpec';
 import { trimPaddedBands } from '@/lib/server/paddedBands';
-import { exactGarmentFramePrompt } from '@/lib/server/garmentRepair';
+import { buildExactCanvas, exactCanvasPrompt, type FrameFormat } from '@/lib/server/exactFrame';
+import { validatePersonIdentity } from '@/lib/server/personIdentity';
 import { parseVideoStyle, videoStyleLabel, type VideoStyle } from '@/lib/videoStyles';
 import { judgeAdCreative } from '@/lib/server/adJudge';
 import { isVideoGenerationConfigured, resolveVeoModel, submitVeoJob } from '@/lib/server/veo';
@@ -44,6 +46,7 @@ const REQUEST_BUDGET_MS = 280_000;
 const MIN_TIME_FOR_ATTEMPT_MS = 75_000;
 // A video renders one frame and writes its storyboard in parallel, so an attempt needs less headroom.
 const MIN_TIME_FOR_VIDEO_ATTEMPT_MS = 55_000;
+const VEO_4K = /4k/i.test(process.env.VEO_RESOLUTION ?? '');
 
 const MODES: ImageGenMode[] = ['generate', 'thumbnail', 'edit', 'upscale', 'unblur'];
 
@@ -96,7 +99,10 @@ export async function POST(request: NextRequest) {
     const videoModel = resolveVeoModel(typeof body.videoModel === 'string' ? body.videoModel : undefined);
     const videoDurationSeconds = 8;
     const perImageCost = getServerImageCreditCost(mode, model, resolution);
-    const videoCost = videoAd ? getServerVideoCreditCost({ model: videoModel, duration: `${videoDurationSeconds}s` }) : 0;
+    // VEO_RESOLUTION=4k renders 4K clips (and 4K hero frames); Google charges 1.5x for them.
+    const videoCost = videoAd
+      ? Math.round(getServerVideoCreditCost({ model: videoModel, duration: `${videoDurationSeconds}s` }) * (VEO_4K ? 1.5 : 1))
+      : 0;
     const creditCost = videoAd
       ? perImageCost + videoCost
       : creativeSet
@@ -355,6 +361,23 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
         if (autoCrops?.usage) analysisUsages.push(autoCrops.usage);
         const detailViews = [...detailImages, ...(autoCrops?.crops.map((c) => c.url) ?? [])];
         const productRefs = [canonicalImage, ...detailViews];
+        // Garments worn by a model: the photo a video animates (face visible, garment largest)
+        // and the model shots that image creatives are edited from, one per slot.
+        const heroBase = referenceImages[identity.heroReferenceIndex] ?? canonicalImage;
+        const modelShots = identity.modelShotIndexes.map((i) => referenceImages[i]).filter((url): url is string => Boolean(url));
+        const exactCanvases = new Map<string, Promise<{ url: string; padded: boolean }>>();
+        const exactCanvas = (photo: string, format: FrameFormat) => {
+          const key = `${photo}|${format}`;
+          if (!exactCanvases.has(key)) {
+            exactCanvases.set(key, buildExactCanvas(photo, format).catch((error) => {
+              // Without a canvas the edit still keeps the person and garment; it only reframes less precisely.
+              console.warn('Exact canvas failed; editing the store photo as it is:', error instanceof Error ? error.message : error);
+              return { url: photo, padded: false };
+            }));
+          }
+          return exactCanvases.get(key) as Promise<{ url: string; padded: boolean }>;
+        };
+        const acceptedExact = new Set<number>();
         console.log(`Product references: canonical #${identity.canonicalReferenceIndex + 1}${detailImages.length ? `, close-ups #${identity.detailReferenceIndexes.map((i) => i + 1).join(', #')}` : ', no close-ups in the store images'}${autoCrops?.crops.length ? `, enlarged crops: ${autoCrops.crops.map((c) => c.piece).join(', ')}` : ''}`);
         // Garments: an exact pattern spec (motifs, their size and arrangement, borders, colours)
         // for every prompt and for the product check; runs while research is still going.
@@ -588,44 +611,51 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           // is never "repaired": editing the rejected frame drifts or pads it, so it gets a
           // fresh render told exactly what the product check found.
           const maxAttempts = cutout ? 2 : MAX_ATTEMPTS_PER_SLOT;
-          // A garment worn in the store photo: editing that photo (new setting, same person and
-          // garment) keeps the design exact, where a redrawn garment loses its weave. A video
-          // starts that way; an image slot tries a fresh scene first, for variety, and switches
-          // after a garment failure.
+          // A garment worn by a model in the store photos: the first take edits that photo (the
+          // person and the garment keep their pixels; the model only paints the canvas strips and,
+          // for image ads, the background from the creative's shot spec). A redrawn garment loses
+          // its weave and a redrawn person their face, so this goes first; a fresh scene is only
+          // the fallback. A video starts from the hero photo; image slots take turns across the
+          // model shots, for variety.
           const canExact = identity.productKind === 'apparel' && identity.onModel && !identity.sensitive;
-          let exactNext = canExact && Boolean(video);
+          const position = Math.max(0, slotIndexes.indexOf(index));
+          const exactBase = video ? heroBase : modelShots.length ? modelShots[position % modelShots.length] : heroBase;
+          let exactNext = canExact;
+          let exactFailures = 0;
           for (let attempt = 0; attempt < maxAttempts; attempt++) {
             if (attempt > 0 && deadline - Date.now() < minTimeForAttempt) break;
             const exact = exactNext && !stillLife();
             const repair = !exact && !cutout && identity.productKind !== 'apparel' && attempt === 1 && rejectedUrl !== null;
-            // An exact edit carries no ad copy.
-            const withCopy = exact ? false : slot.withText;
+            const withCopy = slot.withText;
             try {
               // Mirroring a winner: the image model sees our product (1) and the winning ad (2)
               // as a layout & style reference, and renders in the winner's format.
               const current = activeAngle();
               const styleRef = !repair && !exact && current.referenceImage ? current.referenceImage : undefined;
-              const format = video ? '9:16' : current.aspectRatio ?? '9:16';
-              if (exact) console.log(`Slot ${index + 1} attempt ${attempt + 1}: exact-garment edit of the store photo`);
+              const format = (video ? '9:16' : current.aspectRatio ?? '9:16') as FrameFormat;
+              const canvas = exact ? await exactCanvas(exactBase, format) : null;
+              if (exact) console.log(`Slot ${index + 1} attempt ${attempt + 1}: exact-garment edit of store photo #${referenceImages.indexOf(exactBase) + 1}${canvas?.padded ? ` on a ${format} canvas` : ''}`);
               const generated = await runImageGeneration({
                 mode,
                 referenceImages: exact
-                  ? [canonicalImage]
+                  ? [canvas?.url ?? exactBase]
                   : repair
                     ? [canonicalImage, rejectedUrl as string]
                     : styleRef ? [...productRefs, styleRef] : productRefs,
                 prompt: exact
-                  ? exactGarmentFramePrompt({
-                      shot: current.shot,
-                      brief: current.brief,
-                      format,
-                      // Never tighter than the store photo: its pixels are all the detail there is.
-                      framing: 'full length or three-quarter length, never tighter than image 1',
+                  ? exactCanvasPrompt({
+                      padded: Boolean(canvas?.padded),
+                      garment: garmentSpec?.signature.join('; '),
+                      // A video keeps the photo's own background (nothing relit); an image ad
+                      // takes the setting of the winner it mirrors.
+                      setting: video ? undefined : typeof current.shot?.setting === 'string' ? current.shot.setting : undefined,
+                      copy: withCopy && !stillLife() ? adCopyBlock(current) : undefined,
                     })
                   : promptFor(),
                 model,
                 aspectRatio: format,
-                resolution,
+                // A 4K video starts from a 4K frame, so Veo animates real detail.
+                resolution: exact && video && VEO_4K ? '4K' : resolution,
                 persistToGenerationsTable: false,
                 referencePolicy: exact ? 'subject-lock' : repair ? 'product-repair' : styleRef ? 'product-plus-style' : 'product-lock',
                 userId: user.id,
@@ -657,7 +687,8 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
               }
 
               const verify = (url: string) => validateProductIdentity(
-                canonicalImage,
+                // An exact frame is the base photo edited, so it is checked against that photo.
+                exact ? exactBase : canonicalImage,
                 url,
                 identity.manifest,
                 {
@@ -711,6 +742,22 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                 });
               }
 
+              if (validation?.passed && exact) {
+                // The face is locked too: an edited store photo must still show the same person.
+                const face = await validatePersonIdentity(exactBase, imageUrl, 'The model wearing the product in the store photo (image A).').catch((error) => {
+                  console.warn(`Slot ${index + 1} face check unavailable:`, error instanceof Error ? error.message : error);
+                  return null;
+                });
+                if (face) analysisUsages.push(face.usage);
+                if (face && !face.passed) {
+                  console.log(`Slot ${index + 1} attempt ${attempt + 1}: face check failed (${face.score}/100): ${face.reason}`);
+                  failReason = 'quality';
+                  send({ type: 'retry', index, attempt: attempt + 1, reason: 'quality' });
+                  // exactNext stays on: the next attempt is another exact edit.
+                  continue;
+                }
+              }
+
               if (validation?.passed) {
                 // Product is right; now judge it as a media buyer would. One re-roll with fixes.
                 const verdict = await judgeAdCreative({
@@ -749,6 +796,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                 }
                 acceptedCount += 1;
                 acceptedUrls.set(index, imageUrl);
+                if (exact) acceptedExact.add(index);
                 send({
                   type: 'creative',
                   index,
@@ -764,9 +812,10 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
               rejectedUrl = imageUrl;
               failReason = 'product';
               console.log(`Slot ${index + 1} attempt ${attempt + 1}: product check failed (${validation.score}/100): ${validation.reason}`);
-              // A redrawn garment that lost its design switches to the exact edit; if an exact
-              // edit ever fails, the next attempt goes back to a fresh scene.
-              exactNext = canExact && !exact;
+              // The exact edit is the reliable path, so it gets a second try; after two exact
+              // failures (or when a fresh scene failed) the next attempt switches path.
+              if (exact) exactFailures += 1;
+              exactNext = canExact && (exact ? exactFailures < 2 : true);
               if (identity.productKind === 'apparel' && validation.reason) {
                 critique = `The product check rejected the previous render because the garment changed: ${validation.reason} Copy every one of these details exactly from the product photos, and frame the garment no tighter than those photos show it.`;
               }
@@ -807,6 +856,8 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
               productKind: identity.productKind,
               productSpec: garmentSpec?.json,
               never: garmentSpec?.never,
+              // A worn garment's clip ends on its first frame (Veo's pinned last frame).
+              pinnedLastFrame: identity.productKind === 'apparel',
             })
           : null;
 
@@ -831,6 +882,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
               never: garmentSpec?.never,
               sensitive: identity.sensitive,
               garment: identity.productKind === 'apparel',
+              pinnedLastFrame: identity.productKind === 'apparel',
             }).catch((error) => {
               console.warn('Video prompt grounding failed; using the draft:', error instanceof Error ? error.message : error);
               return null;
@@ -861,6 +913,9 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                 send({ type: 'status', message: 'Rendering your video with Veo...' });
                 const job = await submitVeoJob({
                   imageUrl: heroUrl,
+                  // A worn garment: the clip returns to its exact first frame, which stops Veo's
+                  // drift and zoom and anchors the weave at both ends.
+                  lastFrameUrl: identity.productKind === 'apparel' ? heroUrl : undefined,
                   prompt: planned.storyboard.prompt,
                   negativePrompt: planned.storyboard.negativePrompt,
                   model: video.model,
@@ -873,7 +928,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                   model: job.model,
                   feature: 'video_generation',
                   videoSeconds: video.durationSeconds,
-                  estimatedCostUsd: estimateGoogleVideoCostUsd({ model: job.model, duration: `${video.durationSeconds}s`, numResults: 1 }),
+                  estimatedCostUsd: estimateGoogleVideoCostUsd({ model: job.model, duration: `${video.durationSeconds}s`, numResults: 1, resolution: VEO_4K ? '4k' : undefined }),
                   creditCost: video.cost,
                   metadata: {
                     mode: 'product_video_ad',
@@ -885,8 +940,10 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                     sensitive: identity.sensitive,
                     videoStyle: video.style,
                     madeStyle: planned.storyboard.style ?? null,
+                    exactGarment: acceptedExact.has(slotIndexes[0]),
+                    lastFramePinned: identity.productKind === 'apparel',
                     aspectRatio: '9:16',
-                    resolution: job.model.includes('veo-3') ? '1080p' : '720p',
+                    resolution: job.model.includes('veo-3') ? (VEO_4K ? '4k' : '1080p') : '720p',
                     metaAdResearch: Boolean(adPatterns),
                     modelledOn: planned.storyboard.modelledOn ?? null,
                     chargedServerSide: true,
