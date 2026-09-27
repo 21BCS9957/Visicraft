@@ -77,6 +77,8 @@ export interface ProductIdentityAnalysis {
   canonicalReferenceIndex: number;
   /** packaged = printed packaging; apparel = worn on the body; object = unpackaged item. */
   productKind: ProductKind;
+  /** Intimate wear, swimwear or adult products: video models refuse people wearing/using them. */
+  sensitive: boolean;
   usage: ProviderUsage;
 }
 
@@ -202,7 +204,7 @@ export async function analyzeProductIdentity(referenceImages: string[]): Promise
   const parts: GeminiPart[] = [{
     text: `Act as a forensic packaging and product-identity analyst. Inspect every supplied reference, determine which single image gives the clearest, largest, most front-facing and least-obstructed view of the actual product, then return a concise PRODUCT IDENTITY MANIFEST for another image model.
 
-The first line must be exactly CANONICAL_REFERENCE_INDEX: N, where N is the one-based reference number you selected. The second line must be exactly PRODUCT_KIND: packaged, apparel or object (packaged = a product with printed packaging such as a pouch, box, bottle, jar or tube; apparel = clothing, lingerie, footwear, bags or accessories worn on the body; object = an unpackaged physical item such as furniture, a gadget, cookware or jewellery).
+The first line must be exactly CANONICAL_REFERENCE_INDEX: N, where N is the one-based reference number you selected. The second line must be exactly PRODUCT_KIND: packaged, apparel or object (packaged = a product with printed packaging such as a pouch, box, bottle, jar or tube; apparel = clothing, lingerie, footwear, bags or accessories worn on the body; object = an unpackaged physical item such as furniture, a gadget, cookware or jewellery). The third line must be exactly SENSITIVE: yes or no (yes = lingerie, bras, underwear, shapewear, swimwear, sleepwear that is revealing, or adult/intimate products).
 Choose the image where the product is largest, sharpest, most complete and least obstructed. For packaged goods strongly prefer a plain front-facing packshot; for apparel prefer the clearest full view of the garment (on a model or flat) showing its construction. Rank lower: collages, infographics, and images with added icons, badges, arrows or marketing text. Do not automatically select image 1.
 
 Include:
@@ -248,9 +250,11 @@ Do not propose a campaign scene. Do not improve or rewrite copy. Keep the respon
   const canonicalReferenceIndex = sourceIndexes[selectedPreparedIndex] ?? 0;
   const kindMatch = analysisText.match(/PRODUCT_KIND\s*:\s*(packaged|apparel|object)/i);
   const productKind = (kindMatch?.[1]?.toLowerCase() as ProductKind | undefined) ?? 'packaged';
+  const sensitive = /SENSITIVE\s*:\s*yes/i.test(analysisText);
   const manifest = analysisText
     .replace(/^\s*CANONICAL_REFERENCE_INDEX\s*:\s*\d+\s*/i, '')
     .replace(/^\s*PRODUCT_KIND\s*:\s*\w+\s*/i, '')
+    .replace(/^\s*SENSITIVE\s*:\s*\w+\s*/i, '')
     .trim();
 
   const usageMetadata = response.data.usageMetadata;
@@ -261,6 +265,7 @@ Do not propose a campaign scene. Do not improve or rewrite copy. Keep the respon
     manifest: manifest.slice(0, 3200),
     canonicalReferenceIndex,
     productKind,
+    sensitive,
     usage: {
       inputTokens,
       outputTokens,

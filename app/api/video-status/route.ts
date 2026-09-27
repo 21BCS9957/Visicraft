@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleAuth } from 'google-auth-library';
 import { isGeminiOperation, pollGeminiVeoJob } from '@/lib/server/veo';
+import { handleFailedVideo } from '@/lib/server/videoJobs';
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,7 +14,8 @@ export async function POST(request: NextRequest) {
     // Jobs submitted through the Gemini API (same GEMINI_API_KEY, no service account).
     if (typeof operationId === 'string' && isGeminiOperation(operationId)) {
       const poll = await pollGeminiVeoJob(operationId);
-      return NextResponse.json(poll.error ? { done: true, progress: 0, error: poll.error } : poll);
+      // Filtered or failed: retry once with a neutral prompt, otherwise refund the credits.
+      return NextResponse.json(poll.error ? await handleFailedVideo(operationId, poll.error) : poll);
     }
 
     const serviceAccountJsonStr = process.env.GOOGLE_VIDEO_SERVICE_ACCOUNT_JSON;
@@ -62,11 +64,11 @@ export async function POST(request: NextRequest) {
     const pollData = await pollRes.json();
 
     if (pollData.error) {
-       return NextResponse.json({ done: true, progress: 0, error: pollData.error.message || 'Generation failed' });
+      return NextResponse.json(await handleFailedVideo(operationId, pollData.error.message || 'Generation failed'));
     }
 
     if (pollData.done) {
-      let videoUrl = 'https://www.w3schools.com/html/mov_bbb.mp4'; // fallback
+      let videoUrl = '';
       
       console.log('✅ Vertex LRO completed! Parsing response...');
       
@@ -87,6 +89,11 @@ export async function POST(request: NextRequest) {
           videoUrl = `data:video/mp4;base64,${pollData.response.bytesBase64Encoded}`;
       } else {
         console.warn('⚠️ Could not find video bytes in response object:', JSON.stringify(pollData).substring(0, 500));
+      }
+      if (!videoUrl) {
+        // No video came back (usually Vertex's safety filter): never hand the client a placeholder.
+        const reason = pollData.response?.raiMediaFilteredReasons?.[0] || 'Veo finished without a video (filtered by the safety policy)';
+        return NextResponse.json(await handleFailedVideo(operationId, String(reason)));
       }
       
       return NextResponse.json({

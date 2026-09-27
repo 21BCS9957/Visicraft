@@ -147,7 +147,7 @@ ${critique ? `\nFIXES FROM CREATIVE REVIEW - a previous render of this ad was re
 ${lock}
 
 CRAFT STANDARD
-A real campaign photograph, not an illustration or 3D render; natural skin, hands and anatomy; physically correct props and light. No watermarks, UI chrome, platform logos, extra or duplicated products, gibberish text, or claims the product context does not support (no invented prices, discounts, ratings or medical claims). Keep the top 14% and bottom 20% of the frame free of key elements.
+A new, full-bleed 9:16 photograph composed for this ad: never reproduce the reference photo and pad or stretch it to fit, and no bands, borders, duplicated strips or mirrored edges. A real campaign photograph, not an illustration or 3D render; natural skin, hands and anatomy; physically correct props and light. No watermarks, UI chrome, platform logos, extra or duplicated products, gibberish text, or claims the product context does not support (no invented prices, discounts, ratings or medical claims). Keep the top 14% and bottom 20% of the frame free of key elements.
 
 FINAL PRE-FLIGHT CHECK - perform silently before rendering
 1. Product: identical to reference image 1${options.productKind === 'apparel' ? ' (colour, pattern, cut, trims, closures)' : ' (shape, colours, logo, every printed word)'}; if the shot would require altering it, simplify the shot instead.

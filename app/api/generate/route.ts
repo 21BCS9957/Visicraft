@@ -344,6 +344,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           locked: lockedElements(identity.manifest),
           productPasted: Boolean(cutout),
           productKind: identity.productKind,
+          sensitive: identity.sensitive,
         });
         if (!researchPromise) { stage('research', 'skipped', 'Research not requested'); stage('analyze', 'skipped'); }
 
@@ -477,14 +478,17 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
             headline: undefined,
             subline: undefined,
           });
+          // Video models refuse people in intimate wear, so a sensitive product's hero frame
+          // starts as a still life rather than spending renders on a frame Veo will reject.
+          const stillLife = () => safetyBlocks >= 2 || (Boolean(video) && identity.sensitive);
           const promptFor = () => {
-            const active = safetyBlocks >= 2 ? safeAngle() : angle;
+            const active = stillLife() ? safeAngle() : angle;
             return buildMetaAdCreativePrompt({
               context: productContext,
               userDirection,
               identityManifest: identity.manifest,
               angle: active,
-              withText: safetyBlocks >= 2 ? false : slot.withText,
+              withText: stillLife() ? false : slot.withText,
               critique: safetyBlocks >= 2 ? undefined : critique,
               // A mirrored winner decides its own camera angle; the perspective paste follows it.
               frontalProduct: Boolean(cutout) && !active.modelledOn,
@@ -583,13 +587,20 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                   console.log(`Slot ${index + 1} attempt ${attempt + 1} review: ${verdict.score}/10`, verdict.scores, verdict.critical.length ? `critical: ${verdict.critical.join('; ')}` : '');
                 }
                 const canReroll = attempt < maxAttempts - 1 && deadline - Date.now() >= MIN_TIME_FOR_ATTEMPT_MS;
-                // One quality re-roll per creative; the remaining attempts stay for real failures.
-                if (verdict && !verdict.passed && canReroll && qualityRerolls < 1) {
+                const hasDealBreaker = Boolean(verdict && verdict.critical.length > 0);
+                // Deal-breakers (artifacts, duplicated heads, padded bands) are never kept; a merely
+                // weak creative gets one re-roll and is kept after that.
+                if (verdict && !verdict.passed && canReroll && (hasDealBreaker || qualityRerolls < 1)) {
                   qualityRerolls += 1;
                   critique = [verdict.critical.length ? `Deal-breakers: ${verdict.critical.join('; ')}.` : '', verdict.fixes].filter(Boolean).join(' ');
                   failReason = 'quality';
                   send({ type: 'retry', index, attempt: attempt + 1, reason: 'quality' });
                   continue;
+                }
+                if (hasDealBreaker) {
+                  console.log(`Slot ${index + 1}: last attempt still has deal-breakers (${verdict?.critical.join('; ')}); not kept`);
+                  failReason = 'quality';
+                  break;
                 }
                 acceptedCount += 1;
                 acceptedUrls.set(index, imageUrl);
@@ -653,6 +664,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
               adPatterns,
               winningDesigns,
               durationSeconds: video.durationSeconds,
+              sensitive: identity.sensitive,
             });
             if (planned.usage) analysisUsages.push(planned.usage);
             send({ type: 'storyboard', storyboard: planned.storyboard });
@@ -686,6 +698,11 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                   metadata: {
                     mode: 'product_video_ad',
                     operationId,
+                    // What /api/video-status needs to retry a filtered take once, or refund it.
+                    operationIds: [operationId],
+                    heroUrl,
+                    retries: 0,
+                    sensitive: identity.sensitive,
                     aspectRatio: '9:16',
                     resolution: job.model.includes('veo-3') ? '1080p' : '720p',
                     metaAdResearch: Boolean(adPatterns),

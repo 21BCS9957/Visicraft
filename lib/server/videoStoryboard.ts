@@ -22,12 +22,22 @@ export interface VideoStoryboard {
   negativePrompt: string;
 }
 
+/** Belt and braces for sensitive products: strip words that trip the video model's policy filter. */
+function neutralise(text: string): string {
+  return text
+    .replace(/\b(lingerie|underwear|bodysuit|teddy|babydoll)\b/gi, 'garment')
+    .replace(/\b(sexy|sensual|seductive|sultry|provocative|alluring)\b/gi, 'elegant')
+    .replace(/\b(intimate|intimacy)\b/gi, 'delicate')
+    .replace(/\b(bedroom|boudoir)\b/gi, 'room')
+    .replace(/\b(body|skin|curves)\b/gi, 'form');
+}
+
 function clean(value: unknown, maxLength: number): string {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, maxLength) : '';
 }
 
 /** The video model animates from an exact product frame; the prompt must never ask it to redraw the product. */
-const PRODUCT_LOCK_FOR_VIDEO = 'The first frame is the real product and its scene. The package in frame is the hero and must remain pixel-identical for the whole clip: same artwork, text, colours, shape and proportions. Never rotate it past a gentle angle, never occlude its front, never morph, regenerate or restyle it, and add no on-screen text, captions, logos or subtitles anywhere. Sound: natural ambient sound and a soft, warm music bed only; no dialogue, no voice-over, no spoken or sung words.';
+const PRODUCT_LOCK_FOR_VIDEO = 'The first frame is the real product and its scene. The product in frame is the hero and must remain pixel-identical for the whole clip: same design, text, colours, shape and proportions. Never rotate it past a gentle angle, never occlude its front, never morph, regenerate or restyle it, and add no on-screen text, captions, logos or subtitles anywhere. Sound: natural ambient sound and a soft, warm music bed only; no dialogue, no voice-over, no spoken or sung words.';
 
 function fallbackStoryboard(context: ShopifyProductContext | undefined, durationSeconds: number): VideoStoryboard {
   const name = clean(context?.title, 120) || 'the product';
@@ -56,6 +66,8 @@ export async function planVideoStoryboard(options: {
   adPatterns?: string;
   winningDesigns?: AdDesign[];
   durationSeconds?: number;
+  /** Intimate wear and similar: no person in the clip, neutral wording, camera and light motion only. */
+  sensitive?: boolean;
 }): Promise<{ storyboard: VideoStoryboard; usage?: ProviderUsage }> {
   const durationSeconds = options.durationSeconds ?? 8;
   const designs = (options.winningDesigns ?? []).filter((d) => d.sequence?.length).slice(0, 3);
@@ -81,7 +93,8 @@ Hard rules for the video model:
 - Photoreal, Indian setting where a setting is visible, realistic light; only claims supported by the product context.
 - The first 1.5 seconds must be a scroll-stopping hook (motion, reveal, contrast), the middle a benefit moment, the end a calm front-facing product hold.
 - The model generates sound: describe natural ambience and a soft music mood in the prompt; never dialogue, voice-over or lyrics.
-- This is a paid ad that must earn its spend: every beat either stops the scroll, makes the promise visible, or builds desire for the product; nothing decorative.
+- This is a paid ad that must earn its spend: every beat either stops the scroll, makes the promise visible, or builds desire for the product; nothing decorative.${options.sensitive ? `
+- CONTENT POLICY (strict): the first frame shows the product with no person, and no person appears at any point. Motion comes only from the camera and the light (slow push-in, gentle orbit, a warm light sweep, the sheen moving across the fabric). Refer to the product only as "the garment" or "the set"; never use words such as lingerie, underwear, sexy, sensual, seductive, intimate, bedroom, boudoir, body or skin.` : ''}
 
 Return JSON only:
 {"hook":"one sentence","shots":[{"t":"0-2s","action":"","camera":"","purpose":""}],"mood":"","modelledOn":1,"prompt":"the final prompt, 90-160 words, present tense, concrete, in shot order","negativePrompt":"comma-separated things to avoid"}`,
@@ -100,7 +113,7 @@ Return JSON only:
       })
       .filter((shot): shot is StoryboardShot => shot !== null)
       .slice(0, 8);
-    const prompt = clean(parsed.prompt, 1400);
+    const prompt = options.sensitive ? neutralise(clean(parsed.prompt, 1400)) : clean(parsed.prompt, 1400);
     if (!prompt || shots.length === 0) throw new Error('Storyboard response was incomplete');
     const modelledIndex = Number(parsed.modelledOn);
     const modelled = designs[(Number.isInteger(modelledIndex) && modelledIndex >= 1 ? modelledIndex - 1 : 0)];
@@ -121,6 +134,7 @@ Return JSON only:
     };
   } catch (error) {
     console.warn('Video storyboard planning failed, using fallback:', error);
-    return { storyboard: fallbackStoryboard(options.context, durationSeconds) };
+    const fallback = fallbackStoryboard(options.context, durationSeconds);
+    return { storyboard: options.sensitive ? { ...fallback, prompt: neutralise(fallback.prompt) } : fallback };
   }
 }

@@ -1379,7 +1379,8 @@ export function HeroSection() {
       setGenerationReferenceUrls(imageUrls);
 
       // Extracts the finished video URL(s) by polling the Veo operation.
-      const pollVideo = async (operationId: string): Promise<string[]> => {
+      const pollVideo = async (initialOperationId: string): Promise<string[]> => {
+        let operationId = initialOperationId;
         setProgress(15);
         setStatusMessage('Rendering video...');
         for (;;) {
@@ -1391,6 +1392,14 @@ export function HeroSection() {
           });
           if (!statusRes.ok) continue;
           const statusData = await statusRes.json();
+          // The server re-submitted a filtered take with a neutral prompt: follow the new job.
+          if (typeof statusData.retryOperationId === 'string') {
+            operationId = statusData.retryOperationId;
+            const note = typeof statusData.message === 'string' ? statusData.message : 'Re-rendering the video…';
+            setStatusMessage(note);
+            updateStage('render', 'active', note);
+            continue;
+          }
           if (statusData.error) throw new Error(statusData.error);
           if (statusData.done) {
             setProgress(100);

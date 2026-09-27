@@ -110,6 +110,11 @@ export async function resolveGeminiVeoModel(): Promise<string> {
   return model;
 }
 
+/** Minimal, policy-neutral motion for a retry after Veo's safety filter rejected a take. */
+export function safeVeoPrompt(): string {
+  return 'A slow, steady cinematic push-in toward the product shown in the first frame. Soft warm light glides gently across it and a subtle sheen moves over the material. The product stays perfectly still, sharp and unchanged, centred in frame. No people appear. No text, captions or logos. Calm ambient room tone with a soft, warm music bed; no voice.';
+}
+
 function clampDuration(duration: string | number | undefined): number {
   const raw = typeof duration === 'number' ? duration : parseFloat(String(duration || '8')) || 8;
   return Math.min(8, Math.max(4, Math.round(raw)));
