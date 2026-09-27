@@ -8,6 +8,7 @@ import { analyzeProductIdentity, validateProductIdentity } from '@/lib/banana/ap
 import {
   buildMetaAdCreativePrompt,
   CREATIVE_SLOTS,
+  safeCompositionBrief,
   type AdAngle,
   type ShopifyProductContext,
 } from '@/lib/prompts/shopifyCreative';
@@ -188,6 +189,32 @@ export async function POST(request: NextRequest) {
 
 type AuthenticatedUser = Awaited<ReturnType<typeof requireAuthenticatedUser>>;
 
+/** The user-facing reason when no creative survived, based on why each one failed. */
+function failureSummary(
+  reasons: Array<'product' | 'generation' | 'safety' | 'quality'>,
+  verifierErrors: number,
+  productKind: 'packaged' | 'apparel' | 'object',
+  video: boolean
+): string {
+  const what = video ? 'the hero frame for your video' : 'any creative';
+  const count = (r: string) => reasons.filter((x) => x === r).length;
+  if (reasons.length === 0 || (verifierErrors > 0 && count('product') === reasons.length)) {
+    return 'The product check service was unavailable, so nothing could be verified. Your credits were refunded; please try again in a minute.';
+  }
+  if (count('safety') >= Math.ceil(reasons.length / 2)) {
+    return `Google's image safety filter blocked ${what}, including a still-life version without a person. Your credits were refunded. ${productKind === 'apparel' ? 'Intimate-wear products trip this filter often; a product photo on a hanger or flat lay (no model) as the first store image usually gets through.' : 'Try again, or add a direction in the prompt box that keeps the scene simple.'}`;
+  }
+  if (count('generation') >= Math.ceil(reasons.length / 2)) {
+    return `Image generation failed for ${what} (the model returned no image). Your credits were refunded; please try again.`;
+  }
+  if (count('quality') >= Math.ceil(reasons.length / 2)) {
+    return `No version of ${what} passed our creative review. Your credits were refunded; try again or add a direction in the prompt box.`;
+  }
+  return productKind === 'apparel'
+    ? `Every version of ${what} changed the garment (colour, cut or trims), so nothing was kept and your credits were refunded. A clear, full view of the garment as the first store image helps.`
+    : `Every version of ${what} changed the product packaging, so nothing was kept and your credits were refunded. A clear, front-facing product image helps.`;
+}
+
 /** The identity-defining details from the product manifest, for the "locked" chips in the UI. */
 function lockedElements(manifest: string): string[] {
   const lines = manifest.split(/\n+/).map((l) => l.replace(/^[\s\-*•\d.)]+/, '').trim()).filter(Boolean);
@@ -243,6 +270,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
       let acceptedCount = 0;
       let verifierErrors = 0;
       const acceptedUrls = new Map<number, string>();
+      const slotFailReasons = new Map<number, 'product' | 'generation' | 'safety' | 'quality'>();
       let videoCreditsRefunded = 0;
 
       try {
@@ -435,19 +463,34 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           const slot = { withText: video ? false : (angle.withText ?? CREATIVE_SLOTS[index].withText) };
           let failReason: 'product' | 'generation' | 'safety' | 'quality' = 'generation';
           let qualityRerolls = 0;
+          let safetyBlocks = 0;
           let rejectedUrl: string | null = null;
           let critique: string | undefined;
-          const promptFor = () => buildMetaAdCreativePrompt({
-            context: productContext,
-            userDirection,
-            identityManifest: identity.manifest,
-            angle,
-            withText: slot.withText,
-            critique,
-            // A mirrored winner decides its own camera angle; the perspective paste follows it.
-            frontalProduct: Boolean(cutout) && !angle.modelledOn,
-            productKind: identity.productKind,
+          // After two safety-filter blocks, stop asking for the same kind of shot: switch to a
+          // composition without a person, which the filter allows and still sells the product.
+          const safeAngle = (): typeof angle => ({
+            ...angle,
+            name: `${angle.name} (still life)`,
+            brief: safeCompositionBrief(identity.productKind, productContext?.title),
+            modelledOn: angle.modelledOn ?? 'Safe composition',
+            withText: false,
+            headline: undefined,
+            subline: undefined,
           });
+          const promptFor = () => {
+            const active = safetyBlocks >= 2 ? safeAngle() : angle;
+            return buildMetaAdCreativePrompt({
+              context: productContext,
+              userDirection,
+              identityManifest: identity.manifest,
+              angle: active,
+              withText: safetyBlocks >= 2 ? false : slot.withText,
+              critique: safetyBlocks >= 2 ? undefined : critique,
+              // A mirrored winner decides its own camera angle; the perspective paste follows it.
+              frontalProduct: Boolean(cutout) && !active.modelledOn,
+              productKind: identity.productKind,
+            });
+          };
 
           // With the real product pasted in, a failure means occlusion or a bad box, so
           // one clean regeneration is enough; without it, allow a repair pass too.
@@ -568,8 +611,11 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
               const message = error instanceof Error ? error.message : String(error);
               console.error(`Slot ${index + 1} attempt ${attempt + 1} failed:`, message);
               if (/safety|PROHIBITED_CONTENT|IMAGE_OTHER/i.test(message)) {
-                // Re-roll with an explicitly tasteful direction instead of repeating the same prompt.
+                // Re-roll with an explicitly tasteful direction; after a second block, promptFor()
+                // switches to a composition without a person.
                 failReason = 'safety';
+                safetyBlocks += 1;
+                if (safetyBlocks === 2) console.log(`Slot ${index + 1}: blocked twice by the safety filter; switching to a still-life composition`);
                 critique = 'The previous version was blocked by the platform safety filter. Make it unmistakably tasteful editorial photography: adult model, natural relaxed posing, no suggestive gestures, no nudity, product fully shown; if in doubt, show less skin and more of the product and setting.';
                 send({ type: 'retry', index, attempt: attempt + 1, reason: 'safety' });
               } else {
@@ -578,6 +624,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
             }
           }
 
+          slotFailReasons.set(index, failReason);
           send({ type: 'slot_failed', index, reason: failReason });
           return null;
         };
@@ -664,9 +711,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           operationId,
           creditsDeducted: perImageCost * acceptedCount + (video ? video.cost - videoCreditsRefunded : 0),
           warning: acceptedCount === 0
-            ? verifierErrors > 0
-              ? 'The product check service was unavailable, so no creatives could be verified. Your credits were refunded; please try again in a minute.'
-              : 'Every attempt changed the product packaging, so nothing was kept and your credits were refunded. Try a clearer front-facing product image.'
+            ? failureSummary([...slotFailReasons.values()], verifierErrors, identity.productKind, Boolean(video))
             : videoWarning
               ? videoWarning
               : failedSlots > 0

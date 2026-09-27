@@ -193,3 +193,11 @@ ${patterns ? `Borrow the pacing and hook structure of the longest-running ads in
 ${direction ? `User direction: ${direction}` : ''}
 `.trim();
 }
+
+/** A shot without a person: the safety filter allows it, and it still sells the product. */
+export function safeCompositionBrief(productKind: 'packaged' | 'apparel' | 'object', title?: string): string {
+  const name = title ? `"${title}"` : 'the product';
+  return productKind === 'apparel'
+    ? `Luxurious editorial still life with no person in frame. The complete garment ${name} from reference image 1 is displayed front-on on an elegant tailored dress form, or laid out on a satin-draped bed, in a softly lit boudoir-style bedroom: warm bedside lamp glow, rich textiles, a few tasteful accessories arranged nearby. Every fabric, lace and trim detail is crisp and true to the reference, and the garment fills the centre of the frame. Premium, tasteful, high-end brand hero shot; 50mm lens, shallow depth of field, soft warm key light.`
+    : `Premium editorial still life with no person in frame. ${name} from reference image 1 stands front-on as the clear hero on a styled surface, surrounded by a few props that suggest how and when it is used, in warm, directional natural light with a soft contact shadow. Product sharp and identical to the reference; high-end brand hero shot; 50mm lens, shallow depth of field.`;
+}
