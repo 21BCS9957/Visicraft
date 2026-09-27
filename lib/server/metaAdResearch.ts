@@ -1,7 +1,8 @@
 import axios from 'axios';
-import { loadPreparedReferences, requestGeminiText } from '@/lib/banana/api';
+import { loadPreparedReferences, requestGeminiText, uploadGeminiFile } from '@/lib/banana/api';
 import type { ProviderUsage } from '@/lib/server/usage';
 import { formatPrice, priceLine, priceTier, type PriceTier, type ShopifyProductContext } from '@/lib/prompts/shopifyCreative';
+import { videoStyleLabel, type ClassifiedVideoStyle, type VideoStyle } from '@/lib/videoStyles';
 
 export type AdMediaType = 'image' | 'video';
 
@@ -24,6 +25,10 @@ export interface WinningAd {
   /** Ranking score: run length weighted by collation. */
   winScore: number;
   libraryUrl: string;
+  /** Video ads: creative style, first read from the cover frame and copy, then from the video itself. */
+  style?: ClassifiedVideoStyle;
+  /** True once the style was confirmed by watching the actual video. */
+  styleConfirmed?: boolean;
 }
 
 /** One beat of a video ad's timeline. */
@@ -52,6 +57,9 @@ export interface AdDesign {
   sequence?: AdSequenceShot[];
   /** Video ads only: voice-over / music / sound style. */
   audio?: string;
+  /** Video ads only: creative style, and whether it was judged from the video itself. */
+  style?: ClassifiedVideoStyle;
+  watched?: boolean;
 }
 
 export interface AdResearchResult {
@@ -64,6 +72,12 @@ export interface AdResearchResult {
   designs: AdDesign[];
   /** The price tier winners were screened against. */
   tier?: PriceTier;
+  /** The video style the user asked for. */
+  videoStyle?: VideoStyle;
+  /** No long-running ads of that style were found, so the best video ads of any style were used. */
+  styleFallback?: boolean;
+  /** That style did not exist at the product's price tier, so ads of the style from other price points were used. */
+  styleTierRelaxed?: boolean;
   /** True when sample ads were used instead of a live Ad Library scrape (AD_RESEARCH_MOCK). */
   mock: boolean;
   usage: ProviderUsage;
@@ -81,6 +95,23 @@ const MAX_VIDEO_BYTES = 12 * 1024 * 1024;
 // Gemini's inline request limit is ~20 MB in total; keep headroom for the images and text.
 const MAX_INLINE_VIDEO_TOTAL_BYTES = 15 * 1024 * 1024;
 const MAX_VIDEOS_TO_WATCH = 3;
+// With a chosen style, more candidates are watched so the style is confirmed on the video itself.
+const MAX_VIDEOS_TO_WATCH_STYLED = 5;
+// Relevant video ads whose cover frame and copy are style-labelled before the visual check.
+const STYLE_POOL = 24;
+const CLASSIFIED_STYLES: ClassifiedVideoStyle[] = ['ugc', 'talking_head', 'demo', 'cinematic', 'other'];
+const STYLE_DEFINITIONS = `- ugc: a creator or customer filming themselves, or handheld phone footage; casual real settings; reviewing, unboxing, trying on or reacting.
+- talking_head: one person speaking straight to the camera in a steady, composed shot (founder, expert, doctor, stylist, presenter).
+- demo: the product being used or demonstrated up close (applying, pouring, draping, assembling), with or without narration.
+- cinematic: a polished brand film or lifestyle montage with models and music; nobody addresses the camera.
+- other: slideshow of stills, animation, motion graphics, text cards or catalogue.
+Tie-breaks: handheld try-on, haul or get-ready footage filmed on a phone is ugc even with music and no speech; cinematic needs professional camera work, lighting and grading. A person speaking to camera in a composed, steady shot is talking_head; the same on a handheld phone selfie is ugc.`;
+// Search phrases per style, so the Ad Library query itself finds more ads of that style.
+const STYLE_SEARCH_HINT: Partial<Record<VideoStyle, string>> = {
+  ugc: 'phrases review-style and creator ads put in their copy, e.g. "honest review", "haul", "try on", "unboxing", combined with the category',
+  talking_head: 'phrases founder- or expert-led ads put in their copy, e.g. "dermatologist recommended", "founder story", "why I started", combined with the category',
+  demo: 'phrases demo and how-to ads put in their copy, e.g. "how to use", "how to drape", "watch how", combined with the category',
+};
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 type RawAd = Record<string, unknown>;
@@ -115,6 +146,16 @@ function geminiUsage(
   };
 }
 
+function addUsage(a: ProviderUsage, b?: ProviderUsage): ProviderUsage {
+  if (!b) return a;
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    totalTokens: a.totalTokens + b.totalTokens,
+    providerModel: a.providerModel ?? b.providerModel,
+  };
+}
+
 function parseJsonObject(raw: string): Record<string, unknown> | null {
   const withoutFences = raw.replace(/^```(?:json)?\s*|\s*```$/gi, '').trim();
   const start = withoutFences.indexOf('{');
@@ -133,18 +174,22 @@ export interface NicheInfo {
   competitors: string[];
   /** Where the price sits within this category in India (₹6,000 is mid for a saree, luxury for a serum). */
   tier?: PriceTier;
+  /** Extra search phrases for the chosen video style ("saree haul", "how to drape"). */
+  styleKeywords?: string[];
   usage: ProviderUsage;
 }
 
 /** What the product is, the niche it sells in, and who else sells it in this market. */
-export async function describeProductNiche(product: ShopifyProductContext, imageUrls: string[] = []): Promise<NicheInfo> {
-  return deriveNicheKeywords(product, imageUrls);
+export async function describeProductNiche(product: ShopifyProductContext, imageUrls: string[] = [], videoStyle?: VideoStyle): Promise<NicheInfo> {
+  return deriveNicheKeywords(product, imageUrls, videoStyle);
 }
 
 async function deriveNicheKeywords(
   product: ShopifyProductContext,
-  imageUrls: string[] = []
+  imageUrls: string[] = [],
+  videoStyle?: VideoStyle
 ): Promise<NicheInfo> {
+  const styleHint = videoStyle ? STYLE_SEARCH_HINT[videoStyle] : undefined;
   // The photos settle what the product actually is when the listing text is vague.
   const price = formatPrice(product);
   const parts: Parameters<typeof requestGeminiText>[0] = [{
@@ -155,8 +200,8 @@ Brand: ${clean(product.vendor, 120) || 'unknown'}
 ${price ? `Price: ${price}` : 'Price: unknown'}
 Description: ${clean(product.description, 700) || 'unknown'}
 
-Return JSON only: {"niche":"2-4 word product category","keywords":["kw1","kw2"],"competitors":["Brand A","Brand B","Brand C","Brand D"]${price ? ',"tier":"mass|mid|premium|luxury"' : ''}}
-Rules: exactly 2 keywords, each 1-3 words, the terms a shopper at this price point searches and competitors at this price point use in ad copy (e.g. "protein powder", "hair oil"; for premium goods "designer saree", "luxury handbag"). competitors: 3-4 brands that sell this same product type in India at the same price tier as ours and advertise on Meta, by the name their Facebook page would use (for premium or luxury products: designer labels and premium D2C brands, never mass-market or marketplace sellers). Never include this brand's own name.${price ? ' tier: where this price sits among products of this same category in India (e.g. ₹6,000 is mid for a saree but luxury for a face serum; ₹50,000 is luxury for a saree).' : ''}`,
+Return JSON only: {"niche":"2-4 word product category","keywords":["kw1","kw2"],"competitors":["Brand A","Brand B","Brand C","Brand D"]${price ? ',"tier":"mass|mid|premium|luxury"' : ''}${styleHint ? ',"styleKeywords":["phrase 1","phrase 2"]' : ''}}
+Rules: exactly 2 keywords, each 1-3 words, the terms a shopper at this price point searches and competitors at this price point use in ad copy (e.g. "protein powder", "hair oil"; for premium goods "designer saree", "luxury handbag"). competitors: 3-4 brands that sell this same product type in India at the same price tier as ours and advertise on Meta, by the name their Facebook page would use (for premium or luxury products: designer labels and premium D2C brands, never mass-market or marketplace sellers). Never include this brand's own name.${price ? ' tier: where this price sits among products of this same category in India (e.g. ₹6,000 is mid for a saree but luxury for a face serum; ₹50,000 is luxury for a saree).' : ''}${styleHint ? ` styleKeywords: exactly 2 search phrases of 2-4 words that ${videoStyleLabel(videoStyle)} video ads for this product type in India would contain: ${styleHint}.` : ''}`,
   }];
   if (imageUrls.length > 0) {
     const { images } = await loadPreparedReferences(imageUrls.slice(0, 3)).catch(() => ({ images: [] as Array<{ mimeType: string; data: string }> }));
@@ -176,11 +221,15 @@ Rules: exactly 2 keywords, each 1-3 words, the terms a shopper at this price poi
     : [];
   const tiers: PriceTier[] = ['mass', 'mid', 'premium', 'luxury'];
   const judgedTier = tiers.find((t) => t === parsed?.tier);
+  const styleKeywords = styleHint && Array.isArray(parsed?.styleKeywords)
+    ? parsed.styleKeywords.map((k) => clean(k, 50)).filter(Boolean).slice(0, 2)
+    : [];
   return {
     niche: clean(parsed?.niche, 60) || fallback || 'product',
     keywords: keywords.length > 0 ? keywords : [fallback || 'product'],
     competitors,
     tier: price ? judgedTier ?? priceTier(product) : undefined,
+    styleKeywords,
     usage: geminiUsage(response, providerModel),
   };
 }
@@ -542,7 +591,7 @@ export function rankWinningAds(
     .slice(0, limit);
 }
 
-async function loadVideoInline(url: string): Promise<{ mimeType: string; data: string; byteLength: number } | null> {
+async function loadVideo(url: string): Promise<{ mimeType: string; bytes: Buffer } | null> {
   try {
     const response = await axios.get<ArrayBuffer>(url, {
       responseType: 'arraybuffer',
@@ -550,8 +599,7 @@ async function loadVideoInline(url: string): Promise<{ mimeType: string; data: s
       maxContentLength: MAX_VIDEO_BYTES,
       maxBodyLength: MAX_VIDEO_BYTES,
     });
-    const bytes = Buffer.from(response.data);
-    return { mimeType: 'video/mp4', data: bytes.toString('base64'), byteLength: bytes.byteLength };
+    return { mimeType: 'video/mp4', bytes: Buffer.from(response.data) };
   } catch {
     return null;
   }
@@ -563,7 +611,7 @@ function tierRule(product: ShopifyProductContext, visual = false): string {
   if (tier !== 'premium' && tier !== 'luxury') return '';
   return visual
     ? ` Our product is ${tier}: it ALSO fails when the creative is visibly mass-market (big sale or % OFF banners, cluttered discount graphics, marketplace-listing look), because a ${tier} buyer responds to different creatives.`
-    : `\nOur product is ${tier}. An ad is relevant only if it also targets a ${tier} buyer: reject mass-market and discount-led ads (big % OFF or sale-led copy, low price points, "pack of 3", marketplace resellers such as Meesho or Amazon listings); keep brand-led, aspirational ads from brands at a similar price point.`;
+    : `\nOur product is ${tier}. An ad is relevant only if it also targets a ${tier} buyer: reject mass-market and discount-led ads (big % OFF or sale-led copy, low price points, "pack of 3", marketplace resellers such as Meesho or Amazon listings); keep brand-led, aspirational ads from brands at a similar price point. A brand-led ad with no price or discount passes when the brand or copy reads premium; reject only on clear mass-market signals.`;
 }
 
 /**
@@ -577,9 +625,7 @@ async function filterRelevantAds(
 ): Promise<{ ads: WinningAd[]; usage: ProviderUsage }> {
   if (candidates.length === 0) return { ads: [], usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } };
   const listing = candidates.map((ad, i) => `#${i + 1} | page: ${ad.pageName} | domain: ${ad.landingDomain || 'n/a'} | headline: ${ad.title || 'n/a'} | text: ${(ad.body || 'n/a').slice(0, 260)}`).join('\n');
-  const { response, providerModel } = await requestGeminiText(
-    [{
-      text: `You are screening Meta ads for competitor research.
+  const prompt = `You are screening Meta ads for competitor research.
 
 OUR PRODUCT
 Name: ${clean(product.title, 160) || 'unknown'}
@@ -588,17 +634,21 @@ Category: ${niche}
 ${priceLine(product)}
 Description: ${clean(product.description, 500) || 'unknown'}
 
-An ad is RELEVANT only if it is selling a consumer product of the same category as ours (for a herbal tea: other teas, herbal infusions, tea bags; not mattresses, supplements in capsule form, clinics, apps, courses, general lifestyle pages, marketplaces or unrelated products that merely mention the same benefit). Judge from the page name, domain, headline and text.${tierRule(product)}
+An ad is RELEVANT only if it is selling a consumer product of the same TYPE as ours, judged at the level a shopper browses rather than the exact sub-type, material or variant: for a herbal tea, any tea, herbal infusion or tea bags pass (not mattresses, supplements in capsule form, clinics, apps or courses); for a designer tissue saree, any saree passes (silk, Banarasi, organza, handloom, Kanjeevaram). General lifestyle pages, marketplaces and unrelated products that merely mention the same benefit fail. Judge from the page name, domain, headline and text; a brand known for this product type counts even when the copy does not name the type.${tierRule(product)}
 
 ADS
 ${listing}
 
-Return JSON only: {"relevant":[{"n":1,"reason":"<=12 words"}]} where n is the ad's # number from the list above, listing only the relevant ads, most relevant first.`,
-    }],
-    { temperature: 0 },
-    'Ad relevance screening'
-  );
-  const parsed = parseJsonObject(geminiText(response));
+Return JSON only: {"relevant":[{"n":1,"reason":"<=12 words"}]} where n is the ad's # number from the list above, listing only the relevant ads, most relevant first.`;
+  // An unreadable answer must not read as "nothing is relevant": ask for JSON, and retry once.
+  let parsed: Record<string, unknown> | null = null;
+  let usage: ProviderUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+  for (let attempt = 0; attempt < 2 && !parsed; attempt++) {
+    const { response, providerModel } = await requestGeminiText([{ text: prompt }], { temperature: 0, responseMimeType: 'application/json' }, 'Ad relevance screening');
+    usage = addUsage(usage, geminiUsage(response, providerModel));
+    parsed = parseJsonObject(geminiText(response));
+    if (!parsed) console.warn(`Ad relevance screening returned no JSON (attempt ${attempt + 1}): ${geminiText(response).slice(0, 200) || response.data.candidates?.[0]?.finishReason || 'empty'}`);
+  }
   console.log('Ad relevance candidates:\n' + candidates.map((ad) => `  ${ad.daysRunning}d x${ad.collationCount} | ${ad.pageName} | ${ad.landingDomain || 'n/a'} | ${(ad.title || '').slice(0, 60)} | ${(ad.body || '').slice(0, 90)}`).join('\n'));
   console.log('Ad relevance verdict:', JSON.stringify(parsed?.relevant ?? parsed).slice(0, 1500));
   // Accept the list number (asked for) or an ad id (models sometimes answer with either).
@@ -612,7 +662,7 @@ Return JSON only: {"relevant":[{"n":1,"reason":"<=12 words"}]} where n is the ad
   });
   const ads = picked;
   console.log(`Ad research: ${ads.length} of ${candidates.length} long-running ads sell the same category (${niche})`);
-  return { ads, usage: geminiUsage(response, providerModel) };
+  return { ads, usage };
 }
 
 /**
@@ -652,10 +702,50 @@ Return JSON only: {"same":[n,...]} listing the # numbers that pass.`,
   }
 }
 
+/** Cheap first pass: each video ad's creative style from its cover frame and copy. */
+async function classifyVideoStyles(
+  ads: WinningAd[],
+  niche: string
+): Promise<{ styles: Map<string, ClassifiedVideoStyle>; usage?: ProviderUsage }> {
+  const withImages = ads.filter((ad) => ad.imageUrl);
+  if (withImages.length === 0) return { styles: new Map() };
+  try {
+    const { images, sourceIndexes } = await loadPreparedReferences(withImages.map((ad) => ad.imageUrl as string));
+    const parts: Parameters<typeof requestGeminiText>[0] = [{
+      text: `These are Meta video ads in the "${niche}" niche in India. For each you get the video's cover frame and its ad copy. Classify the creative style of the video:
+${STYLE_DEFINITIONS}
+The copy is evidence too ("I tried", "my honest review" suggests ugc; "as a dermatologist", "our founder" suggests talking_head; "how to" suggests demo). When unsure, give the most likely style.
+
+Return JSON only: {"styles":{"1":"ugc","2":"cinematic"}} keyed by the # number.`,
+    }];
+    images.forEach((image, i) => {
+      const ad = withImages[sourceIndexes[i]];
+      parts.push(
+        { text: `#${sourceIndexes[i] + 1} ${ad.pageName}. Headline: ${clean(ad.title, 120) || 'n/a'}. Text: ${clean(ad.body, 240) || 'n/a'}` },
+        { inlineData: { mimeType: image.mimeType, data: image.data } }
+      );
+    });
+    const { response, providerModel } = await requestGeminiText(parts, { temperature: 0 }, 'Video style classification');
+    const parsed = parseJsonObject(geminiText(response));
+    const raw = parsed?.styles && typeof parsed.styles === 'object' ? parsed.styles as Record<string, unknown> : {};
+    const styles = new Map<string, ClassifiedVideoStyle>();
+    Object.entries(raw).forEach(([key, value]) => {
+      const ad = withImages[Number(key.replace(/^#/, '')) - 1];
+      const style = CLASSIFIED_STYLES.find((candidate) => candidate === value);
+      if (ad && style) styles.set(ad.id, style);
+    });
+    return { styles, usage: geminiUsage(response, providerModel) };
+  } catch (error) {
+    console.warn('Video style classification failed:', error instanceof Error ? error.message : error);
+    return { styles: new Map() };
+  }
+}
+
 async function analyzeWinningAds(
   ads: WinningAd[],
   mediaType: AdMediaType,
-  niche: string
+  niche: string,
+  videoStyle?: VideoStyle
 ): Promise<{ patterns: string; designs: AdDesign[]; usage: ProviderUsage }> {
   const parts: Parameters<typeof requestGeminiText>[0] = [{
     text: `You are a senior Meta performance creative strategist for Indian D2C brands. Below are the longest-running active ${mediaType} ads in the "${niche}" niche on Meta in India. Longevity is our proxy for profitability: advertisers keep ads that make money.
@@ -674,10 +764,13 @@ Study each creative and its copy. Return JSON only:
       "proofOrOffer": "reviews, ratings, guarantees, offers, badges used",
       "whyItWorks": "one sentence on the psychological lever"${mediaType === 'video' ? `,
       "sequence": [{"t":"0-2s","shot":"what is on screen","camera":"static / push-in / handheld / cut","text":"on-screen text if any","purpose":"hook / problem / reveal / proof / offer / CTA"}],
-      "audio": "voice-over, music and sound style"` : ''}
+      "audio": "voice-over, music and sound style, and the spoken language if anyone speaks",
+      "style": "ugc | talking_head | demo | cinematic | other"` : ''}
     }
   ]
-}${mediaType === 'video' ? '\nFor ads whose video is attached, watch it and give the full timed sequence from first frame to last (typically 4-8 beats). For ads where only a cover frame is attached, infer the likely sequence from the frame and copy and say so in "format".' : ''}
+}${mediaType === 'video' ? `\nFor ads whose video is attached, watch it to the end and give the full timed sequence from first frame to last (typically 4-8 beats). For ads where only a cover frame is attached, infer the likely sequence from the frame and copy and say so in "format".
+"style" is the creative style of the whole video (judge it from the video itself when attached; a cover frame can mislead):
+${STYLE_DEFINITIONS}${videoStyle && videoStyle !== 'any' ? `\nWe are looking specifically for ${videoStyleLabel(videoStyle)} ads, so judge "style" strictly.` : ''}` : ''}
 Never copy a competitor's brand name, claims or exact wording into your descriptions.`,
   }];
 
@@ -692,19 +785,27 @@ Never copy a competitor's brand name, claims or exact wording into your descript
     if (ad) imageByAd.set(ad.id, image);
   });
 
-  const videoByAd = new Map<string, { mimeType: string; data: string }>();
+  const videoByAd = new Map<string, Parameters<typeof requestGeminiText>[0][number]>();
   if (mediaType === 'video') {
-    // Watch the top winners that fit the inline budget, longest-running first.
+    // Watch the top winners in full, longest-running first. The Files API takes whole videos;
+    // inline data (capped per request) is the fallback when an upload fails.
+    const toWatch = ads.slice(0, videoStyle && videoStyle !== 'any' ? MAX_VIDEOS_TO_WATCH_STYLED : MAX_VIDEOS_TO_WATCH);
     const videos = await Promise.all(
-      ads.slice(0, MAX_VIDEOS_TO_WATCH).map(async (ad) => [ad.id, ad.videoUrl?.startsWith('http') ? await loadVideoInline(ad.videoUrl) : null] as const)
+      toWatch.map(async (ad) => [ad.id, ad.videoUrl?.startsWith('http') ? await loadVideo(ad.videoUrl) : null] as const)
     );
-    let budget = MAX_INLINE_VIDEO_TOTAL_BYTES;
-    videos.forEach(([id, video]) => {
+    let inlineBudget = MAX_INLINE_VIDEO_TOTAL_BYTES;
+    await Promise.all(videos.map(async ([id, video]) => {
       if (!video) return;
-      if (video.byteLength > budget) { console.log(`Ad research: skipping video ${id} (${Math.round(video.byteLength / 1e6)} MB over inline budget)`); return; }
-      budget -= video.byteLength;
-      videoByAd.set(id, { mimeType: video.mimeType, data: video.data });
-    });
+      const file = await uploadGeminiFile(video.bytes, video.mimeType, `winner-${id}`).catch((error) => {
+        console.warn(`Ad research: video ${id} upload failed, trying inline:`, error instanceof Error ? error.message : error);
+        return null;
+      });
+      if (file) { videoByAd.set(id, { fileData: file }); return; }
+      if (video.bytes.byteLength > inlineBudget) { console.log(`Ad research: skipping video ${id} (${Math.round(video.bytes.byteLength / 1e6)} MB over inline budget)`); return; }
+      inlineBudget -= video.bytes.byteLength;
+      videoByAd.set(id, { inlineData: { mimeType: video.mimeType, data: video.bytes.toString('base64') } });
+    }));
+    console.log(`Ad research: watching ${videoByAd.size} of ${toWatch.length} winning videos`);
   }
 
   ads.forEach((ad, index) => {
@@ -713,11 +814,11 @@ Never copy a competitor's brand name, claims or exact wording into your descript
     });
     const video = videoByAd.get(ad.id);
     const image = imageByAd.get(ad.id);
-    if (video) parts.push({ inlineData: { mimeType: video.mimeType, data: video.data } });
+    if (video) parts.push(video);
     else if (image) parts.push({ inlineData: { mimeType: image.mimeType, data: image.data } });
   });
 
-  const { response, providerModel } = await requestGeminiText(parts, { temperature: 0.3 }, 'Winning ad analysis');
+  const { response, providerModel } = await requestGeminiText(parts, { temperature: 0.3 }, 'Winning ad analysis', [], videoByAd.size ? 180000 : 60000);
   const text = geminiText(response);
   const parsed = parseJsonObject(text);
   const byId = new Map(ads.map((ad) => [ad.id, ad]));
@@ -749,6 +850,8 @@ Never copy a competitor's brand name, claims or exact wording into your descript
               .slice(0, 10)
           : undefined,
         audio: clean(record.audio, 200) || undefined,
+        style: mediaType === 'video' ? CLASSIFIED_STYLES.find((candidate) => candidate === record.style) : undefined,
+        watched: videoByAd.has(ad.id),
       };
     })
     .filter((design): design is AdDesign => design !== null);
@@ -790,6 +893,8 @@ export interface ResearchProgress {
   scraped?: number;
   designed?: number;
   relevant?: number;
+  /** Relevant video ads that look like the chosen style. */
+  styled?: number;
   winners?: number;
 }
 
@@ -797,14 +902,19 @@ export async function researchWinningAds(
   product: ShopifyProductContext,
   mediaType: AdMediaType,
   country = 'IN',
-  options: { imageUrls?: string[]; onProgress?: (progress: ResearchProgress) => void; niche?: NicheInfo } = {}
+  options: { imageUrls?: string[]; onProgress?: (progress: ResearchProgress) => void; niche?: NicheInfo; videoStyle?: VideoStyle } = {}
 ): Promise<AdResearchResult> {
-  const { niche, keywords, competitors, tier, usage: keywordUsage } = options.niche ?? await deriveNicheKeywords(product, options.imageUrls ?? []);
+  const { niche, keywords, competitors, tier, styleKeywords = [], usage: keywordUsage } = options.niche ?? await deriveNicheKeywords(product, options.imageUrls ?? [], options.videoStyle);
   // Screen ads against the category-relative tier, not only the fixed price bands.
   const screenFor: ShopifyProductContext = tier ? { ...product, tier } : product;
+  // A chosen video style narrows the winners to ads of that style ("any" keeps the best of every style).
+  const style = mediaType === 'video' && options.videoStyle && options.videoStyle !== 'any' ? options.videoStyle : undefined;
+  let styleFallback = false;
+  let styleTierRelaxed = false;
+  let styledCount: number | undefined;
   const onProgress = options.onProgress ?? (() => undefined);
   onProgress({ phase: 'scraping' });
-  const cacheKey = `${process.env.AD_RESEARCH_MOCK === 'true' ? 'mock|' : ''}${country}|${mediaType}|${tier ?? ''}|${[...keywords, ...competitors].join(',').toLowerCase()}`;
+  const cacheKey = `${process.env.AD_RESEARCH_MOCK === 'true' ? 'mock|' : ''}${country}|${mediaType}|${style ?? ''}|${tier ?? ''}|${[...keywords, ...competitors, ...styleKeywords].join(',').toLowerCase()}`;
   const cached = researchCache.get(cacheKey);
   if (cached && Date.now() - cached.createdAt < CACHE_TTL_MS) {
     return { ...cached.result, usage: keywordUsage };
@@ -880,6 +990,23 @@ export async function researchWinningAds(
         });
       }
     }
+    // Chosen style: also search the phrases that style's ads carry ("saree haul", "how to drape").
+    if (style) {
+      styleKeywords.forEach((keyword) => jobs.push({
+        label: `style "${keyword}" (video)`,
+        run: async () => {
+          if (provider === 'apify') return scrapeAdLibrary([keyword], country, 'video', null);
+          if (provider === 'selfhosted' && selfhostedAvailable()) {
+            try {
+              return await shSearchAds(keyword, country, 'video', 40);
+            } catch (error) {
+              if (!process.env.SCRAPECREATORS_API_KEY) throw error;
+            }
+          }
+          return process.env.SCRAPECREATORS_API_KEY ? scSearchAds(keyword, country, 'video', 2) : [];
+        },
+      }));
+    }
     let scrapedTotal = 0;
     const tiers = await Promise.all(
       jobs.map(async (job) => {
@@ -903,6 +1030,7 @@ export async function researchWinningAds(
     // Gate every candidate first: long-running junk (advertorials, novel apps) must not
     // crowd out genuine competitors that happen to refresh creatives more often.
     const candidates = [...pool.values()].sort((a, b) => b.winScore - a.winScore).slice(0, CANDIDATE_POOL);
+    let allCandidates = candidates;
     onProgress({ phase: 'scraped', scraped: scrapedTotal, designed: pool.size });
     const screened = await filterRelevantAds(candidates, screenFor, niche);
     relevanceUsage = screened.usage;
@@ -925,32 +1053,65 @@ export async function researchWinningAds(
         return rankWinningAds(rawAds, mediaType, CANDIDATE_POOL, true, 2);
       }));
       const extra = extraTiers.flat().filter((ad) => !seen.has(ad.id) && (seen.add(ad.id), true)).sort((a, b) => b.winScore - a.winScore).slice(0, CANDIDATE_POOL);
+      allCandidates = [...candidates, ...extra];
       console.log(`Ad research: only ${relevant.length} relevant; broad pass over "${broadKeywords.join('", "')}" (all media) found ${extra.length} new candidates`);
       onProgress({ phase: 'scraped', scraped: scrapedTotal, designed: pool.size + extra.length });
       if (extra.length > 0) {
         const second = await filterRelevantAds(extra, screenFor, niche);
-        relevanceUsage = {
-          inputTokens: relevanceUsage.inputTokens + second.usage.inputTokens,
-          outputTokens: relevanceUsage.outputTokens + second.usage.outputTokens,
-          totalTokens: relevanceUsage.totalTokens + second.usage.totalTokens,
-          providerModel: relevanceUsage.providerModel,
-        };
+        relevanceUsage = addUsage(relevanceUsage, second.usage);
         relevant = [...relevant, ...second.ads];
       }
     }
     relevant = relevant.sort((a, b) => b.winScore - a.winScore);
-    // Look at the strongest finalists' creatives before trusting them.
-    const finalists = relevant.slice(0, 10);
-    const visual = await verifyWinnersVisually(finalists, screenFor, niche);
-    if (visual.usage) {
-      relevanceUsage = {
-        inputTokens: relevanceUsage.inputTokens + visual.usage.inputTokens,
-        outputTokens: relevanceUsage.outputTokens + visual.usage.outputTokens,
-        totalTokens: relevanceUsage.totalTokens + visual.usage.totalTokens,
-        providerModel: relevanceUsage.providerModel,
-      };
+    // Every relevant ad regardless of style, for when no ad of the chosen style survives.
+    let anyStyle = relevant;
+
+    // Chosen style: label the strongest relevant videos from cover frame and copy and keep
+    // that style; the analysis step then confirms it by watching the videos themselves.
+    if (style) {
+      const videos = relevant.filter((ad) => ad.mediaKind === 'video').slice(0, STYLE_POOL);
+      const classified = await classifyVideoStyles(videos, niche);
+      relevanceUsage = addUsage(relevanceUsage, classified.usage);
+      relevant = relevant.map((ad) => (classified.styles.has(ad.id) ? { ...ad, style: classified.styles.get(ad.id) } : ad));
+      anyStyle = relevant;
+      let matching = relevant.filter((ad) => ad.style === style);
+      const counts = CLASSIFIED_STYLES.map((s) => `${s} ${videos.filter((ad) => classified.styles.get(ad.id) === s).length}`).join(', ');
+      console.log(`Ad research: ${matching.length} of ${videos.length} relevant videos look like ${style} (${counts})`);
+      const tiered = priceTier(screenFor);
+      if (matching.length === 0 && (tiered === 'premium' || tiered === 'luxury')) {
+        // The style may simply not exist at this price tier (luxury sarees run almost no UGC).
+        // The user chose the style, so keep the product type but drop the tier requirement.
+        const seen = new Set(relevant.map((ad) => ad.id));
+        const rest = allCandidates.filter((ad) => ad.mediaKind === 'video' && !seen.has(ad.id));
+        const regated = await filterRelevantAds(rest, { ...product, price: undefined, tier: undefined }, niche);
+        relevanceUsage = addUsage(relevanceUsage, regated.usage);
+        const moreVideos = regated.ads.sort((a, b) => b.winScore - a.winScore).slice(0, STYLE_POOL);
+        const reclassified = await classifyVideoStyles(moreVideos, niche);
+        relevanceUsage = addUsage(relevanceUsage, reclassified.usage);
+        matching = moreVideos
+          .map((ad) => ({ ...ad, style: reclassified.styles.get(ad.id) }))
+          .filter((ad) => ad.style === style);
+        styleTierRelaxed = matching.length > 0;
+        console.log(`Ad research: no ${tiered} ${style} ads; ${matching.length} ${style} ads from other price points`);
+      }
+      styledCount = matching.length;
+      if (matching.length > 0) relevant = matching;
+      else styleFallback = true;
     }
-    relevant = [...visual.ads, ...relevant.slice(10)].sort((a, b) => b.winScore - a.winScore);
+    // Look at the strongest finalists' creatives before trusting them. Style ads taken from
+    // other price points are checked for product type only.
+    let visual = await verifyWinnersVisually(relevant.slice(0, 10), styleTierRelaxed ? { ...product, price: undefined, tier: undefined } : screenFor, niche);
+    relevanceUsage = addUsage(relevanceUsage, visual.usage);
+    let checked = [...visual.ads, ...relevant.slice(10)];
+    if (style && !styleFallback && checked.length === 0) {
+      console.log(`Ad research: no ${style} ad passed the visual check; using the best video ads of any style`);
+      styleFallback = true;
+      styleTierRelaxed = false;
+      visual = await verifyWinnersVisually(anyStyle.slice(0, 10), screenFor, niche);
+      relevanceUsage = addUsage(relevanceUsage, visual.usage);
+      checked = [...visual.ads, ...anyStyle.slice(10)];
+    }
+    relevant = checked.sort((a, b) => b.winScore - a.winScore);
     screenedRelevantCount = relevant.length;
     const sameKind = relevant.filter((ad) => ad.mediaKind === mediaType);
     const otherKind = relevant.filter((ad) => ad.mediaKind !== mediaType);
@@ -976,11 +1137,32 @@ export async function researchWinningAds(
   if (ads.length === 0) {
     throw new Error(`No long-running ${mediaType} ads selling ${niche} were found on Meta in ${country}.`);
   }
-  onProgress({ phase: 'screened', relevant: screenedRelevantCount, winners: ads.length });
+  onProgress({ phase: 'screened', relevant: screenedRelevantCount, styled: styledCount, winners: ads.length });
 
   if (!mock) ads = await persistWinnerMedia(ads);
   onProgress({ phase: 'analyzing', winners: ads.length });
-  const analysis = await analyzeWinningAds(ads, mediaType, niche);
+  const analysis = await analyzeWinningAds(ads, mediaType, niche, options.videoStyle);
+
+  if (mediaType === 'video') {
+    // What the videos actually are, once watched (a cover frame can mislead).
+    const watched = new Map(analysis.designs.filter((d) => d.watched && d.style).map((d) => [d.id, d.style as ClassifiedVideoStyle]));
+    ads = ads.map((ad) => (watched.has(ad.id) ? { ...ad, style: watched.get(ad.id), styleConfirmed: true } : ad));
+    if (style && !styleFallback) {
+      const confirmed = ads.filter((ad) => ad.styleConfirmed && ad.style === style);
+      const unwatched = ads.filter((ad) => !ad.styleConfirmed && ad.style === style);
+      if (confirmed.length + unwatched.length > 0) {
+        const dropped = ads.length - confirmed.length - unwatched.length;
+        if (dropped > 0) console.log(`Ad research: watching showed ${dropped} winner(s) are not ${style}; dropped`);
+        ads = [...confirmed, ...unwatched];
+      } else {
+        console.log(`Ad research: none of the watched winners is really ${style}; keeping the closest candidates`);
+        styleFallback = true;
+      }
+    }
+    // The storyboard follows the first design with a sequence: keep designs in winner order.
+    const order = new Map(ads.map((ad, i) => [ad.id, i]));
+    analysis.designs = analysis.designs.filter((d) => order.has(d.id)).sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+  }
   const result: AdResearchResult = {
     niche,
     keywords,
@@ -990,6 +1172,9 @@ export async function researchWinningAds(
     patterns: analysis.patterns,
     designs: analysis.designs,
     tier,
+    videoStyle: options.videoStyle,
+    styleFallback: style ? styleFallback : undefined,
+    styleTierRelaxed: style ? styleTierRelaxed : undefined,
     mock,
     usage: {
       inputTokens: keywordUsage.inputTokens + relevanceUsage.inputTokens + analysis.usage.inputTokens,

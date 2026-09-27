@@ -13,6 +13,10 @@ const toast = {
     toastLib.dismiss();
     return toastLib.error(message, options);
   },
+  info: (message: string, options?: Parameters<typeof toastLib>[1]) => {
+    toastLib.dismiss();
+    return toastLib(message, options);
+  },
   loading: (message: string, options?: Parameters<typeof toastLib.loading>[1]) => {
     toastLib.dismiss();
     return toastLib.loading(message, options);

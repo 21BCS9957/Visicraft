@@ -8,6 +8,11 @@ interface GeminiPart {
     mimeType: string;
     data: string;
   };
+  /** Media uploaded through the Gemini Files API (videos too large to send inline). */
+  fileData?: {
+    mimeType: string;
+    fileUri: string;
+  };
 }
 
 interface GeminiRequest {
@@ -95,7 +100,9 @@ export async function requestGeminiText(
   generationConfig: NonNullable<GeminiRequest['generationConfig']>,
   operation: string,
   /** Tried first, in order (e.g. a pro model for prompt writing); the defaults follow. */
-  preferredModels: string[] = []
+  preferredModels: string[] = [],
+  /** Watching several videos takes longer than a text or image prompt. */
+  timeoutMs = 60000
 ): Promise<{ response: { data: GeminiResponse }; providerModel: string }> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
@@ -125,7 +132,7 @@ export async function requestGeminiText(
             'Content-Type': 'application/json',
             'x-goog-api-key': apiKey,
           },
-          timeout: 60000,
+          timeout: timeoutMs,
         }
       );
       return { response, providerModel };
@@ -162,6 +169,57 @@ export async function requestGeminiText(
   }
 
   throw new Error(`Google ${operation.toLowerCase()} is unavailable.`);
+}
+
+/**
+ * Uploads media through the Gemini Files API and waits until prompts can use it. Inline
+ * requests are capped at 20 MB, so watching several videos in one prompt only fits this
+ * way. Uploaded files expire on their own after 48 hours.
+ */
+export async function uploadGeminiFile(bytes: Buffer, mimeType: string, displayName = 'reference'): Promise<{ mimeType: string; fileUri: string }> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
+  const start = await axios.post(
+    'https://generativelanguage.googleapis.com/upload/v1beta/files',
+    { file: { display_name: displayName } },
+    {
+      headers: {
+        'x-goog-api-key': apiKey,
+        'X-Goog-Upload-Protocol': 'resumable',
+        'X-Goog-Upload-Command': 'start',
+        'X-Goog-Upload-Header-Content-Length': String(bytes.byteLength),
+        'X-Goog-Upload-Header-Content-Type': mimeType,
+        'Content-Type': 'application/json',
+      },
+      timeout: 20000,
+    }
+  );
+  const uploadUrl = start.headers['x-goog-upload-url'];
+  if (typeof uploadUrl !== 'string') throw new Error('Gemini Files API returned no upload URL');
+  const uploaded = await axios.post<{ file?: { name?: string; uri?: string; state?: string } }>(uploadUrl, bytes, {
+    headers: {
+      'Content-Length': String(bytes.byteLength),
+      'X-Goog-Upload-Offset': '0',
+      'X-Goog-Upload-Command': 'upload, finalize',
+    },
+    timeout: 60000,
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+  });
+  const created = uploaded.data.file;
+  if (!created?.name || !created.uri) throw new Error('Gemini Files API upload returned no file');
+  // Videos are processed before a prompt can use them.
+  let state = created.state;
+  for (let i = 0; state === 'PROCESSING' && i < 30; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const polled = await axios.get<{ state?: string }>(`https://generativelanguage.googleapis.com/v1beta/${created.name}`, {
+      headers: { 'x-goog-api-key': apiKey },
+      timeout: 15000,
+    });
+    state = polled.data.state;
+  }
+  if (state !== 'ACTIVE') throw new Error(`Gemini file ${created.name} is ${state ?? 'not ready'}`);
+  return { mimeType, fileUri: created.uri };
 }
 
 export async function loadPreparedReferences(referenceImages: string[]): Promise<{

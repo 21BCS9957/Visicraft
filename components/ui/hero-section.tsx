@@ -34,6 +34,7 @@ import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { getCreditCost } from '@/lib/credits/calculator';
 import { cn } from '@/lib/utils';
+import { VIDEO_STYLES, videoStyleLabel, type VideoStyle } from '@/lib/videoStyles';
 import {
   IMAGE_STAGES,
   PipelineTimeline,
@@ -73,6 +74,10 @@ interface WinningAd {
   imageUrl?: string;
   videoUrl?: string;
   libraryUrl: string;
+  mediaKind?: 'image' | 'video';
+  /** Video ads: creative style, confirmed when research watched the video. */
+  style?: string;
+  styleConfirmed?: boolean;
 }
 
 interface AdResearch {
@@ -81,6 +86,8 @@ interface AdResearch {
   ads: WinningAd[];
   patterns: string;
   mock?: boolean;
+  videoStyle?: string;
+  styleFallback?: boolean;
 }
 
 interface StoryboardShot {
@@ -95,6 +102,9 @@ interface VideoStoryboard {
   shots: StoryboardShot[];
   mood: string;
   modelledOn?: string;
+  style?: string;
+  /** UGC and talking-head videos: the line the person says. */
+  script?: string;
 }
 
 interface CreativeSlot {
@@ -111,7 +121,7 @@ interface CreativeSlot {
   failReason?: 'product' | 'generation' | 'safety' | 'quality';
 }
 
-type ProductFlowStep = 'none' | 'format' | 'research';
+type ProductFlowStep = 'none' | 'format' | 'style' | 'research';
 
 const PRODUCT_SET_SIZE = 4;
 
@@ -976,6 +986,7 @@ export function HeroSection() {
   const [generatedResults, setGeneratedResults] = useState<string[]>([]);
   const [creativeSlots, setCreativeSlots] = useState<CreativeSlot[]>([]);
   const [productFlowStep, setProductFlowStep] = useState<ProductFlowStep>('none');
+  const [videoStyle, setVideoStyle] = useState<VideoStyle>('any');
   const [adResearch, setAdResearch] = useState<AdResearch | null>(null);
   const [storyboard, setStoryboard] = useState<VideoStoryboard | null>(null);
   // The visible pipeline for product-link runs: one row per stage, live artifacts.
@@ -1436,6 +1447,7 @@ export function HeroSection() {
             research: wantsResearch,
             country: 'IN',
             videoAd: isProductFlow && generationMode === 'video',
+            videoStyle: isProductFlow && generationMode === 'video' ? videoStyle : undefined,
             videoModel: generationMode === 'video' ? selectedModel : undefined,
             model: generationMode === 'video' ? 'nano-banana-pro' : selectedModel,
           }),
@@ -1492,6 +1504,8 @@ export function HeroSection() {
                   modelledOn: angle.modelledOn,
                   aspectRatio: angle.aspectRatio,
                 })));
+              } else if (event.type === 'notice' && typeof event.message === 'string') {
+                toast.info(event.message, { duration: 8000 });
               } else if (event.type === 'storyboard' && event.storyboard) {
                 setStoryboard(event.storyboard as VideoStoryboard);
               } else if (event.type === 'video_submitted' && typeof event.operationId === 'string') {
@@ -1606,7 +1620,7 @@ export function HeroSection() {
       setIsGenerating(false);
       setIsResearching(false);
     }
-  }, [user, uploadedImages, selectedProductUrls, productCapture, promptValue, generationMode, selectedModel, credits, creditCost, refreshCredits, router, captureProductImages]);
+  }, [user, uploadedImages, selectedProductUrls, productCapture, promptValue, generationMode, videoStyle, selectedModel, credits, creditCost, refreshCredits, router, captureProductImages]);
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#08080a]">
@@ -1783,12 +1797,16 @@ export function HeroSection() {
                         <p className="text-sm font-light text-white sm:text-base">
                           {productFlowStep === 'format'
                             ? 'What should we make from this product?'
-                            : `Study winning Meta ${generationMode} ads in this niche first?`}
+                            : productFlowStep === 'style'
+                              ? 'What kind of video ad should we make?'
+                              : generationMode === 'video' && videoStyle !== 'any'
+                                ? `Study winning ${videoStyleLabel(videoStyle)} video ads in this niche first?`
+                                : `Study winning Meta ${generationMode} ads in this niche first?`}
                         </p>
-                        {productFlowStep === 'research' && (
+                        {productFlowStep !== 'format' && (
                           <button
                             type="button"
-                            onClick={() => setProductFlowStep('format')}
+                            onClick={() => setProductFlowStep(productFlowStep === 'research' && generationMode === 'video' ? 'style' : 'format')}
                             className="shrink-0 text-xs text-white/50 transition-colors hover:text-white"
                           >
                             Back
@@ -1811,14 +1829,14 @@ export function HeroSection() {
                                 {PRODUCT_SET_SIZE} image ads
                               </span>
                               <span className="mt-1 block text-xs font-light text-white/50">
-                                2 with ad copy, 2 clean · {imageCreditCost * PRODUCT_SET_SIZE} credits
+                                Your product locked in every one · {imageCreditCost * PRODUCT_SET_SIZE} credits
                               </span>
                             </button>
                             <button
                               type="button"
                               onClick={() => {
                                 setGenerationMode('video');
-                                setProductFlowStep('research');
+                                setProductFlowStep('style');
                               }}
                               className="rounded-xl border border-white/10 bg-black/30 p-3 text-left transition-colors hover:border-[#fff05a]/50 hover:bg-black/45"
                             >
@@ -1831,6 +1849,27 @@ export function HeroSection() {
                               </span>
                             </button>
                           </>
+                        ) : productFlowStep === 'style' ? (
+                          <>
+                            {VIDEO_STYLES.map((style) => (
+                              <button
+                                key={style.id}
+                                type="button"
+                                onClick={() => {
+                                  setVideoStyle(style.id);
+                                  setProductFlowStep('research');
+                                }}
+                                className={cn(
+                                  'rounded-xl border bg-black/30 p-3 text-left transition-colors hover:border-[#fff05a]/50 hover:bg-black/45',
+                                  videoStyle === style.id ? 'border-[#fff05a]/40' : 'border-white/10',
+                                  style.id === 'any' && 'sm:col-span-2'
+                                )}
+                              >
+                                <span className="text-sm text-white">{style.label}</span>
+                                <span className="mt-1 block text-xs font-light text-white/50">{style.description}</span>
+                              </button>
+                            ))}
+                          </>
                         ) : (
                           <>
                             <button
@@ -1840,7 +1879,9 @@ export function HeroSection() {
                             >
                               <span className="text-sm text-white">Yes, research winning ads</span>
                               <span className="mt-1 block text-xs font-light text-white/50">
-                                Finds the longest-running active {generationMode} ads in India and models them · adds 1-2 min
+                                {generationMode === 'video'
+                                  ? `Finds the longest-running ${videoStyle === 'any' ? '' : `${videoStyleLabel(videoStyle)} `}video ads in India, watches them and models the best one · adds 1-2 min`
+                                  : 'Finds the longest-running active image ads in India and models them · adds 1-2 min'}
                               </span>
                             </button>
                             <button
@@ -2207,10 +2248,13 @@ export function HeroSection() {
               {storyboard && (
                 <div className="mx-auto mt-6 w-full max-w-[1280px] text-left">
                   <p className="mb-3 text-xs font-medium uppercase tracking-[0.2em] text-white/40">
-                    Storyboard{storyboard.modelledOn ? ` · modelled on ${storyboard.modelledOn}` : ''}
+                    Storyboard{storyboard.style ? ` · ${videoStyleLabel(storyboard.style)}` : ''}{storyboard.modelledOn ? ` · modelled on ${storyboard.modelledOn}` : ''}
                   </p>
                   <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur">
                     <p className="text-sm text-white/85">{storyboard.hook}</p>
+                    {storyboard.script && (
+                      <p className="mt-2 text-sm font-light italic text-[#fbf2a0]">“{storyboard.script}”</p>
+                    )}
                     <ol className="mt-3 grid gap-2 sm:grid-cols-2">
                       {storyboard.shots.map((shot, i) => (
                         <li key={i} className="flex gap-3 rounded-xl border border-white/8 bg-black/25 p-3">
@@ -2231,7 +2275,7 @@ export function HeroSection() {
               {adResearch && adResearch.ads.length > 0 && (
                 <div className="mx-auto mt-6 w-full max-w-[1280px] text-left">
                   <p className="mb-3 text-xs font-medium uppercase tracking-[0.2em] text-white/40">
-                    Based on the longest-running {adResearch.niche} ads on Meta India
+                    Based on the longest-running {adResearch.videoStyle && adResearch.videoStyle !== 'any' && !adResearch.styleFallback ? `${videoStyleLabel(adResearch.videoStyle)} ` : ''}{adResearch.niche} ads on Meta India
                     {adResearch.mock && (
                       <span className="ml-2 rounded-full bg-[#fff05a]/15 px-2 py-0.5 normal-case tracking-normal text-[#fbf2a0]">
                         Test mode: sample ads
@@ -2248,7 +2292,20 @@ export function HeroSection() {
                         className="group w-40 flex-shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-[#151519] transition-colors hover:border-white/25"
                       >
                         <div className="aspect-square w-full overflow-hidden bg-white/5">
-                          {ad.imageUrl ? (
+                          {ad.videoUrl ? (
+                            // Winning videos play on hover so the user can see what is being modelled.
+                            <video
+                              src={ad.videoUrl}
+                              poster={ad.imageUrl}
+                              muted
+                              loop
+                              playsInline
+                              preload="none"
+                              onMouseEnter={(event) => { event.currentTarget.play().catch(() => undefined); }}
+                              onMouseLeave={(event) => { event.currentTarget.pause(); }}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : ad.imageUrl ? (
                             <img
                               src={ad.imageUrl}
                               alt={`${ad.pageName} ad`}
@@ -2266,6 +2323,11 @@ export function HeroSection() {
                           <p className="mt-0.5 text-[11px] text-[#fff05a]/80">
                             Running {ad.daysRunning} days{ad.collationCount && ad.collationCount > 1 ? ` · ${ad.collationCount} variants` : ''}
                           </p>
+                          {ad.style && (
+                            <p className="mt-0.5 text-[10px] text-white/45">
+                              {videoStyleLabel(ad.style)}{ad.styleConfirmed ? ' · watched' : ''}
+                            </p>
+                          )}
                         </div>
                       </a>
                     ))}

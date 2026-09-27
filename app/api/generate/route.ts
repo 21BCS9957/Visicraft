@@ -18,7 +18,8 @@ import { planAdAngles } from '@/lib/server/adAngles';
 import { writePromptsFromWinners } from '@/lib/server/winnerPrompts';
 import { compositeProduct, compositeProductPerspective, cutoutProduct, locateProductQuad } from '@/lib/server/productComposite';
 import { describeProductNiche, researchWinningAds, type AdDesign, type WinningAd } from '@/lib/server/metaAdResearch';
-import { planVideoStoryboard } from '@/lib/server/videoStoryboard';
+import { heroFrameDirection, planVideoStoryboard, resolveVideoStyle } from '@/lib/server/videoStoryboard';
+import { parseVideoStyle, videoStyleLabel, type VideoStyle } from '@/lib/videoStyles';
 import { judgeAdCreative } from '@/lib/server/adJudge';
 import { isVideoGenerationConfigured, resolveVeoModel, submitVeoJob } from '@/lib/server/veo';
 import type { ProviderUsage } from '@/lib/server/usage';
@@ -123,7 +124,9 @@ export async function POST(request: NextRequest) {
         adPatterns: typeof body.adPatterns === 'string' ? body.adPatterns.slice(0, 2500) : undefined,
         research: body.research === true,
         country: typeof body.country === 'string' && /^[A-Z]{2}$/.test(body.country) ? body.country : 'IN',
-        video: videoAd ? { model: videoModel, durationSeconds: videoDurationSeconds, cost: videoCost } : undefined,
+        video: videoAd
+          ? { model: videoModel, durationSeconds: videoDurationSeconds, cost: videoCost, style: parseVideoStyle(body.videoStyle) ?? 'any' }
+          : undefined,
         perImageCost,
         creditCost,
       });
@@ -240,8 +243,8 @@ interface CreativeSetOptions {
   /** Run Meta winning-ad research inside the stream (overlaps product analysis). */
   research?: boolean;
   country?: string;
-  /** Present for a video ad: one hero frame is generated, then animated with Veo. */
-  video?: { model: string; durationSeconds: number; cost: number };
+  /** Present for a video ad: one hero frame is generated, then animated with Veo in the chosen style. */
+  video?: { model: string; durationSeconds: number; cost: number; style: VideoStyle };
   perImageCost: number;
   creditCost: number;
 }
@@ -288,7 +291,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
         // 2. Understand the product: identity spec (what to lock) and niche/competitors, from the photos.
         stage('understand', 'active', 'Reading the product photos and listing');
         const nichePromise = productContext
-          ? describeProductNiche(productContext, referenceImages.slice(0, 3)).catch((error: unknown) => {
+          ? describeProductNiche(productContext, referenceImages.slice(0, 3), video?.style).catch((error: unknown) => {
               console.warn('Niche detection failed:', error);
               return null;
             })
@@ -299,12 +302,14 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           ? (async () => {
               const nicheInfo = await nichePromise;
               stage('research', 'active', 'Searching the Meta Ad Library', { scraped: 0, designed: 0, relevant: 0, winners: 0 });
+              const styleName = video && video.style !== 'any' ? videoStyleLabel(video.style) : undefined;
               return researchWinningAds(productContext, researchMediaType, country ?? 'IN', {
                 imageUrls: referenceImages.slice(0, 3),
                 niche: nicheInfo ?? undefined,
+                videoStyle: video?.style,
                 onProgress: (progress) => {
                   if (progress.phase === 'scraped') stage('research', 'active', `${progress.scraped} ads scraped, ${progress.designed} designed creatives`, progress);
-                  if (progress.phase === 'screened') stage('research', 'active', `${progress.relevant} sell the same category, ${progress.winners} winners`, progress);
+                  if (progress.phase === 'screened') stage('research', 'active', `${progress.relevant} sell the same category${styleName && progress.styled !== undefined ? `, ${progress.styled} look like ${styleName}` : ''}, ${progress.winners} winners`, progress);
                   if (progress.phase === 'analyzing') { stage('research', 'done', `${progress.winners} winners`, progress); stage('analyze', 'active', researchMediaType === 'video' ? 'Watching the winning videos' : 'Studying the winning ads'); }
                 },
               })
@@ -375,8 +380,15 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                 ads: research.result.ads,
                 patterns: research.result.patterns,
                 mock: research.result.mock,
+                videoStyle: research.result.videoStyle,
+                styleFallback: research.result.styleFallback,
               },
             });
+            if (research.result.styleFallback && video) {
+              send({ type: 'notice', message: `No long-running ${videoStyleLabel(video.style)} ads were confirmed in this niche, so the research follows the closest winning video ads; your video is still made in ${videoStyleLabel(video.style)} style.` });
+            } else if (research.result.styleTierRelaxed && video) {
+              send({ type: 'notice', message: `No ${research.result.tier ?? 'same-tier'} brands run ${videoStyleLabel(video.style)} ads in this niche, so the format comes from ${videoStyleLabel(video.style)} ads at other price points; your product keeps its premium look.` });
+            }
             await logUsage({
               user,
               model: research.result.usage.providerModel || 'gemini-3.8-flash',
@@ -395,6 +407,8 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                 keywords: research.result.keywords,
                 adCount: research.result.ads.length,
                 mock: research.result.mock,
+                videoStyle: research.result.videoStyle ?? null,
+                styleFallback: research.result.styleFallback ?? null,
               },
             }).catch((error) => console.error('Research usage logging failed:', error));
           } else {
@@ -404,6 +418,15 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
             send({ type: 'research_failed', message: research.error?.message ?? 'Ad research failed' });
           }
         }
+
+        // Video: the style to make (the user's pick, or the top winner's for "any") stages the hero frame.
+        const madeStyle = video ? resolveVideoStyle(video.style, winningDesigns, identity.sensitive) : undefined;
+        if (video && identity.sensitive && (video.style === 'ugc' || video.style === 'talking_head' || video.style === 'demo')) {
+          send({ type: 'notice', message: `The video model does not allow a person on screen with this product, so instead of ${videoStyleLabel(video.style)} you get a product-only film.` });
+        }
+        const creativeDirection = [userDirection, madeStyle ? heroFrameDirection(madeStyle, identity.productKind) : '']
+          .filter(Boolean)
+          .join('\n') || undefined;
 
         stage('plan', 'active', winnerAds.length
           ? `Writing ${video ? 'the hero-frame prompt' : 'a prompt from each winning ad'}`
@@ -421,7 +444,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
             context: productContext,
             identityManifest: identity.manifest,
             productKind: identity.productKind,
-            userDirection,
+            userDirection: creativeDirection,
           });
           written.usages.forEach((u) => analysisUsages.push(u));
           plan = { angles: written.angles };
@@ -434,7 +457,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           const planned = await planAdAngles({
             context: productContext,
             identityManifest: identity.manifest,
-            userDirection,
+            userDirection: creativeDirection,
             adPatterns,
             winningDesigns,
             winnerImages,
@@ -503,7 +526,8 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
             const active = activeAngle();
             return buildMetaAdCreativePrompt({
               context: productContext,
-              userDirection,
+              // A still life has no person, so it drops the style's staging of one.
+              userDirection: stillLife() ? userDirection : creativeDirection,
               identityManifest: identity.manifest,
               angle: active,
               withText: stillLife() ? false : slot.withText,
@@ -603,6 +627,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                   withText: stillLife() ? false : slot.withText,
                   productKind: identity.productKind,
                   referenceImageUrl: activeAngle().referenceImage,
+                  videoStyle: video && !stillLife() ? madeStyle : undefined,
                 }).catch((error) => {
                   console.warn(`Slot ${index + 1} creative review unavailable:`, error);
                   return null;
@@ -690,6 +715,8 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
               winningDesigns,
               durationSeconds: video.durationSeconds,
               sensitive: identity.sensitive,
+              style: video.style,
+              productKind: identity.productKind,
             });
             if (planned.usage) analysisUsages.push(planned.usage);
             send({ type: 'storyboard', storyboard: planned.storyboard });
@@ -728,6 +755,8 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                     heroUrl,
                     retries: 0,
                     sensitive: identity.sensitive,
+                    videoStyle: video.style,
+                    madeStyle: planned.storyboard.style ?? null,
                     aspectRatio: '9:16',
                     resolution: job.model.includes('veo-3') ? '1080p' : '720p',
                     metaAdResearch: Boolean(adPatterns),

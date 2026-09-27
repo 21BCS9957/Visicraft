@@ -3,6 +3,7 @@
 import { Check, ChevronDown, X } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { videoStyleLabel } from '@/lib/videoStyles';
 
 /**
  * The visible pipeline: one glass row per stage, the active stage expanded with
@@ -113,11 +114,11 @@ function Counter({ label, value, active }: { label: string; value: number | stri
 
 interface CaptureData { title?: string; brand?: string; images?: string[]; canonicalImage?: string }
 interface UnderstandData { canonicalImage?: string; title?: string; brand?: string; niche?: string; price?: string; tier?: string; keywords?: string[]; competitors?: string[]; locked?: string[]; productPasted?: boolean }
-interface ResearchData { scraped?: number; designed?: number; relevant?: number; winners?: number; ads?: Array<{ id: string; pageName: string; daysRunning: number; collationCount?: number; imageUrl?: string; libraryUrl: string; mediaKind?: string }> }
+interface ResearchData { scraped?: number; designed?: number; relevant?: number; styled?: number; winners?: number; ads?: Array<{ id: string; pageName: string; daysRunning: number; collationCount?: number; imageUrl?: string; videoUrl?: string; libraryUrl: string; mediaKind?: string; style?: string; styleConfirmed?: boolean }> }
 interface AnalyzeData { designs?: Array<{ pageName: string; format: string; hook: string; daysRunning: number; sequence?: Array<{ t: string; shot: string }> }> }
 interface PlanData { angles?: Array<{ index: number; name: string; promise?: string; headline?: string; subline?: string; kicker?: string; cta?: string; withText: boolean; modelledOn?: string; referenceImage?: string; brief?: string }> }
 interface GenerateData { passed?: number; withheld?: number; retrying?: number }
-interface StoryboardData { storyboard?: { hook: string; shots: Array<{ t: string; action: string; camera: string }>; modelledOn?: string } }
+interface StoryboardData { storyboard?: { hook: string; shots: Array<{ t: string; action: string; camera: string }>; modelledOn?: string; style?: string; script?: string } }
 
 function StageBody({ stage }: { stage: StageState }) {
   const data = (stage.data ?? {}) as Record<string, unknown>;
@@ -166,8 +167,10 @@ function StageBody({ stage }: { stage: StageState }) {
         <div className="space-y-3 text-left">
           <div className="grid grid-cols-4 gap-2">
             <Counter label="scraped" value={d.scraped ?? 0} active={stage.status === 'active' && !d.relevant} />
-            <Counter label="designed" value={d.designed ?? 0} />
             <Counter label="same category" value={d.relevant ?? 0} active={stage.status === 'active' && Boolean(d.scraped) && !d.winners} />
+            {d.styled !== undefined
+              ? <Counter label="style match" value={d.styled} />
+              : <Counter label="designed" value={d.designed ?? 0} />}
             <Counter label="winners" value={d.winners ?? 0} active={stage.status === 'done'} />
           </div>
           {(d.ads ?? []).length > 0 && (
@@ -175,11 +178,24 @@ function StageBody({ stage }: { stage: StageState }) {
               {(d.ads ?? []).map((ad) => (
                 <a key={ad.id} href={ad.libraryUrl} target="_blank" rel="noopener noreferrer" className="w-28 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-black/30">
                   <div className="aspect-square bg-white/5">
-                    {ad.imageUrl && <img src={ad.imageUrl} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" />}
+                    {ad.videoUrl ? (
+                      <video
+                        src={ad.videoUrl}
+                        poster={ad.imageUrl}
+                        muted
+                        loop
+                        playsInline
+                        preload="none"
+                        onMouseEnter={(event) => { event.currentTarget.play().catch(() => undefined); }}
+                        onMouseLeave={(event) => { event.currentTarget.pause(); }}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : ad.imageUrl && <img src={ad.imageUrl} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" />}
                   </div>
                   <div className="p-1.5">
                     <p className="truncate text-[10px] text-white/80">{ad.pageName}</p>
-                    <p className="text-[10px] text-[#fff05a]/80">{ad.daysRunning}d{ad.collationCount && ad.collationCount > 1 ? ` · ×${ad.collationCount}` : ''}{ad.mediaKind === 'video' ? ' · video' : ''}</p>
+                    <p className="text-[10px] text-[#fff05a]/80">{ad.daysRunning}d{ad.collationCount && ad.collationCount > 1 ? ` · ×${ad.collationCount}` : ''}{ad.mediaKind === 'video' && !ad.style ? ' · video' : ''}</p>
+                    {ad.style && <p className="truncate text-[10px] text-white/45">{videoStyleLabel(ad.style)}{ad.styleConfirmed ? ' · watched' : ''}</p>}
                   </div>
                 </a>
               ))}
@@ -255,7 +271,9 @@ function StageBody({ stage }: { stage: StageState }) {
       if (!sb) return null;
       return (
         <div className="text-left">
+          {sb.style && <p className="mb-1 text-[10px] uppercase tracking-[0.14em] text-white/40">{videoStyleLabel(sb.style)}</p>}
           <p className="text-[11px] text-white/80">{sb.hook}</p>
+          {sb.script && <p className="mt-1.5 text-[11px] italic text-[#fbf2a0]">“{sb.script}”</p>}
           <ol className="mt-2 space-y-1">
             {sb.shots.map((s, i) => (
               <li key={i} className="flex gap-2 text-[11px] text-white/60">

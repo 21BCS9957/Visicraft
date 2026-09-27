@@ -1,6 +1,7 @@
 import { loadPreparedReferences, requestGeminiText } from '@/lib/banana/api';
 import type { AdAngle, ShopifyProductContext } from '@/lib/prompts/shopifyCreative';
 import type { ProviderUsage } from '@/lib/server/usage';
+import { isSpeakingStyle, videoStyleLabel } from '@/lib/videoStyles';
 
 /**
  * Scores a finished creative the way a paid-social buyer would before spending on
@@ -35,6 +36,8 @@ export async function judgeAdCreative(options: {
   productKind?: 'packaged' | 'apparel' | 'object';
   /** The winning ad this creative mirrors: scored for how closely layout, light and type follow it. */
   referenceImageUrl?: string;
+  /** Set when the image is the first frame of a video in this style. */
+  videoStyle?: string;
 }): Promise<AdVerdict> {
   const { images } = await loadPreparedReferences(
     options.referenceImageUrl ? [options.imageUrl, options.referenceImageUrl] : [options.imageUrl]
@@ -46,6 +49,10 @@ export async function judgeAdCreative(options: {
     options.angle.subline ? `supporting line "${clean(options.angle.subline, 90)}"` : '',
     options.angle.cta ? `button "${clean(options.angle.cta, 30)}"` : '',
   ].filter(Boolean).join(', ');
+  // A person who will speak on camera needs their face in frame, whatever the reference crops.
+  const speakingFrame = isSpeakingStyle(options.videoStyle)
+    ? `\nThis image is the first frame of a ${videoStyleLabel(options.videoStyle)} video in which the person speaks to the camera, so their face must stay fully visible and facing the lens. Never suggest cropping out, turning away or hiding the face${options.referenceImageUrl ? '; referenceMatch judges the setting, light, styling and palette, not the crop' : ''}.`
+    : '';
   const expectedCopy = options.withText
     ? `Expected on-image copy, and the only words allowed outside the product itself: ${copyLines}.`
     : 'This creative is meant to carry NO text at all.';
@@ -56,7 +63,7 @@ export async function judgeAdCreative(options: {
 
 Product: ${clean(options.context?.title, 140) || 'unknown'}${options.context?.vendor ? ` by ${clean(options.context.vendor, 60)}` : ''}.
 Intended angle: ${clean(options.angle.name, 60)} — ${clean(options.angle.scene, 300)}
-${expectedCopy}
+${expectedCopy}${speakingFrame}
 
 Score 0-10 on each:
 - thumbStop: would an Indian shopper scrolling Instagram stop on this within one second? (contrast, focal point, hook)

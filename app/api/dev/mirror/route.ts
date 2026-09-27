@@ -3,6 +3,8 @@ import { runImageGeneration } from '@/lib/server/imageGeneration';
 import { buildMetaAdCreativePrompt, type ShopifyProductContext } from '@/lib/prompts/shopifyCreative';
 import { writePromptsFromWinners } from '@/lib/server/winnerPrompts';
 import { judgeAdCreative } from '@/lib/server/adJudge';
+import { heroFrameDirection, resolveVideoStyle } from '@/lib/server/videoStoryboard';
+import type { VideoStyle } from '@/lib/videoStyles';
 
 /**
  * Development-only harness: one winning ad + our product → the creative director's
@@ -22,8 +24,18 @@ export async function POST(request: NextRequest) {
     daysRunning?: number;
     styleReference?: boolean;
     judge?: boolean;
+    /** Video hero frame: extra staging direction, no text, fixed 9:16. */
+    userDirection?: string;
+    videoFrame?: boolean;
+    /** Video hero frame staged for this style, as the generate route does. */
+    videoStyle?: VideoStyle;
+    /** Judge this already rendered image instead of rendering a new one. */
+    existingImageUrl?: string;
   };
   const started = Date.now();
+  const direction = [body.userDirection, body.videoStyle ? heroFrameDirection(resolveVideoStyle(body.videoStyle), body.productKind) : '']
+    .filter(Boolean)
+    .join('\n') || undefined;
   try {
     const written = await writePromptsFromWinners({
       winners: [{
@@ -41,25 +53,27 @@ export async function POST(request: NextRequest) {
       productImageUrl: body.productImageUrl,
       context: body.context,
       productKind: body.productKind,
+      userDirection: direction,
     });
     if (written.failed) throw new Error('Prompt writer failed');
     const styled = body.styleReference !== false;
     const angle = styled ? written.angles[0] : { ...written.angles[0], referenceImage: undefined };
-    const prompt = buildMetaAdCreativePrompt({ context: body.context, angle, withText: Boolean(angle.withText), productKind: body.productKind });
+    const withText = body.videoFrame ? false : Boolean(angle.withText);
+    const prompt = buildMetaAdCreativePrompt({ context: body.context, angle, withText, userDirection: direction, productKind: body.productKind });
     const writtenMs = Date.now() - started;
-    const result = await runImageGeneration({
+    const result = body.existingImageUrl ? { images: [body.existingImageUrl] } : await runImageGeneration({
       mode: 'generate',
       referenceImages: styled ? [body.productImageUrl, body.winnerImageUrl] : [body.productImageUrl],
       prompt,
       model: 'nano-banana-pro',
-      aspectRatio: angle.aspectRatio ?? '9:16',
+      aspectRatio: body.videoFrame ? '9:16' : angle.aspectRatio ?? '9:16',
       resolution: '2K',
       persistToGenerationsTable: false,
       referencePolicy: styled ? 'product-plus-style' : 'product-lock',
     });
     const url = result.images[0];
     const verdict = body.judge && url
-      ? await judgeAdCreative({ imageUrl: url, context: body.context, angle, withText: Boolean(angle.withText), productKind: body.productKind, referenceImageUrl: styled ? body.winnerImageUrl : undefined })
+      ? await judgeAdCreative({ imageUrl: url, context: body.context, angle, withText, productKind: body.productKind, referenceImageUrl: styled ? body.winnerImageUrl : undefined, videoStyle: body.videoStyle ? resolveVideoStyle(body.videoStyle) : undefined })
       : undefined;
     return NextResponse.json({ ms: Date.now() - started, writtenMs, url, angle, prompt, verdict });
   } catch (error) {
