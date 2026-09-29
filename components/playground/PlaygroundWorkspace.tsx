@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ChevronLeft, Grid2x2, Loader2, PanelLeftClose, PanelLeftOpen, Sparkles, User } from 'lucide-react';
+import { ChevronLeft, Grid2x2, PanelLeftClose, PanelLeftOpen, Sparkles, User } from 'lucide-react';
 import toast from '@/lib/toast';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { PlaygroundApiError, playgroundApi } from '@/lib/playground/api';
+import { cachedBundle, fetchBundle, rememberBundle } from '@/lib/playground/cache';
 import { previewBundle, PREVIEW_PROJECT_ID } from '@/lib/playground/preview';
 import { isRunnerBusy, setRunnerListener } from '@/lib/playground/runner';
 import { usePlaygroundStore } from '@/lib/playground/store';
@@ -136,6 +137,7 @@ export function PlaygroundWorkspace({ projectId }: { projectId: string }) {
   const { refreshCredits } = useCredits();
   const reset = usePlaygroundStore((state) => state.reset);
   const loadBundle = usePlaygroundStore((state) => state.loadBundle);
+  const mergeBundle = usePlaygroundStore((state) => state.mergeBundle);
   const project = usePlaygroundStore((state) => state.project);
   const previewFlag = usePreviewFlag();
   const preview = previewFlag && projectId === PREVIEW_PROJECT_ID;
@@ -161,10 +163,14 @@ export function PlaygroundWorkspace({ projectId }: { projectId: string }) {
     if (authLoading || !user) return;
     let cancelled = false;
     reset(projectId, false);
-    playgroundApi.getProject(projectId)
+    // Shown at once when this visit already loaded it; the fresh copy then merges in.
+    const cached = cachedBundle(projectId);
+    if (cached) loadBundle(cached);
+    fetchBundle(projectId)
       .then((bundle) => {
         if (cancelled) return;
-        loadBundle(bundle);
+        if (cached) mergeBundle(bundle);
+        else loadBundle(bundle);
         if (bundle.refunded > 0) {
           toast.success(`${bundle.refunded} credits were refunded for images that were stopped.`, TOAST);
           void refreshCredits();
@@ -172,13 +178,27 @@ export function PlaygroundWorkspace({ projectId }: { projectId: string }) {
       })
       .catch((caught) => {
         if (cancelled) return;
-        setFailure({ projectId, message: caught instanceof PlaygroundApiError || caught instanceof Error ? caught.message : 'Could not open the project.' });
+        const message = caught instanceof PlaygroundApiError || caught instanceof Error ? caught.message : 'Could not open the project.';
+        if (cached) toast.error(message, TOAST);
+        else setFailure({ projectId, message });
       });
     return () => {
       cancelled = true;
+      // Remember what's on screen (new runs, deletions) for the next visit.
+      const state = usePlaygroundStore.getState();
+      if (state.projectId === projectId && state.project) {
+        rememberBundle(projectId, {
+          project: state.project,
+          references: state.references,
+          runs: state.runs,
+          items: Object.values(state.items),
+          nextBefore: state.nextBefore,
+          refunded: 0,
+        });
+      }
     };
     // The user id, not the user object, decides whether to reload.
-  }, [projectId, preview, user?.id, authLoading, reset, loadBundle]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [projectId, preview, user?.id, authLoading, reset, loadBundle, mergeBundle]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const error = failure?.projectId === projectId ? failure.message : null;
   const status: 'loading' | 'ready' | 'signin' | 'error' = !preview && !authLoading && !user
@@ -206,8 +226,19 @@ export function PlaygroundWorkspace({ projectId }: { projectId: string }) {
     <div className="flex h-dvh flex-col bg-[#08080a] text-white">
       <Topbar density={density} onDensity={setDensity} panelOpen={panelOpen} onTogglePanel={() => setPanelOpen((open) => !open)} />
       {status === 'loading' && (
-        <div className="flex flex-1 items-center justify-center text-white/50">
-          <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Opening the project…
+        <div className="flex min-h-0 flex-1" aria-busy="true" aria-label="Opening the project">
+          <div className="hidden w-[320px] shrink-0 space-y-4 border-r border-white/8 bg-[#0c0c0f]/80 p-4 lg:block">
+            <div className="h-4 w-32 rounded bg-white/8" />
+            <div className="h-24 rounded-xl border border-dashed border-white/10" />
+            <div className="grid grid-cols-3 gap-2">{[0, 1, 2].map((i) => <div key={i} className="playground-shimmer aspect-square rounded-xl bg-white/[0.04]" />)}</div>
+            <div className="h-32 rounded-xl bg-white/[0.03]" />
+          </div>
+          <div className="min-w-0 flex-1 space-y-4 px-6 pt-5">
+            <div className="h-4 w-72 rounded bg-white/8" />
+            <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${density}px, 1fr))` }}>
+              {Array.from({ length: 8 }, (_, i) => <div key={i} className="playground-shimmer aspect-[4/5] rounded-2xl border border-white/6 bg-white/[0.03]" />)}
+            </div>
+          </div>
         </div>
       )}
       {status === 'signin' && (

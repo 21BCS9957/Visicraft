@@ -61,6 +61,8 @@ interface PlaygroundState {
   setComposerDraft: (draft: string | null) => void;
   setLightbox: (id: string | null) => void;
   loadBundle: (bundle: PlaygroundBundle) => void;
+  /** A quiet refresh over data already on screen: keeps runs made meanwhile and images being sent. */
+  mergeBundle: (bundle: PlaygroundBundle) => void;
   appendOlder: (bundle: PlaygroundBundle) => void;
   setProject: (project: PlaygroundProject) => void;
   setReferences: (references: PlaygroundReference[]) => void;
@@ -117,6 +119,21 @@ export const usePlaygroundStore = create<PlaygroundState>((set) => ({
     items: Object.fromEntries(bundle.items.map((item) => [item.id, item])),
     nextBefore: bundle.nextBefore,
     settings: settingsFrom(bundle.project.settings),
+  }),
+  mergeBundle: (bundle) => set((state) => {
+    const fresh = new Set(bundle.runs.map((run) => run.id));
+    const newest = bundle.runs[0]?.createdAt ?? '';
+    const madeMeanwhile = state.runs.filter((run) => !fresh.has(run.id) && run.createdAt > newest);
+    const keepRuns = new Set(madeMeanwhile.map((run) => run.id));
+    const busy = new Set([...state.runner.inFlight, ...state.runner.checking]);
+    const kept = Object.values(state.items).filter((item) => (item.runId && keepRuns.has(item.runId)) || busy.has(item.id));
+    return {
+      project: bundle.project,
+      references: bundle.references,
+      runs: [...madeMeanwhile, ...bundle.runs],
+      items: { ...Object.fromEntries(bundle.items.map((item) => [item.id, item])), ...Object.fromEntries(kept.map((item) => [item.id, item])) },
+      nextBefore: bundle.nextBefore,
+    };
   }),
   appendOlder: (bundle) => set((state) => ({
     runs: [...state.runs, ...bundle.runs.filter((run) => !state.runs.some((known) => known.id === run.id))],

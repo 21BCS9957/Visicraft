@@ -7,6 +7,7 @@ import { FolderPlus, ImageIcon, Loader2, MoreHorizontal, Pencil, Trash2 } from '
 import toast from '@/lib/toast';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { playgroundApi } from '@/lib/playground/api';
+import { cachedProjectList, forgetProject, prefetchProject, rememberBundle, rememberProjectList } from '@/lib/playground/cache';
 import { previewProjects, PREVIEW_PROJECT_ID } from '@/lib/playground/preview';
 import type { PlaygroundProjectSummary } from '@/lib/playground/types';
 import { usePreviewFlag } from './hooks';
@@ -14,16 +15,17 @@ import { Popover, PopoverClose, timeAgo } from './ui';
 
 const TOAST = { position: 'top-center' as const };
 
-function ProjectCard({ project, href, onRename, onDelete }: {
+function ProjectCard({ project, href, onRename, onDelete, onWarm }: {
   project: PlaygroundProjectSummary;
   href: string;
   onRename: () => void;
   onDelete: () => void;
+  onWarm?: () => void;
 }) {
   const [coverFailed, setCoverFailed] = useState(false);
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-white/8 bg-white/[0.03] transition-colors hover:border-white/15">
-      <Link href={href} className="block">
+      <Link href={href} className="block" onPointerEnter={onWarm} onFocus={onWarm}>
         <div className="aspect-[4/3] overflow-hidden bg-[#111115]">
           {project.coverUrl && !coverFailed ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -70,7 +72,7 @@ export function PlaygroundHome() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const preview = usePreviewFlag();
-  const [loaded, setLoaded] = useState<PlaygroundProjectSummary[] | null>(null);
+  const [loaded, setLoaded] = useState<PlaygroundProjectSummary[] | null>(() => cachedProjectList());
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
   // The dev preview starts from sample projects; renames and deletes then edit this copy.
@@ -80,7 +82,10 @@ export function PlaygroundHome() {
   useEffect(() => {
     if (preview || authLoading || !user) return;
     playgroundApi.listProjects()
-      .then(({ projects: list }) => setLoaded(list))
+      .then(({ projects: list }) => {
+        rememberProjectList(list);
+        setLoaded(list);
+      })
       .catch((caught) => setError(caught instanceof Error ? caught.message : 'Could not load your projects.'));
   }, [preview, authLoading, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -91,6 +96,8 @@ export function PlaygroundHome() {
     setCreating(true);
     try {
       const { project } = await playgroundApi.createProject(`Project ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`);
+      // A new project is empty: it can open without waiting for the server.
+      rememberBundle(project.id, { project, references: [], runs: [], items: [], nextBefore: null, refunded: 0 });
       router.push(`/playground/${project.id}`);
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : 'Could not create the project', TOAST);
@@ -112,6 +119,7 @@ export function PlaygroundHome() {
     if (!window.confirm(`Delete "${project.name}" with its ${project.imageCount} images and references? This cannot be undone.`)) return;
     try {
       if (!preview) await playgroundApi.deleteProject(project.id);
+      forgetProject(project.id);
       setProjects((list) => list?.filter((known) => known.id !== project.id) ?? list);
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : 'Could not delete the project', TOAST);
@@ -159,7 +167,7 @@ export function PlaygroundHome() {
               <span className="text-sm">New project</span>
             </button>
             {projects.map((project) => (
-              <ProjectCard key={project.id} project={project} href={hrefFor(project.id)} onRename={() => rename(project)} onDelete={() => remove(project)} />
+              <ProjectCard key={project.id} project={project} href={hrefFor(project.id)} onRename={() => rename(project)} onDelete={() => remove(project)} onWarm={preview ? undefined : () => prefetchProject(project.id)} />
             ))}
           </div>
         )}

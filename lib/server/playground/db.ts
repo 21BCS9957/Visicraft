@@ -123,68 +123,72 @@ export async function getOwnedItem(db: Db, itemId: string, userId: string, colum
 
 const RUNS_PER_PAGE = 10;
 
-/** Fails and refunds images a stopped request left generating, then loads the project. */
+/**
+ * The project with its references, latest runs (each with its images) and Canvas edits, in
+ * one parallel round of queries. The stale-image sweep runs alongside; when it failed and
+ * refunded anything, the runs are read again so they show it.
+ */
 export async function loadProjectBundle(db: Db, userId: string, projectId: string, before?: string | null): Promise<PlaygroundBundle> {
-  const sweep = await db.rpc('playground_fail_stale_items', { p_user_id: userId, p_older_than_seconds: 600 });
-  if (sweep.error && isSetupError(sweep.error)) throw new ApiError(503, SETUP_MESSAGE, 'setup');
-  if (sweep.error) console.error('Playground: stale sweep failed:', sweep.error);
+  const loadRuns = () => {
+    let query = db
+      .from('playground_runs')
+      .select(`*, playground_items(${ITEM_COLUMNS})`)
+      .eq('project_id', projectId)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .order('position', { referencedTable: 'playground_items', ascending: true })
+      .limit(RUNS_PER_PAGE + 1);
+    if (before) query = query.lt('created_at', before);
+    return query;
+  };
+  const none = Promise.resolve({ data: [] as Row[], error: null });
 
-  const project = toProject(await getOwnedProject(db, projectId, userId));
-
-  let runsQuery = db
-    .from('playground_runs')
-    .select('*')
-    .eq('project_id', projectId)
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(RUNS_PER_PAGE + 1);
-  if (before) runsQuery = runsQuery.lt('created_at', before);
-
-  const [referencesResult, runsResult] = await Promise.all([
+  const [sweep, projectResult, referencesResult, runsResult, editsResult] = await Promise.all([
+    db.rpc('playground_fail_stale_items', { p_user_id: userId, p_older_than_seconds: 600 }),
+    db.from('playground_projects').select('*').eq('id', projectId).eq('user_id', userId).maybeSingle(),
     before
-      ? Promise.resolve({ data: [] as Row[], error: null })
+      ? none
       : db.from('playground_references').select('*').eq('project_id', projectId).eq('user_id', userId)
         .order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
-    runsQuery,
+    loadRuns(),
+    before
+      ? none
+      : db.from('playground_items').select(ITEM_COLUMNS).eq('project_id', projectId).eq('user_id', userId).eq('kind', 'edit')
+        .order('created_at', { ascending: false }).limit(100),
   ]);
+  if (sweep.error && isSetupError(sweep.error)) throw new ApiError(503, SETUP_MESSAGE, 'setup');
+  if (sweep.error) console.error('Playground: stale sweep failed:', sweep.error);
+  assertDb(projectResult.error, 'load the project');
+  if (!projectResult.data) throw new ApiError(404, 'Project not found.', 'not_found');
   assertDb(referencesResult.error, 'load the references');
   assertDb(runsResult.error, 'load the runs');
+  assertDb(editsResult.error, 'load the edited images');
 
-  const runRows = (runsResult.data ?? []) as Row[];
-  const pageRuns = runRows.slice(0, RUNS_PER_PAGE).map(toRun);
+  const refunded = typeof sweep.data === 'number' ? sweep.data : 0;
+  let runRows = (runsResult.data ?? []) as Row[];
+  if (refunded > 0) {
+    const again = await loadRuns();
+    assertDb(again.error, 'load the runs');
+    runRows = (again.data ?? []) as Row[];
+  }
+
+  const pageRows = runRows.slice(0, RUNS_PER_PAGE);
+  const pageRuns = pageRows.map(toRun);
   const nextBefore = runRows.length > RUNS_PER_PAGE ? pageRuns[pageRuns.length - 1]?.createdAt ?? null : null;
-
-  const items: PlaygroundItem[] = [];
-  if (pageRuns.length) {
-    const { data, error } = await db
-      .from('playground_items')
-      .select(ITEM_COLUMNS)
-      .in('run_id', pageRuns.map((run) => run.id))
-      .order('position', { ascending: true });
-    assertDb(error, 'load the images');
-    items.push(...((data ?? []) as unknown as Row[]).map(toItem));
-  }
-  if (!before) {
-    const { data, error } = await db
-      .from('playground_items')
-      .select(ITEM_COLUMNS)
-      .eq('project_id', projectId)
-      .eq('kind', 'edit')
-      .order('created_at', { ascending: false })
-      .limit(100);
-    assertDb(error, 'load the edited images');
-    items.push(...((data ?? []) as unknown as Row[]).map(toItem));
-  }
+  const items: PlaygroundItem[] = [
+    ...pageRows.flatMap((row) => ((row.playground_items as Row[] | undefined) ?? []).map(toItem)),
+    ...((editsResult.data ?? []) as unknown as Row[]).map(toItem),
+  ];
 
   // A run whose images were all deleted has nothing to show.
   const withItems = new Set(items.map((item) => item.runId));
   return {
-    project,
+    project: toProject(projectResult.data as Row),
     references: ((referencesResult.data ?? []) as Row[]).map(toReference),
     runs: pageRuns.filter((run) => withItems.has(run.id)),
     items,
     nextBefore,
-    refunded: typeof sweep.data === 'number' ? sweep.data : 0,
+    refunded,
   };
 }
 
