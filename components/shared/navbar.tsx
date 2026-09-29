@@ -54,12 +54,14 @@ export function Navbar() {
     }
   }, [showUserMenu]);
 
-  if (pathname?.startsWith('/workflow')) {
+  // Full-screen tools draw their own top bar.
+  if (pathname?.startsWith('/workflow') || pathname?.startsWith('/playground/')) {
     return null;
   }
 
   const links = [
     { href: '/', label: 'Home' },
+    { href: '/playground', label: 'Playground' },
     { href: '/workflow', label: 'Workflow' },
     { href: '/generate', label: 'Generate' },
     { href: '/pricing', label: 'Pricing' },
@@ -89,7 +91,7 @@ export function Navbar() {
           {/* Navigation Links */}
           <div className="absolute left-1/2 z-10 hidden -translate-x-1/2 items-center gap-2 rounded-full border border-white/8 bg-white/[0.035] px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] md:flex">
             {links.map((item) => {
-              const isActive = pathname === item.href;
+              const isActive = pathname === item.href || (item.href !== '/' && pathname?.startsWith(`${item.href}/`));
               
               return (
                 <Link

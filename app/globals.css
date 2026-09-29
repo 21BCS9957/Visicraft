@@ -2303,3 +2303,18 @@ body {
 .workflow-crop-apply {
   color: #ffd27a;
 }
+/* Playground: the sweep over images that are being generated. */
+.playground-shimmer {
+  background: linear-gradient(110deg, transparent 20%, rgba(255, 255, 255, 0.07) 40%, rgba(255, 240, 90, 0.07) 50%, rgba(255, 255, 255, 0.07) 60%, transparent 80%);
+  background-size: 250% 100%;
+  animation: playground-shimmer 1.8s linear infinite;
+}
+
+@keyframes playground-shimmer {
+  from { background-position: 150% 0; }
+  to { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .playground-shimmer { animation: none; }
+}
