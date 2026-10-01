@@ -97,6 +97,15 @@ export async function refundCreditsForUser(userId: string, amount: number): Prom
   if (amount <= 0) return;
 
   const admin = createServiceClient();
+  // Atomic when the Playground migration has added refund_user_credits; concurrent refunds
+  // (several creative slots or Playground images failing together) can't overwrite each other.
+  const rpcResult = await admin.rpc('refund_user_credits', { p_user_id: userId, p_amount: amount });
+  if (!rpcResult.error) {
+    if (rpcResult.data !== true) console.error('Refund found no credits row for user', userId);
+    return;
+  }
+  console.warn('refund_user_credits RPC unavailable, falling back to non-atomic update:', rpcResult.error.message);
+
   const { data, error: fetchError } = await admin
     .from('user_credits')
     .select('credits')

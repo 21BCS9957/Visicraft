@@ -179,9 +179,40 @@ export function CreditsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!userId || typeof window === 'undefined') return;
 
+    // Also re-read the balance when the tab comes back into view (e.g. after paying in another tab).
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refreshCredits();
+    };
     window.addEventListener('online', refreshCredits);
-    return () => window.removeEventListener('online', refreshCredits);
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('online', refreshCredits);
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [refreshCredits, userId]);
+
+  // Live balance: the database pushes every change to this user's credits row (charges and
+  // refunds from any flow, purchases), so the number updates without a page refresh.
+  // Needs user_credits in the supabase_realtime publication (supabase/migrations/202609300002_live_credits.sql).
+  useEffect(() => {
+    if (!userId) return;
+    const channel = supabase
+      .channel(`credits:${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_credits', filter: `user_id=eq.${userId}` },
+        (payload) => {
+          const next = (payload.new as { credits?: unknown } | null)?.credits;
+          if (typeof next === 'number') setCredits(next);
+        }
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [userId]);
 
   return (
     <CreditsContext.Provider value={{ credits, loading, refreshCredits, deductCredits, addCredits }}>

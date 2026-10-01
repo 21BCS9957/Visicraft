@@ -19,20 +19,26 @@ import { planAdAngles } from '@/lib/server/adAngles';
 import { writePromptsFromWinners } from '@/lib/server/winnerPrompts';
 import { compositeProduct, compositeProductPerspective, cutoutProduct, locateProductQuad } from '@/lib/server/productComposite';
 import { describeProductNiche, researchWinningAds, type AdDesign, type WinningAd } from '@/lib/server/metaAdResearch';
-import { groundVideoStoryboard, heroFrameDirection, planVideoStoryboard, resolveVideoStyle } from '@/lib/server/videoStoryboard';
+import { groundVideoStoryboard, heroFrameDirection, MAX_SEEDANCE_PROMPT_CHARS, planVideoStoryboard, resolveVideoStyle, type VideoStoryboard } from '@/lib/server/videoStoryboard';
+import { buildSeedanceReferences, inspectReferenceImages } from '@/lib/server/referenceImages';
+import { compileSeedanceFilm, filmStoryboard, writeSeedanceFilm } from '@/lib/server/seedanceFilm';
+import { seedancePrompt } from '@/lib/server/seedance';
+import { saveVideoReview, type VideoReview, type VideoReviewFrame } from '@/lib/server/videoReview';
+import { CLAUDE_VIDEO_MODEL, CLAUDE_VIDEO_MODEL_NAME, claudeCostUsd } from '@/lib/server/claude';
+import type { VideoWriter } from '@/lib/server/videoWriter';
+import { createServiceClient } from '@/lib/supabase/server';
 import { cropGarmentDetails, describeGarmentSpec } from '@/lib/server/productSpec';
 import { trimPaddedBands } from '@/lib/server/paddedBands';
-import { buildExactCanvas, exactCanvasPrompt, type FrameFormat } from '@/lib/server/exactFrame';
+import { buildExactCanvas, closestFormat, exactCanvasPrompt, extendCanvasPrompt, mannequinPrompt, type FrameFormat } from '@/lib/server/exactFrame';
 import { validatePersonIdentity } from '@/lib/server/personIdentity';
 import { parseVideoStyle, videoStyleLabel, type VideoStyle } from '@/lib/videoStyles';
 import { judgeAdCreative } from '@/lib/server/adJudge';
-import { isVideoGenerationConfigured, resolveVeoModel, submitVeoJob } from '@/lib/server/veo';
+import { isVideoEngineConfigured, pickVideoEngine, resolveVideoModel, videoEngineLabel, videoEngineSetup, videoOutputResolution } from '@/lib/server/video';
+import { normalizeVideoQuality, seedanceSpec, snapVideoDuration, videoCredits, type VideoEngine, type VideoQuality } from '@/lib/videoModels';
 import type { ProviderUsage } from '@/lib/server/usage';
 import {
   deductCreditsForUser,
   estimateGoogleImageCostUsd,
-  estimateGoogleVideoCostUsd,
-  getServerVideoCreditCost,
   estimateGoogleProductAnalysisCostUsd,
   getServerImageCreditCost,
   logUsage,
@@ -46,7 +52,6 @@ const REQUEST_BUDGET_MS = 280_000;
 const MIN_TIME_FOR_ATTEMPT_MS = 75_000;
 // A video renders one frame and writes its storyboard in parallel, so an attempt needs less headroom.
 const MIN_TIME_FOR_VIDEO_ATTEMPT_MS = 55_000;
-const VEO_4K = /4k/i.test(process.env.VEO_RESOLUTION ?? '');
 
 const MODES: ImageGenMode[] = ['generate', 'thumbnail', 'edit', 'upscale', 'unblur'];
 
@@ -94,20 +99,30 @@ export async function POST(request: NextRequest) {
     const resolution = typeof body.resolution === 'string' ? body.resolution : undefined;
     const creativeSet = body.creativeSet === true && mode === 'generate';
     const productContext = readProductContext(body.productContext);
-    // Video ad: one clean hero frame (real product pasted in) + one Veo clip animated from it.
+    // Video ad: one clean hero frame (real product pasted in) + one clip animated from it.
+    // The video model picked in the app sets the engine (Veo or Seedance).
     const videoAd = creativeSet && body.videoAd === true;
-    const videoModel = resolveVeoModel(typeof body.videoModel === 'string' ? body.videoModel : undefined);
-    const videoDurationSeconds = 8;
+    const requestedVideoModel = typeof body.videoModel === 'string' ? body.videoModel : undefined;
+    const videoEngine = pickVideoEngine(requestedVideoModel);
+    const videoModel = resolveVideoModel(videoEngine, requestedVideoModel);
+    // The length and quality picked in the app, snapped to what the model renders. A draft is a
+    // cheap test render that can be upgraded later without redoing the frame or the storyboard.
+    const videoDurationSeconds = snapVideoDuration(videoModel, Number(body.videoDuration) || undefined);
+    const videoQuality = normalizeVideoQuality(videoModel, typeof body.videoQuality === 'string' ? body.videoQuality : videoOutputResolution(videoEngine, videoModel));
     const perImageCost = getServerImageCreditCost(mode, model, resolution);
-    // VEO_RESOLUTION=4k renders 4K clips (and 4K hero frames); Google charges 1.5x for them.
-    const videoCost = videoAd
-      ? Math.round(getServerVideoCreditCost({ model: videoModel, duration: `${videoDurationSeconds}s` }) * (VEO_4K ? 1.5 : 1))
-      : 0;
+    // Priced from the model's cost for this length and quality (lib/videoModels.ts). The video
+    // itself is charged when the user approves it (POST /api/video/render); here only its frame.
+    const videoCost = videoAd ? videoCredits(videoModel, videoQuality, videoDurationSeconds) : 0;
     const creditCost = videoAd
-      ? perImageCost + videoCost
+      ? perImageCost
       : creativeSet
         ? perImageCost * CREATIVE_SLOTS.length
         : perImageCost;
+    // A video made in a video project: checked before anything is charged.
+    const videoProject = videoAd && body.projectId ? await loadVideoProject(user.id, body.projectId) : null;
+    if (videoAd && body.projectId && !videoProject) {
+      return NextResponse.json({ error: 'This video project was not found.' }, { status: 404 });
+    }
     const deducted = await deductCreditsForUser(user.id, creditCost);
 
     if (!deducted) {
@@ -136,7 +151,7 @@ export async function POST(request: NextRequest) {
         research: body.research === true,
         country: typeof body.country === 'string' && /^[A-Z]{2}$/.test(body.country) ? body.country : 'IN',
         video: videoAd
-          ? { model: videoModel, durationSeconds: videoDurationSeconds, cost: videoCost, style: parseVideoStyle(body.videoStyle) ?? 'any' }
+          ? { engine: videoEngine, model: videoModel, durationSeconds: videoDurationSeconds, quality: videoQuality, cost: videoCost, style: parseVideoStyle(body.videoStyle) ?? 'any', project: videoProject ?? undefined }
           : undefined,
         perImageCost,
         creditCost,
@@ -233,7 +248,7 @@ function failureSummary(
     return `No version of ${what} passed our creative review. Your credits were refunded; try again or add a direction in the prompt box.`;
   }
   return productKind === 'apparel'
-    ? `Every version of ${what} changed the garment, so nothing was kept and your credits were refunded.${found} Close-up store photos of the fabric, border and blouse help the model copy fine patterns exactly.`
+    ? `Every version of ${what} changed the garment, so nothing was kept and your credits were refunded.${found} Close-up store photos of the fabric and its details (lace, embroidery, trims) help the model copy fine patterns exactly; for lingerie, a photo of the set on its own (a flat lay or on a hanger) works best.`
     : `Every version of ${what} changed the product packaging, so nothing was kept and your credits were refunded.${found} A clear, front-facing product image helps.`;
 }
 
@@ -257,10 +272,32 @@ interface CreativeSetOptions {
   /** Run Meta winning-ad research inside the stream (overlaps product analysis). */
   research?: boolean;
   country?: string;
-  /** Present for a video ad: one hero frame is generated, then animated with Veo in the chosen style. */
-  video?: { model: string; durationSeconds: number; cost: number; style: VideoStyle };
+  /** Present for a video ad: one hero frame is generated, then animated by Veo or Seedance in the chosen style. */
+  video?: {
+    engine: VideoEngine;
+    model: string;
+    durationSeconds: number;
+    /** draft, 720p, 1080p or 4k. */
+    quality: VideoQuality;
+    cost: number;
+    style: VideoStyle;
+    /** The video project it is made in: its guidelines go to Claude, the video is listed in it. */
+    project?: { id: string; guidelines: string };
+  };
   perImageCost: number;
   creditCost: number;
+}
+
+/** A video project of this user, with its guidelines; null when it isn't theirs or doesn't exist. */
+async function loadVideoProject(userId: string, projectId: unknown): Promise<{ id: string; guidelines: string } | null> {
+  if (typeof projectId !== 'string' || !/^[0-9a-f-]{36}$/i.test(projectId)) return null;
+  const { data } = await createServiceClient()
+    .from('playground_projects')
+    .select('id, brief')
+    .eq('id', projectId)
+    .eq('user_id', userId)
+    .maybeSingle();
+  return data ? { id: String(data.id), guidelines: typeof data.brief === 'string' ? data.brief : '' } : null;
 }
 
 /**
@@ -288,13 +325,15 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
       };
       const generationUsages: ProviderUsage[] = [];
       const analysisUsages: ProviderUsage[] = [];
+      // Claude writes the video prompts; logged on its own, at Anthropic's prices.
+      const claudeUsages: ProviderUsage[] = [];
+      let savedReviewId: string | null = null;
       const validationScores: Array<{ slot: number; attempt: number; score: number; passed: boolean; checks: Record<string, boolean>; composited: boolean; reason: string }> = [];
       let billedImageCount = 0;
       let acceptedCount = 0;
       let verifierErrors = 0;
       const acceptedUrls = new Map<number, string>();
       const slotFailReasons = new Map<number, 'product' | 'generation' | 'safety' | 'quality'>();
-      let videoCreditsRefunded = 0;
 
       try {
         const stageStarted: Record<string, number> = {};
@@ -378,6 +417,8 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           return exactCanvases.get(key) as Promise<{ url: string; padded: boolean }>;
         };
         const acceptedExact = new Set<number>();
+        // Hero frames where the store photo's model became a mannequin (no person, the garment's own pixels).
+        const acceptedMannequin = new Set<number>();
         console.log(`Product references: canonical #${identity.canonicalReferenceIndex + 1}${detailImages.length ? `, close-ups #${identity.detailReferenceIndexes.map((i) => i + 1).join(', #')}` : ', no close-ups in the store images'}${autoCrops?.crops.length ? `, enlarged crops: ${autoCrops.crops.map((c) => c.piece).join(', ')}` : ''}`);
         // Garments: an exact pattern spec (motifs, their size and arrangement, borders, colours)
         // for every prompt and for the product check; runs while research is still going.
@@ -618,13 +659,26 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           // the fallback. A video starts from the hero photo; image slots take turns across the
           // model shots, for variety.
           const canExact = identity.productKind === 'apparel' && identity.onModel && !identity.sensitive;
+          // Intimate wear on a model, for a video: video models refuse the person, and a redrawn
+          // garment loses its lace, so the store photo is edited first: the model becomes a
+          // faceless mannequin and the garment keeps its pixels. The still life is the fallback.
+          const canMannequin = Boolean(video) && identity.productKind === 'apparel' && identity.onModel && identity.sensitive;
           const position = Math.max(0, slotIndexes.indexOf(index));
           const exactBase = video ? heroBase : modelShots.length ? modelShots[position % modelShots.length] : heroBase;
           let exactNext = canExact;
           let exactFailures = 0;
+          let mannequinNext = canMannequin;
+          let mannequinFailures = 0;
+          // The mannequin edit keeps the photo's own shape. A Seedance 2.x film takes it as a
+          // reference image as it is; every other engine animates a 9:16 first frame from it.
+          const firstFrameVideo = Boolean(video) && !(video?.engine === 'seedance' && ['2.0', '2.5'].includes(seedanceSpec(video.model).family));
+          let mannequinFormat: FrameFormat | null = null;
           for (let attempt = 0; attempt < maxAttempts; attempt++) {
             if (attempt > 0 && deadline - Date.now() < minTimeForAttempt) break;
-            const exact = exactNext && !stillLife();
+            const mannequin = mannequinNext;
+            const exact = !mannequin && exactNext && !stillLife();
+            // Both edit the store photo itself rather than drawing a new scene.
+            const edit = exact || mannequin;
             const repair = !exact && !cutout && identity.productKind !== 'apparel' && attempt === 1 && rejectedUrl !== null;
             const withCopy = slot.withText;
             try {
@@ -632,17 +686,20 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
               // as a layout & style reference, and renders in the winner's format.
               const current = activeAngle();
               const styleRef = !repair && !exact && current.referenceImage ? current.referenceImage : undefined;
-              const format = (video ? '9:16' : current.aspectRatio ?? '9:16') as FrameFormat;
+              if (mannequin) mannequinFormat ??= await closestFormat(exactBase).catch(() => '4:5' as FrameFormat);
+              const format = (mannequin ? mannequinFormat : video ? '9:16' : current.aspectRatio ?? '9:16') as FrameFormat;
               const canvas = exact ? await exactCanvas(exactBase, format) : null;
-              if (exact) console.log(`Slot ${index + 1} attempt ${attempt + 1}: exact-garment edit of store photo #${referenceImages.indexOf(exactBase) + 1}${canvas?.padded ? ` on a ${format} canvas` : ''}`);
+              if (edit) console.log(`Slot ${index + 1} attempt ${attempt + 1}: ${mannequin ? 'mannequin' : 'exact-garment'} edit of store photo #${referenceImages.indexOf(exactBase) + 1}${canvas?.padded ? ` on a ${format} canvas` : ''}`);
               const generated = await runImageGeneration({
                 mode,
-                referenceImages: exact
+                referenceImages: edit
                   ? [canvas?.url ?? exactBase]
                   : repair
                     ? [canonicalImage, rejectedUrl as string]
                     : styleRef ? [...productRefs, styleRef] : productRefs,
-                prompt: exact
+                prompt: mannequin
+                  ? mannequinPrompt({ garment: garmentSpec?.signature.join('; ') })
+                  : exact
                   ? exactCanvasPrompt({
                       padded: Boolean(canvas?.padded),
                       garment: garmentSpec?.signature.join('; '),
@@ -654,10 +711,11 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                   : promptFor(),
                 model,
                 aspectRatio: format,
-                // A 4K video starts from a 4K frame, so Veo animates real detail.
-                resolution: exact && video && VEO_4K ? '4K' : resolution,
+                // A 4K video starts from a 4K frame, so the video model animates real detail.
+                resolution: edit && video?.quality === '4k' ? '4K' : resolution,
                 persistToGenerationsTable: false,
-                referencePolicy: exact ? 'subject-lock' : repair ? 'product-repair' : styleRef ? 'product-plus-style' : 'product-lock',
+                // The mannequin edit replaces the person, so it must not carry the person-lock protocol.
+                referencePolicy: mannequin ? 'balanced' : exact ? 'subject-lock' : repair ? 'product-repair' : styleRef ? 'product-plus-style' : 'product-lock',
                 userId: user.id,
               });
               generationUsages.push(generated.usage);
@@ -687,8 +745,8 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
               }
 
               const verify = (url: string) => validateProductIdentity(
-                // An exact frame is the base photo edited, so it is checked against that photo.
-                exact ? exactBase : canonicalImage,
+                // An edited frame is the base photo edited, so it is checked against that photo.
+                edit ? exactBase : canonicalImage,
                 url,
                 identity.manifest,
                 {
@@ -758,6 +816,50 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                 }
               }
 
+              if (validation?.passed && mannequin) {
+                // The point of the mannequin frame is that no person is left in it.
+                const inspected = await inspectReferenceImages([imageUrl]).catch((error) => {
+                  console.warn(`Slot ${index + 1} person check unavailable:`, error instanceof Error ? error.message : error);
+                  return null;
+                });
+                if (inspected?.usage) analysisUsages.push(inspected.usage);
+                if (inspected?.images[0]?.person) {
+                  console.log(`Slot ${index + 1} attempt ${attempt + 1}: the mannequin edit still shows a person`);
+                  failReason = 'quality';
+                  mannequinFailures += 1;
+                  mannequinNext = mannequinFailures < 2;
+                  send({ type: 'retry', index, attempt: attempt + 1, reason: 'quality' });
+                  continue;
+                }
+                if (firstFrameVideo && format !== '9:16') {
+                  // A first frame is 9:16: the mannequin photo goes on a 9:16 canvas and only the strips are painted.
+                  const tall = await buildExactCanvas(imageUrl, '9:16').catch(() => null);
+                  const extended = tall?.padded
+                    ? await runImageGeneration({
+                        mode,
+                        referenceImages: [tall.url],
+                        prompt: extendCanvasPrompt(),
+                        model,
+                        aspectRatio: '9:16',
+                        resolution: video?.quality === '4k' ? '4K' : resolution,
+                        persistToGenerationsTable: false,
+                        referencePolicy: 'balanced',
+                        userId: user.id,
+                      }).catch((error) => {
+                        console.warn(`Slot ${index + 1}: extending the mannequin frame failed:`, error instanceof Error ? error.message : error);
+                        return null;
+                      })
+                    : null;
+                  if (extended) {
+                    generationUsages.push(extended.usage);
+                    billedImageCount += extended.images.length;
+                  }
+                  const bands = extended?.images[0] ? await trimPaddedBands(extended.images[0]).catch(() => null) : null;
+                  if (extended?.images[0] && !(bands && (bands.trimmed || bands.tooLarge))) imageUrl = extended.images[0];
+                  else console.log(`Slot ${index + 1}: the mannequin frame could not be extended to 9:16; keeping its own shape`);
+                }
+              }
+
               if (validation?.passed) {
                 // Product is right; now judge it as a media buyer would. One re-roll with fixes.
                 const verdict = await judgeAdCreative({
@@ -766,8 +868,8 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                   angle: activeAngle(),
                   withText: stillLife() ? false : withCopy,
                   productKind: identity.productKind,
-                  // An exact edit keeps the store photo's pose, so it is not judged on the winner's layout.
-                  referenceImageUrl: exact ? undefined : activeAngle().referenceImage,
+                  // An edited store photo keeps its pose, so it is not judged on the winner's layout.
+                  referenceImageUrl: edit ? undefined : activeAngle().referenceImage,
                   videoStyle: video && !stillLife() ? madeStyle : undefined,
                 }).catch((error) => {
                   console.warn(`Slot ${index + 1} creative review unavailable:`, error);
@@ -782,7 +884,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                 // Deal-breakers (artifacts, duplicated heads, padded bands) are never kept; a merely
                 // weak creative gets one re-roll and is kept after that. An exact-garment edit is
                 // kept unless it has a deal-breaker: its product is the point.
-                if (verdict && !verdict.passed && canReroll && (hasDealBreaker || (qualityRerolls < 1 && !exact))) {
+                if (verdict && !verdict.passed && canReroll && (hasDealBreaker || (qualityRerolls < 1 && !edit))) {
                   qualityRerolls += 1;
                   critique = [verdict.critical.length ? `Deal-breakers: ${verdict.critical.join('; ')}.` : '', verdict.fixes].filter(Boolean).join(' ');
                   failReason = 'quality';
@@ -797,6 +899,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                 acceptedCount += 1;
                 acceptedUrls.set(index, imageUrl);
                 if (exact) acceptedExact.add(index);
+                if (mannequin) acceptedMannequin.add(index);
                 send({
                   type: 'creative',
                   index,
@@ -805,7 +908,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                   withText: withCopy,
                   attempts: attempt + 1,
                   score: verdict?.score,
-                  exactGarment: exact,
+                  exactGarment: edit,
                 });
                 return imageUrl;
               }
@@ -816,6 +919,9 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
               // failures (or when a fresh scene failed) the next attempt switches path.
               if (exact) exactFailures += 1;
               exactNext = canExact && (exact ? exactFailures < 2 : true);
+              // Two mannequin edits that changed the garment: the next attempt is the still life.
+              if (mannequin) mannequinFailures += 1;
+              mannequinNext = canMannequin && mannequinFailures < 2;
               if (identity.productKind === 'apparel' && validation.reason) {
                 critique = `The product check rejected the previous render because the garment changed: ${validation.reason} Copy every one of these details exactly from the product photos, and frame the garment no tighter than those photos show it.`;
               }
@@ -842,8 +948,42 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           return null;
         };
 
+        // A worn garment's clip ends on its first frame; Veo can pin that only on 8-second clips.
+        const apparel = identity.productKind === 'apparel';
+        const pinLastFrame = apparel && Boolean(video) && (video?.engine !== 'veo' || video?.durationSeconds === 8);
+        const maxPromptChars = video?.engine === 'seedance' ? MAX_SEEDANCE_PROMPT_CHARS : undefined;
+        // Seedance 2.x takes no photo of a real person: its film is built from person-free
+        // product references (crops where the product is worn or held), found and written for
+        // while the hero frame renders. This is how the Neeksha film was made.
+        const seedanceFamily = video?.engine === 'seedance' ? seedanceSpec(video.model).family : null;
+        const referenceFilm = seedanceFamily === '2.0' || seedanceFamily === '2.5';
+        const referencesPromise = video && referenceFilm
+          ? buildSeedanceReferences(referenceImages, { garment: apparel }).catch((error) => {
+              console.warn('Seedance references failed:', error instanceof Error ? error.message : error);
+              return null;
+            })
+          : null;
+        const writeFilm = (references: Array<{ url: string; label: string }>, onMannequin = false) => writeSeedanceFilm({
+          context: productContext,
+          identityManifest: identity.manifest,
+          userDirection,
+          adPatterns,
+          winningDesigns,
+          durationSeconds: video?.durationSeconds ?? 8,
+          style: video?.style,
+          productKind: identity.productKind,
+          productSpec: garmentSpec?.json,
+          never: garmentSpec?.never,
+          sensitive: identity.sensitive,
+          guidelines: video?.project?.guidelines,
+          onMannequin,
+          references,
+        });
+        const filmPromise = video && referencesPromise
+          ? referencesPromise.then((found) => (found?.references.length ? writeFilm(found.references) : null))
+          : null;
         // The storyboard does not depend on the hero frame, so it is written while the frame renders.
-        const storyboardPromise = video
+        const storyboardPromise = video && !referenceFilm
           ? planVideoStoryboard({
               context: productContext,
               identityManifest: identity.manifest,
@@ -856,8 +996,10 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
               productKind: identity.productKind,
               productSpec: garmentSpec?.json,
               never: garmentSpec?.never,
-              // A worn garment's clip ends on its first frame (Veo's pinned last frame).
-              pinnedLastFrame: identity.productKind === 'apparel',
+              pinnedLastFrame: pinLastFrame,
+              maxPromptChars,
+              productImages: productRefs,
+              guidelines: video.project?.guidelines,
             })
           : null;
 
@@ -867,105 +1009,192 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
         stage('generate', acceptedCount > 0 ? 'done' : 'failed', `${acceptedCount} of ${slotIndexes.length} passed the product check`, { passed: acceptedCount, withheld: failedSlots });
         if (failedSlots > 0) await refundCreditsForUser(user.id, perImageCost * failedSlots);
 
-        // Video ad: storyboard modelled on the winning sequences, then animate the hero frame.
-        let operationId: string | undefined;
+        // Video ad: the frame or references, the exact prompt and the settings go to the user
+        // for approval. Nothing renders, and the video is not charged, until they approve.
+        let reviewId: string | undefined;
         let videoWarning: string | undefined;
         if (video) {
           const heroUrl = acceptedUrls.get(slotIndexes[0]);
-          let planned = await (storyboardPromise as NonNullable<typeof storyboardPromise>);
-          if (planned.usage) analysisUsages.push(planned.usage);
-          // Match the JSON prompt to the frame Veo will animate, when there is time for it.
-          if (heroUrl && deadline - Date.now() > 40_000) {
-            const grounded = await groundVideoStoryboard(planned.storyboard, {
-              heroUrl,
-              productSpec: garmentSpec?.json,
-              never: garmentSpec?.never,
-              sensitive: identity.sensitive,
-              garment: identity.productKind === 'apparel',
-              pinnedLastFrame: identity.productKind === 'apparel',
-            }).catch((error) => {
-              console.warn('Video prompt grounding failed; using the draft:', error instanceof Error ? error.message : error);
-              return null;
-            });
-            if (grounded) {
-              planned = grounded;
-              if (grounded.usage) analysisUsages.push(grounded.usage);
-            }
-          }
-          console.log(`Veo prompt (${planned.storyboard.prompt.length} chars, ${planned.storyboard.promptJson ? 'JSON' : 'text'}): ${planned.storyboard.prompt.slice(0, 300)}…`);
-          if (!heroUrl) {
-            videoCreditsRefunded = video.cost;
-            await refundCreditsForUser(user.id, video.cost);
-          } else {
-            stage('storyboard', 'active', 'Writing the storyboard from the winning video ads');
-            send({ type: 'status', message: 'Writing the storyboard from the winning video ads...' });
-            send({ type: 'storyboard', storyboard: planned.storyboard });
-            stage('storyboard', 'done', planned.storyboard.hook, { storyboard: planned.storyboard });
+          const exactHero = acceptedExact.has(slotIndexes[0]);
+          const engineName = videoEngineLabel(video.engine, video.model);
+          const studied = winningDesigns.filter((d) => d.sequence?.length).slice(0, 3).length;
+          stage('storyboard', 'active', studied
+            ? `${CLAUDE_VIDEO_MODEL_NAME} is writing the prompt from ${studied} winning video${studied === 1 ? '' : 's'}`
+            : `${CLAUDE_VIDEO_MODEL_NAME} is writing the prompt from the product photos`);
+          let plan: {
+            mode: VideoReview['mode'];
+            frames: VideoReviewFrame[];
+            prompt: string;
+            negativePrompt?: string;
+            storyboard: VideoStoryboard;
+            needsAudio: boolean;
+            notes: string[];
+            writer: VideoWriter;
+          } | null = null;
 
-            if (!isVideoGenerationConfigured()) {
-              videoCreditsRefunded = video.cost;
-              await refundCreditsForUser(user.id, video.cost);
-              videoWarning = 'Video generation is not configured on this server yet (a GEMINI_API_KEY with billing, or GOOGLE_VIDEO_SERVICE_ACCOUNT_JSON). The hero frame and storyboard were kept; video credits were refunded.';
-              stage('render', 'skipped', 'Video generation not configured');
+          if (referenceFilm) {
+            const found = await referencesPromise;
+            if (found) analysisUsages.push(...found.usages);
+            let references = found?.references ?? [];
+            let written = await filmPromise;
+            // Worn intimate wear has no person-free photo and no person-free crop: the mannequin
+            // hero frame (the store photo, its model turned into a mannequin) is the reference.
+            const fromMannequin = references.length === 0 && Boolean(heroUrl) && acceptedMannequin.has(slotIndexes[0]);
+            if (fromMannequin && heroUrl) {
+              references = [{ url: heroUrl, label: 'the product on a display mannequin, from your store photo' }];
+              written = await writeFilm(references, true);
+            }
+            if (written?.usage) claudeUsages.push(written.usage);
+            if (references.length && written) {
+              // A person-free hero frame (the ad modelled on the winner) is the scene the film opens on.
+              const inspected = heroUrl && !exactHero && !fromMannequin ? await inspectReferenceImages([heroUrl]).catch(() => null) : null;
+              if (inspected?.usage) analysisUsages.push(inspected.usage);
+              const opening = !fromMannequin && Boolean(heroUrl) && inspected?.images[0]?.person === false;
+              const prompt = compileSeedanceFilm(written.film, {
+                durationSeconds: video.durationSeconds,
+                opening,
+                family: seedanceFamily as '2.0' | '2.5',
+                audio: process.env.SEEDANCE_GENERATE_AUDIO !== 'false',
+                mannequin: fromMannequin,
+                sensitive: identity.sensitive,
+              });
+              const cropped = references.some((reference) => !referenceImages.includes(reference.url));
+              plan = {
+                mode: 'reference',
+                frames: [...(opening && heroUrl ? [{ url: heroUrl, label: 'Opening scene (the ad frame)' }] : []), ...references],
+                prompt,
+                storyboard: filmStoryboard(written.film, prompt, written.style),
+                needsAudio: Boolean(written.film.dialogue),
+                notes: [
+                  ...(written.writer.fallbackReason ? [written.writer.fallbackReason] : []),
+                  fromMannequin
+                    ? `${engineName} does not accept photos of real people, so the model in your store photo was turned into a display mannequin; the garment keeps its real pixels, and the film is built from that frame.`
+                    : `${engineName} does not accept photos of real people, so the film is built from ${references.length} people-free ${cropped ? 'views of the product (crops of the photos where it is worn or held)' : 'product photos'}${opening ? ' and opens on the ad frame' : ''}.`,
+                ],
+                writer: written.writer,
+              };
             } else {
-              try {
-                stage('render', 'active', 'Rendering with Veo');
-                send({ type: 'status', message: 'Rendering your video with Veo...' });
-                const job = await submitVeoJob({
-                  imageUrl: heroUrl,
-                  // A worn garment: the clip returns to its exact first frame, which stops Veo's
-                  // drift and zoom and anchors the weave at both ends.
-                  lastFrameUrl: identity.productKind === 'apparel' ? heroUrl : undefined,
-                  prompt: planned.storyboard.prompt,
-                  negativePrompt: planned.storyboard.negativePrompt,
-                  model: video.model,
-                  aspectRatio: '9:16',
-                  duration: `${video.durationSeconds}s`,
-                });
-                operationId = job.operationName;
-                await logUsage({
-                  user,
-                  model: job.model,
-                  feature: 'video_generation',
-                  videoSeconds: video.durationSeconds,
-                  estimatedCostUsd: estimateGoogleVideoCostUsd({ model: job.model, duration: `${video.durationSeconds}s`, numResults: 1, resolution: VEO_4K ? '4k' : undefined }),
-                  creditCost: video.cost,
-                  metadata: {
-                    mode: 'product_video_ad',
-                    operationId,
-                    // What /api/video-status needs to retry a filtered take once, or refund it.
-                    operationIds: [operationId],
-                    heroUrl,
-                    retries: 0,
-                    sensitive: identity.sensitive,
-                    videoStyle: video.style,
-                    madeStyle: planned.storyboard.style ?? null,
-                    exactGarment: acceptedExact.has(slotIndexes[0]),
-                    lastFramePinned: identity.productKind === 'apparel',
-                    aspectRatio: '9:16',
-                    resolution: job.model.includes('veo-3') ? (VEO_4K ? '4k' : '1080p') : '720p',
-                    metaAdResearch: Boolean(adPatterns),
-                    modelledOn: planned.storyboard.modelledOn ?? null,
-                    chargedServerSide: true,
-                  },
-                }).catch((error) => console.error('Video usage logging failed:', error));
-                send({ type: 'video_submitted', operationId });
-              } catch (error) {
-                console.error('Veo submission failed:', error);
-                videoCreditsRefunded = video.cost;
-                await refundCreditsForUser(user.id, video.cost);
-                videoWarning = `The video could not be started (${error instanceof Error ? error.message : 'unknown error'}). The hero frame was kept; video credits were refunded.`;
-                stage('render', 'failed', error instanceof Error ? error.message : 'Veo submission failed');
+              videoWarning = `${engineName} does not accept photos of real people, and no people-free view of the product was found in its photos. Pick Veo for this product, or add a photo of the product on its own.`;
+            }
+          } else {
+            const planned = await (storyboardPromise as NonNullable<typeof storyboardPromise>);
+            if (planned.usage) claudeUsages.push(planned.usage);
+            let storyboard = planned.storyboard;
+            // Claude matches the JSON prompt to the frame the video will animate, when there is time for it.
+            if (heroUrl && !planned.writer.fallbackReason && deadline - Date.now() > 40_000) {
+              const grounded = await groundVideoStoryboard(storyboard, {
+                heroUrl,
+                productSpec: garmentSpec?.json,
+                never: garmentSpec?.never,
+                sensitive: identity.sensitive,
+                garment: apparel,
+                pinnedLastFrame: pinLastFrame,
+                maxPromptChars,
+                timeoutMs: Math.min(90_000, deadline - Date.now() - 15_000),
+              }).catch((error) => {
+                console.warn('Video prompt grounding (Claude) failed; using the draft:', error instanceof Error ? error.message : error);
+                return null;
+              });
+              if (grounded) {
+                storyboard = grounded.storyboard;
+                if (grounded.usage) claudeUsages.push(grounded.usage);
               }
             }
+            if (heroUrl) {
+              plan = {
+                mode: 'first_frame',
+                frames: [{ url: heroUrl, label: 'First frame' }],
+                // Shown exactly as the model will receive it (Seedance reads plain direction).
+                prompt: video.engine === 'seedance'
+                  ? seedancePrompt(storyboard.prompt, { negativePrompt: storyboard.negativePrompt, cameraFixed: apparel })
+                  : storyboard.prompt,
+                negativePrompt: video.engine === 'veo' ? storyboard.negativePrompt : undefined,
+                storyboard,
+                needsAudio: Boolean(storyboard.script),
+                notes: [
+                  ...(planned.writer.fallbackReason ? [planned.writer.fallbackReason] : []),
+                  ...(video.engine === 'veo' && apparel && video.durationSeconds !== 8
+                    ? ['Veo pins the last frame only on 8-second clips, so this clip holds the garment by the prompt alone; pick 8 s for the steadiest garment.']
+                    : []),
+                ],
+                writer: planned.writer,
+              };
+            }
+          }
+
+          if (plan) {
+            console.log(`Video prompt for review (${plan.mode}, ${plan.prompt.length} chars): ${plan.prompt.slice(0, 300)}…`);
+            send({ type: 'storyboard', storyboard: plan.storyboard });
+            stage('storyboard', 'done', plan.storyboard.hook, { storyboard: plan.storyboard });
+            if (!isVideoEngineConfigured(video.engine)) {
+              videoWarning = `Video generation is not configured on this server yet (set ${videoEngineSetup(video.engine)}). The hero frame and storyboard were kept.`;
+              stage('render', 'skipped', 'Video generation not configured');
+            } else {
+              const review: VideoReview = {
+                engine: video.engine,
+                model: video.model,
+                quality: video.quality,
+                durationSeconds: video.durationSeconds,
+                aspectRatio: '9:16',
+                mode: plan.mode,
+                frames: plan.frames,
+                prompt: plan.prompt,
+                negativePrompt: plan.negativePrompt,
+                credits: video.cost,
+                notes: plan.notes,
+                lastFramePinned: plan.mode === 'first_frame' && pinLastFrame,
+                cameraFixed: apparel,
+                // The exact frame is the store photo, so it shows the real model's face.
+                realFace: plan.mode === 'first_frame' && exactHero,
+                needsAudio: plan.needsAudio,
+                writtenBy: plan.writer.writtenBy,
+              };
+              try {
+                reviewId = await saveVideoReview(user, review, {
+                  requestedVideoModel: video.model,
+                  videoStyle: video.style,
+                  madeStyle: plan.storyboard.style ?? null,
+                  sensitive: identity.sensitive,
+                  exactGarment: exactHero,
+                  heroFrameUrl: heroUrl ?? null,
+                  metaAdResearch: Boolean(adPatterns),
+                  modelledOn: plan.storyboard.modelledOn ?? null,
+                  // For the Video Studio's history.
+                  productTitle: productContext?.title ?? null,
+                  storyboardHook: plan.storyboard.hook ?? null,
+                  projectId: video.project?.id ?? null,
+                  promptWriter: plan.writer.fallbackReason ? 'template' : CLAUDE_VIDEO_MODEL,
+                });
+                savedReviewId = reviewId;
+                send({ type: 'video_review', reviewId, review });
+                stage('review', 'active', 'Waiting for your approval');
+                // The project's card shows its latest video's frame, and the project moves to the top.
+                if (video.project) {
+                  const cover = heroUrl ?? plan.frames[0]?.url ?? null;
+                  await createServiceClient()
+                    .from('playground_projects')
+                    .update({ updated_at: new Date().toISOString(), ...(cover ? { cover_url: cover } : {}) })
+                    .eq('id', video.project.id)
+                    .eq('user_id', user.id)
+                    .then(({ error }) => { if (error) console.warn('Updating the video project failed:', error.message); });
+                }
+              } catch (error) {
+                console.error('Saving the video review failed:', error);
+                videoWarning = 'The video could not be prepared for review. The hero frame and storyboard were kept; try again.';
+                stage('review', 'failed', 'Could not prepare the review');
+              }
+            }
+          } else {
+            stage('storyboard', 'failed', videoWarning ?? 'No hero frame to build the video from');
+            stage('render', 'skipped', 'Nothing to render');
           }
         }
 
         send({
           type: 'done',
           acceptedCount,
-          operationId,
-          creditsDeducted: perImageCost * acceptedCount + (video ? video.cost - videoCreditsRefunded : 0),
+          reviewId,
+          creditsDeducted: perImageCost * acceptedCount,
           warning: acceptedCount === 0
             ? failureSummary([...slotFailReasons.values()], verifierErrors, identity.productKind, Boolean(video), validationScores.filter((v) => !v.passed).at(-1)?.reason)
             : videoWarning
@@ -977,8 +1206,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
       } catch (error) {
         console.error('Creative set error:', error);
         const unfilled = slotIndexes.length - acceptedCount;
-        const pendingVideo = video ? video.cost - videoCreditsRefunded : 0;
-        await refundCreditsForUser(user.id, perImageCost * unfilled + pendingVideo).catch(() => undefined);
+        await refundCreditsForUser(user.id, perImageCost * unfilled).catch(() => undefined);
         send({ type: 'error', message: error instanceof Error ? error.message : 'Generation failed' });
       } finally {
         await logCreativeSetUsage({
@@ -995,8 +1223,23 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
           creditCost,
           validationScores,
           researched: Boolean(adPatterns),
-          videoCreditsKept: video ? video.cost - videoCreditsRefunded : 0,
+          // The video is charged and logged when the user approves it.
+          videoCreditsKept: 0,
         }).catch((error) => console.error('Usage logging failed:', error));
+        if (claudeUsages.length) {
+          const claude = sumUsage(claudeUsages);
+          await logUsage({
+            user,
+            provider: 'anthropic',
+            model: claudeUsages[0]?.providerModel || CLAUDE_VIDEO_MODEL,
+            feature: 'video_generation',
+            ...claude,
+            imageCount: 0,
+            estimatedCostUsd: claudeCostUsd(claude),
+            creditCost: 0,
+            metadata: { mode: 'video_prompt_writer', calls: claudeUsages.length, reviewId: savedReviewId, projectId: video?.project?.id ?? null },
+          }).catch((error) => console.error('Claude usage logging failed:', error));
+        }
         controller.close();
       }
     },

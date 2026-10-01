@@ -1,9 +1,9 @@
-import { loadPreparedReferences, requestGeminiText } from '@/lib/banana/api';
 import { productBrief, type ShopifyProductContext } from '@/lib/prompts/shopifyCreative';
+import { CLAUDE_VIDEO_MODEL_NAME, jsonSchema as js, requestClaudeJson } from '@/lib/server/claude';
 import type { AdDesign } from '@/lib/server/metaAdResearch';
+import { winnerSequences, writtenByLine, type VideoWriter } from '@/lib/server/videoWriter';
 import type { ProviderUsage } from '@/lib/server/usage';
 import { isSpeakingStyle, type VideoStyle } from '@/lib/videoStyles';
-import { PROMPT_WRITER_MODELS } from '@/lib/server/writerModels';
 
 type MadeStyle = Exclude<VideoStyle, 'any'>;
 
@@ -64,7 +64,7 @@ export function heroFrameDirection(style: MadeStyle, productKind?: 'packaged' | 
 }
 
 /** Belt and braces for sensitive products: strip words that trip the video model's policy filter. */
-function neutralise(text: string): string {
+export function neutralise(text: string): string {
   return text
     .replace(/\b(lingerie|underwear|bodysuit|teddy|babydoll)\b/gi, 'garment')
     .replace(/\b(sexy|sensual|seductive|sultry|provocative|alluring)\b/gi, 'elegant')
@@ -154,10 +154,31 @@ function mergeTerms(...lists: string[]): string {
 }
 
 /** Veo 3.1 reads at most 1,024 prompt tokens; compact JSON of this size stays under it. */
+/** Veo reads at most 1,024 tokens; Seedance takes about 1,000 words, which a 15-30 s clip's beats need. */
 const MAX_VEO_PROMPT_CHARS = 3400;
+export const MAX_SEEDANCE_PROMPT_CHARS = 5200;
 
-/** The shape of the detailed JSON prompt Gemini writes for Veo. */
+/** The shape of the detailed JSON prompt Claude writes for Veo. */
 const VEO_JSON_SHAPE = `{"format":{"duration_s":8,"aspect_ratio":"9:16","look":"e.g. iPhone front-camera UGC / cinematic 35mm film","fps":30},"first_frame":"what the supplied first frame shows; the clip starts exactly from it","subject":{"who":"age range, look, hair, expression, exactly as in the first frame","wardrobe":"the product as worn or held, with every pattern detail named","performance":"energy, gestures, micro-expressions"},"scene":{"location":"","set_dressing":"","time_of_day":"","atmosphere":""},"camera":{"rig":"handheld phone / tripod / gimbal / dolly","lens":"focal length equivalent and aperture feel","framing":"","movement":"","focus":""},"lighting":{"key":"","fill":"","practicals":"","colour_temperature":""},"colour_grade":"","timeline":[{"t":"0.0-2.0s","action":"","camera":"","line":"words spoken in this beat, if any"}],"audio":{"dialogue":"Speaker says: “...” (voice, accent, pace) or none","ambience":"","music":"none or the music bed"},"realism":"skin texture, fabric physics (drape, sheen, transparency, weight), natural micro-movements, lens character","avoid":["things to keep out of the clip, as plain nouns"]}`;
+
+/** VEO_JSON_SHAPE as a schema for Claude's structured output. */
+const VEO_SCHEMA = js.obj({
+  format: js.obj({ duration_s: js.num, aspect_ratio: js.str, look: js.str, fps: js.num }),
+  first_frame: js.str,
+  subject: js.obj({ who: js.str, wardrobe: js.str, performance: js.str }),
+  scene: js.obj({ location: js.str, set_dressing: js.str, time_of_day: js.str, atmosphere: js.str }),
+  camera: js.obj({ rig: js.str, lens: js.str, framing: js.str, movement: js.str, focus: js.str }),
+  lighting: js.obj({ key: js.str, fill: js.str, practicals: js.str, colour_temperature: js.str }),
+  colour_grade: js.str,
+  timeline: js.list(js.obj({ t: js.str, action: js.str, camera: js.str, line: js.str })),
+  audio: js.obj({ dialogue: js.str, ambience: js.str, music: js.str }),
+  realism: js.str,
+  avoid: js.strList,
+});
+const STORYBOARD_SCHEMA = js.obj({ hook: js.str, mood: js.str, modelledOn: js.int, script: js.str, veo: VEO_SCHEMA });
+const GROUND_SCHEMA = js.obj({ veo: VEO_SCHEMA });
+
+const VEO_SYSTEM = 'You are the creative director and director of photography of a top Indian D2C video studio. You write product video ads as one detailed JSON prompt for an image-to-video model (Google Veo 3.1, or Seedance); Visicraft shows your prompt to the brand for approval before anything renders. You model the structure, pacing and camera language of the winning video ads you are given (their timed beats were watched in full by an analyst), but never copy a competitor\'s brand, wording or claims.';
 
 type Json = Record<string, unknown>;
 
@@ -175,14 +196,15 @@ function mapStrings(value: unknown, fn: (text: string) => string): unknown {
 }
 
 /**
- * Turns Gemini's JSON prompt into the exact prompt Veo receives: our product lock and sound
+ * Turns Claude's JSON prompt into the exact prompt Veo receives: our product lock and sound
  * rules are always part of it, "avoid" becomes the negative prompt, and long values are
  * shortened until the whole prompt fits Veo's input limit.
  */
 function compileVeoPrompt(
   veo: Json,
-  options: { speaking: boolean; script: string; sensitive?: boolean; never?: string[] }
+  options: { speaking: boolean; script: string; sensitive?: boolean; never?: string[]; maxChars?: number }
 ): { json: Json; prompt: string; negative: string } {
+  const maxChars = options.maxChars ?? MAX_VEO_PROMPT_CHARS;
   const avoid = Array.isArray(veo.avoid) ? veo.avoid.filter((a): a is string => typeof a === 'string') : [];
   const { avoid: _avoid, product_lock: _lock, sound: _sound, ...rest } = veo;
   void _avoid;
@@ -201,28 +223,12 @@ function compileVeoPrompt(
   const assemble = () => ({ ...body, ...fixed });
   let prompt = JSON.stringify(assemble());
   for (const limit of [420, 320, 240, 180, 130, 90]) {
-    if (prompt.length <= MAX_VEO_PROMPT_CHARS) break;
+    if (prompt.length <= maxChars) break;
     body = mapStrings(body, (text) => (text.length > limit && !(options.script && text.includes(options.script)) ? `${text.slice(0, limit - 1).trimEnd()}…` : text)) as Json;
     prompt = JSON.stringify(assemble());
   }
   const negative = avoid.map((a) => a.trim()).filter(Boolean).join(', ');
   return { json: assemble(), prompt, negative };
-}
-
-function parseJson(raw: string): Json {
-  const text = raw.replace(/^```(?:json)?\s*|\s*```$/gi, '').trim();
-  return JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)) as Json;
-}
-
-function responseText(response: Awaited<ReturnType<typeof requestGeminiText>>['response']): string {
-  return response.data.candidates?.[0]?.content?.parts?.map((part) => part.text).filter((t): t is string => typeof t === 'string').join('') ?? '';
-}
-
-function usageOf(response: Awaited<ReturnType<typeof requestGeminiText>>['response'], providerModel: string): ProviderUsage {
-  const meta = response.data.usageMetadata;
-  const inputTokens = Number(meta?.promptTokenCount) || 0;
-  const outputTokens = Number(meta?.candidatesTokenCount) || 0;
-  return { inputTokens, outputTokens, totalTokens: Number(meta?.totalTokenCount) || inputTokens + outputTokens, providerModel };
 }
 
 /** The storyboard beats shown in the UI, read from the JSON prompt's timeline. */
@@ -243,10 +249,11 @@ function speakingNegative(negative: string): string {
 }
 
 /**
- * Writes the video ad for our product as a detailed JSON prompt for Veo, modelled on the
- * longest-running video ads in the niche (their watched shot sequence) in the chosen style.
- * It runs while the hero frame renders; groundVideoStoryboard() then matches it to the
- * frame. Falls back to a safe generic storyboard so video generation never blocks on it.
+ * Claude Opus 5.5 writes the video ad for our product as a detailed JSON prompt for Veo (or
+ * Seedance 1.x), from the product photos and the longest-running video ads in the niche (their
+ * watched shot sequence) in the chosen style. It runs while the hero frame renders;
+ * groundVideoStoryboard() then matches it to the frame. Falls back to a safe template, and
+ * says so, so video generation never blocks on it.
  */
 export async function planVideoStoryboard(options: {
   context?: ShopifyProductContext;
@@ -265,7 +272,13 @@ export async function planVideoStoryboard(options: {
   never?: string[];
   /** Veo's last frame is pinned to the first (a worn garment's exact frame). */
   pinnedLastFrame?: boolean;
-}): Promise<{ storyboard: VideoStoryboard; usage?: ProviderUsage }> {
+  /** Longest prompt the video model takes (Seedance allows more than Veo's default). */
+  maxPromptChars?: number;
+  /** The product's photos (main photo first), which Claude looks at. */
+  productImages?: string[];
+  /** The project's guidelines (Markdown), when the video is made in a project. */
+  guidelines?: string;
+}): Promise<{ storyboard: VideoStoryboard; usage?: ProviderUsage; writer: VideoWriter }> {
   const durationSeconds = options.durationSeconds ?? 8;
   const designs = (options.winningDesigns ?? []).filter((d) => d.sequence?.length).slice(0, 3);
   const style = resolveVideoStyle(options.style, options.winningDesigns, options.sensitive);
@@ -273,55 +286,52 @@ export async function planVideoStoryboard(options: {
   const garment = options.productKind === 'apparel';
   const maxWords = Math.max(10, Math.round(durationSeconds * 2.2));
   const frame = heroFrameDirection(style, options.productKind);
-  const designBlock = designs.length
-    ? `\nWINNING VIDEO ADS IN THIS NICHE (watched in full; longest-running first; model the STRUCTURE, PACING and CAMERA LANGUAGE of #1, never the brand, wording or claims):\n${designs
-        .map((d, i) => `#${i + 1} (${d.daysRunning} days live) format: ${d.format}; hook: ${d.hook}; audio: ${d.audio || 'n/a'}; sequence: ${(d.sequence ?? []).map((b) => `[${b.t}] ${b.shot}${b.camera ? ` (${b.camera})` : ''}${b.purpose ? ` → ${b.purpose}` : ''}`).join(' | ')}`)
-        .join('\n')}\n`
-    : '';
+  const guidelines = options.guidelines?.trim();
+  const photos = (options.productImages ?? []).slice(0, 4);
 
-  try {
-    const { response, providerModel } = await requestGeminiText(
-      [{
-        text: `You are the creative director and director of photography of a top Indian D2C video studio. Write a ${durationSeconds}-second, vertical 9:16 Meta Reels ad for this product as ONE detailed JSON prompt for Google Veo 3.1 (image-to-video with native audio). Your goal is the most realistic, scroll-stopping, revenue-driving clip possible.
+  const prompt = `Write a ${durationSeconds}-second, vertical 9:16 Meta Reels ad for this product as ONE detailed JSON prompt for Google Veo 3.1 (image-to-video with native audio). Your goal is the most realistic, scroll-stopping, revenue-driving clip possible.
 
 ${styleDirection(style, garment)}
 
 ${productBrief(options.context)}
 Product identity notes: ${clean(options.identityManifest, 1200) || 'n/a'}
-${options.productSpec ? `Exact garment spec (subject.wardrobe must name these patterns precisely, as they appear in the product photos):\n${options.productSpec.slice(0, 3000)}\n` : ''}${frame ? `The first frame (already being rendered) is staged like this: ${frame}\n` : ''}${options.userDirection ? `Client direction: ${clean(options.userDirection, 600)}\n` : ''}${options.adPatterns ? `\nWHAT THE LONGEST-RUNNING ADS IN THIS NICHE DO:\n${clean(options.adPatterns, 1800)}\n` : ''}${designBlock}
+${photos.length ? `The product photos are attached above (main photo first); the clip must show this exact product.\n` : ''}${options.productSpec ? `Exact garment spec (subject.wardrobe must name these patterns precisely, as they appear in the product photos):\n${options.productSpec.slice(0, 3000)}\n` : ''}${frame ? `The first frame (already being rendered) is staged like this: ${frame}\n` : ''}${options.userDirection ? `Client direction: ${clean(options.userDirection, 1500)}\n` : ''}${guidelines ? 'Follow the project guidelines above: brand, product facts, tone and every do/don\'t. When they and the client direction disagree, the client direction wins for this video.\n' : ''}${options.adPatterns ? `\nWHAT THE LONGEST-RUNNING ADS IN THIS NICHE DO:\n${clean(options.adPatterns, 2000)}\n` : ''}${designs.length ? `\nWINNING VIDEO ADS IN THIS NICHE, WATCHED IN FULL (longest-running first). Turn the sequence of #1 into our timeline: keep its timing, shot sizes, camera language and the order of its beats, with our product:\n${winnerSequences(designs)}\n` : '\nNo winning videos were studied for this one; write the strongest clip for the product and style.\n'}
 How to write it:
-- Fill every field of the JSON shape below with concrete, filmable values, as a DoP would on a call sheet: real lens and rig choices, light directions and colour temperatures, exact actions and gestures. No vague adjectives ("beautiful", "stunning", "high quality").
-- "timeline": ${Math.max(3, Math.min(5, Math.round(durationSeconds / 2)))} beats covering 0-${durationSeconds}s. The clip starts from the supplied first frame, so beat 1 begins from that exact pose and framing. ${garment ? 'One continuous take on a locked-off camera: no cuts, no new locations, no outfit or lighting changes.' : 'One continuous take: smooth camera moves and natural motion, no hard cuts, no new locations, no outfit or lighting changes.'}
+- Fill every field of the JSON prompt ("veo") with concrete, filmable values, as a DoP would on a call sheet: real lens and rig choices, light directions and colour temperatures, exact actions and gestures. No vague adjectives ("beautiful", "stunning", "high quality"). format.duration_s is ${durationSeconds}, format.aspect_ratio "9:16".
+- "timeline": ${Math.max(3, Math.min(durationSeconds > 12 ? 7 : 5, Math.round(durationSeconds / 2)))} beats covering 0-${durationSeconds}s, each "t" like "0.0-2.0s". The clip starts from the supplied first frame, so beat 1 begins from that exact pose and framing. ${garment ? 'One continuous take on a locked-off camera: no cuts, no new locations, no outfit or lighting changes.' : 'One continuous take: smooth camera moves and natural motion, no hard cuts, no new locations, no outfit or lighting changes.'} "line" is the words spoken in that beat, or "".
 - The product stays identical and clearly visible throughout${options.productKind === 'apparel' ? ' as worn in the first frame; name its fabric, colours and pattern motifs exactly in subject.wardrobe, and describe its sheen and how light plays on it in realism' : ', front-facing and unobstructed'}. No on-screen text, captions, subtitles or logos.${garment ? `\n- ${GARMENT_MOTION}${options.pinnedLastFrame ? ` ${GARMENT_RETURN}` : ''}` : ''}
 - Photoreal and Indian where people or places appear; only claims the product context supports.
-${speaking ? `- The person speaks ONE line (the "script"): at most ${maxWords} words so it fits ${durationSeconds} seconds at a natural pace; its first words are the hook; ${style === 'ugc' ? 'first person, like a real customer talking to a friend' : 'the presenter\'s confident voice, speaking to the viewer'}; one concrete benefit; no prices, discounts or competitor names; never mention a city, store, market, visit or event unless the product context names it (the brand sells online). Language: the winning ad's spoken language when it is English or Hinglish (Hinglish in Latin script), otherwise natural Indian English. Put it verbatim in audio.dialogue as Speaker says: “...” and split it across the timeline beats' "line" fields. Lips move in sync; only their voice with light room tone, no music.
+${speaking ? `- The person speaks ONE line ("script"): at most ${maxWords} words so it fits ${durationSeconds} seconds at a natural pace; its first words are the hook; ${style === 'ugc' ? 'first person, like a real customer talking to a friend' : 'the presenter\'s confident voice, speaking to the viewer'}; one concrete benefit; no prices, discounts or competitor names; never mention a city, store, market, visit or event unless the product context names it (the brand sells online). Language: the winning ad's spoken language when it is English or Hinglish (Hinglish in Latin script), otherwise natural Indian English. Put it verbatim in audio.dialogue as Speaker says: “...” and split it across the timeline beats' "line" fields. Lips move in sync; only their voice with light room tone, no music.
 - "avoid" must never list people, faces, speech or voices.` : `- The first 1.5 seconds must stop the scroll (motion, reveal, contrast); the end holds calmly on the product.
-- Audio: natural ambience and a soft music bed; audio.dialogue is "none" (no voice-over, no lyrics).`}
+- Audio: natural ambience and a soft music bed; audio.dialogue is "none" (no voice-over, no lyrics). "script" is "".`}
 - Every beat either stops the scroll, makes the promise visible or builds desire for the product; nothing decorative.${options.sensitive ? `
 - CONTENT POLICY (strict): no person appears at any point. Motion comes only from the camera and the light. Refer to the product only as "the garment" or "the set"; never use words such as lingerie, underwear, sexy, sensual, seductive, intimate, bedroom, boudoir, body or skin.` : ''}
-- Keep the whole JSON under 2,600 characters: dense, specific phrases rather than long sentences.
+- Keep the whole "veo" JSON under 2,600 characters: dense, specific phrases rather than long sentences.
+- "hook": one sentence for the brand describing the idea; "mood": a few words; "modelledOn": the number of the winning ad you modelled, or 0.
+- What each field of "veo" holds (example values): ${VEO_JSON_SHAPE.replace('"duration_s":8', `"duration_s":${durationSeconds}`)}`;
 
-Return JSON only: {"hook":"one sentence for the client","mood":"","modelledOn":1,${speaking ? '"script":"the spoken line",' : ''}"veo":${VEO_JSON_SHAPE}}`,
-      }],
-      { temperature: 0.5, responseMimeType: 'application/json' },
-      'Video storyboard planning',
-      PROMPT_WRITER_MODELS,
-      90000
-    );
-    const parsed = parseJson(responseText(response));
+  try {
+    const { json: parsed, usage } = await requestClaudeJson<Json>({
+      system: VEO_SYSTEM,
+      context: guidelines ? [`PROJECT GUIDELINES (Markdown):\n\n${guidelines.slice(0, 50_000)}`] : [],
+      images: photos.map((url, i) => ({ label: `Product photo ${i + 1}${i === 0 ? ' (main)' : ''}:`, url })),
+      prompt,
+      schema: STORYBOARD_SCHEMA,
+      timeoutMs: 150_000,
+    });
     const veo = parsed.veo && typeof parsed.veo === 'object' && !Array.isArray(parsed.veo) ? parsed.veo as Json : null;
     const script = speaking ? clean(parsed.script, 220).replace(/^["“]|["”]$/g, '') : '';
-    if (!veo || (speaking && !script)) throw new Error('Storyboard response was incomplete');
+    if (!veo || (speaking && !script)) throw new Error('the storyboard was incomplete');
     if (speaking) {
       // Veo voices only dialogue written into the prompt itself.
       const audio = (veo.audio && typeof veo.audio === 'object' ? veo.audio : {}) as Json;
       if (!clean(audio.dialogue, 400).includes(script.slice(0, 20))) veo.audio = { ...audio, dialogue: `The person says: “${script}”` };
     }
-    const compiled = compileVeoPrompt(veo, { speaking, script, sensitive: options.sensitive, never: options.never });
+    const compiled = compileVeoPrompt(veo, { speaking, script, sensitive: options.sensitive, never: options.never, maxChars: options.maxPromptChars });
     const shots = shotsFrom(compiled.json);
-    if (shots.length === 0) throw new Error('Storyboard response had no timeline');
+    if (shots.length === 0) throw new Error('the storyboard had no timeline');
     const modelledIndex = Number(parsed.modelledOn);
-    const modelled = designs[(Number.isInteger(modelledIndex) && modelledIndex >= 1 ? modelledIndex - 1 : 0)];
+    const modelled = Number.isInteger(modelledIndex) && modelledIndex >= 1 ? designs[modelledIndex - 1] : undefined;
     return {
       storyboard: {
         hook: clean(parsed.hook, 200),
@@ -338,53 +348,50 @@ Return JSON only: {"hook":"one sentence for the client","mood":"","modelledOn":1
             ? speakingNegative(compiled.negative)
             : compiled.negative || 'text, captions, subtitles, logos, watermark, warped packaging, morphing, extra products, flicker, low quality',
       },
-      usage: usageOf(response, providerModel),
+      usage,
+      writer: { writtenBy: writtenByLine(designs, modelled?.pageName) },
     };
   } catch (error) {
-    console.warn('Video storyboard planning failed, using fallback:', error);
+    const reason = error instanceof Error ? error.message : 'Claude failed';
+    console.warn('Video storyboard writing (Claude) failed, using the template:', reason);
     const fallback = fallbackStoryboard(options.context, durationSeconds, options.productKind === 'apparel');
-    return { storyboard: options.sensitive ? { ...fallback, prompt: neutralise(fallback.prompt) } : fallback };
+    return {
+      storyboard: options.sensitive ? { ...fallback, prompt: neutralise(fallback.prompt) } : fallback,
+      writer: { writtenBy: 'A basic template', fallbackReason: `${CLAUDE_VIDEO_MODEL_NAME} could not write this prompt (${reason}), so this is a basic template. Edit it, or cancel and try again.` },
+    };
   }
 }
 
 /**
- * Matches the JSON prompt to the hero frame that was actually rendered: Veo animates that
- * frame, so every visible detail in the prompt (person, wardrobe, setting, light, framing)
+ * Claude matches the JSON prompt to the hero frame that was actually rendered: Veo animates
+ * that frame, so every visible detail in the prompt (person, wardrobe, setting, light, framing)
  * must describe it exactly, or the clip drifts and morphs away from it.
  */
 export async function groundVideoStoryboard(
   storyboard: VideoStoryboard,
-  options: { heroUrl: string; productSpec?: string; never?: string[]; sensitive?: boolean; garment?: boolean; pinnedLastFrame?: boolean }
+  options: { heroUrl: string; productSpec?: string; never?: string[]; sensitive?: boolean; garment?: boolean; pinnedLastFrame?: boolean; maxPromptChars?: number; timeoutMs?: number }
 ): Promise<{ storyboard: VideoStoryboard; usage?: ProviderUsage } | null> {
   if (!storyboard.promptJson) return null;
-  const { images } = await loadPreparedReferences([options.heroUrl]);
-  if (images.length === 0) return null;
   const speaking = isSpeakingStyle(storyboard.style);
   const { product_lock: _lock, sound: _sound, ...draft } = storyboard.promptJson;
   void _lock;
   void _sound;
-  const { response, providerModel } = await requestGeminiText(
-    [
-      {
-        text: `You are the director of photography who wrote this JSON prompt for Google Veo 3.1. The image is the exact first frame Veo will animate (already rendered with the real product). Update the JSON so it matches this frame exactly:
+  const { json: parsed, usage, imagesShown } = await requestClaudeJson<Json>({
+    system: VEO_SYSTEM,
+    images: [{ label: 'FIRST FRAME (the exact frame the video model will animate):', url: options.heroUrl }],
+    prompt: `You wrote this JSON prompt for Google Veo 3.1. The image above is the exact first frame Veo will animate (already rendered with the real product). Update the JSON so it matches this frame exactly:
 - "first_frame", "subject.who" (the same person: age, face, hair, expression), "subject.wardrobe" (exactly as worn here${options.productSpec ? ', using the garment spec\'s pattern names' : ''}), "scene", "camera.framing" and lens feel, "lighting" and "colour_grade" as they are in the frame.
 - Timeline beat 1 starts from this exact pose and framing; every later beat must be physically possible from it (no outfit, location or lighting changes; ${options.garment ? 'only natural motion on a locked-off camera' : 'only smooth camera moves and natural motion'}).${options.garment ? `\n- ${GARMENT_MOTION}${options.pinnedLastFrame ? ` ${GARMENT_RETURN}` : ''} Rewrite any beat or camera move that breaks this.` : ''}
 - Keep the style, the beats' intent${speaking ? ', the spoken line word for word' : ''} and the audio plan. Keep it under 2,600 characters.
 ${options.productSpec ? `\nGarment spec:\n${options.productSpec.slice(0, 2500)}\n` : ''}
-Return JSON only: {"veo":{...the full updated JSON, same shape, including "avoid"...}}
+Return the full updated JSON as "veo", same shape, including "avoid".
 
 Current JSON:
 ${JSON.stringify({ ...draft, avoid: storyboard.negativePrompt.split(',').map((a) => a.trim()).filter(Boolean) })}`,
-      },
-      { text: 'FIRST FRAME:' },
-      { inlineData: { mimeType: images[0].mimeType, data: images[0].data } },
-    ],
-    { temperature: 0.3, responseMimeType: 'application/json' },
-    'Video prompt grounding',
-    PROMPT_WRITER_MODELS,
-    60000
-  );
-  const parsed = parseJson(responseText(response));
+    schema: GROUND_SCHEMA,
+    timeoutMs: options.timeoutMs ?? 90_000,
+  });
+  if (imagesShown === 0) return null;
   const veo = parsed.veo && typeof parsed.veo === 'object' && !Array.isArray(parsed.veo) ? parsed.veo as Json : null;
   if (!veo) return null;
   const script = storyboard.script ?? '';
@@ -392,7 +399,7 @@ ${JSON.stringify({ ...draft, avoid: storyboard.negativePrompt.split(',').map((a)
     const audio = (veo.audio && typeof veo.audio === 'object' ? veo.audio : {}) as Json;
     if (!clean(audio.dialogue, 400).includes(script.slice(0, 20))) veo.audio = { ...audio, dialogue: `The person says: “${script}”` };
   }
-  const compiled = compileVeoPrompt(veo, { speaking, script, sensitive: options.sensitive, never: options.never });
+  const compiled = compileVeoPrompt(veo, { speaking, script, sensitive: options.sensitive, never: options.never, maxChars: options.maxPromptChars });
   const shots = shotsFrom(compiled.json);
   return {
     storyboard: {
@@ -404,7 +411,7 @@ ${JSON.stringify({ ...draft, avoid: storyboard.negativePrompt.split(',').map((a)
         ? speakingNegative(mergeTerms(GARMENT_NEGATIVE, compiled.negative))
         : compiled.negative ? (speaking ? speakingNegative(compiled.negative) : compiled.negative) : storyboard.negativePrompt,
     },
-    usage: usageOf(response, providerModel),
+    usage,
   };
 }
 

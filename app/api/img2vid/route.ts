@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { analyzeProductIdentity } from '@/lib/banana/api';
-import { isVideoGenerationConfigured, submitVeoJob } from '@/lib/server/veo';
+import { isVideoEngineConfigured, pickVideoEngine, resolveVideoModel, submitVideoJob, videoEngineSetup, videoOutputResolution } from '@/lib/server/video';
+import { normalizeVideoQuality, snapVideoDuration, videoCostUsd, videoCredits } from '@/lib/videoModels';
 import { buildMetaVideoPrompt } from '@/lib/prompts/shopifyCreative';
 import {
   deductCreditsForUser,
-  estimateGoogleVideoCostUsd,
-  getServerVideoCreditCost,
   logUsage,
-  parseDurationSeconds,
   refundCreditsForUser,
   requireAuthenticatedUser,
 } from '@/lib/server/usage';
+
+// Picking the product frame and starting the render must not be cut off after the charge.
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   let chargedUserId: string | null = null;
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest) {
   try {
     const user = await requireAuthenticatedUser(request);
     const body = await request.json();
-    const { model, numResults, aspectRatio, duration, resolution, negativePrompt } = body;
+    const { model, aspectRatio, duration, resolution, negativePrompt } = body;
     let { imageUrl, prompt } = body;
     const referenceImages: string[] = Array.isArray(body.referenceImages)
       ? body.referenceImages.filter((url: unknown): url is string => typeof url === 'string' && url.length > 0)
@@ -29,11 +30,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Image URL is required' }, { status: 400 });
     }
 
-    if (!isVideoGenerationConfigured()) {
-      return NextResponse.json({ error: 'Video generation is not configured yet (set GEMINI_API_KEY with billing enabled, or GOOGLE_VIDEO_SERVICE_ACCOUNT_JSON).' }, { status: 500 });
+    // The picked model sets the engine: Veo, or Seedance for a Seedance model id.
+    const engine = pickVideoEngine(typeof model === 'string' ? model : undefined);
+    if (!isVideoEngineConfigured(engine)) {
+      return NextResponse.json({ error: `Video generation is not configured yet (set ${videoEngineSetup(engine)}).` }, { status: 500 });
     }
 
-    const creditCost = getServerVideoCreditCost({ model, duration, resolution, numResults });
+    // Length and quality (draft, 720p, 1080p or 4k) snapped to what the model renders, priced from its cost.
+    const videoModel = resolveVideoModel(engine, typeof model === 'string' ? model : undefined);
+    const seconds = snapVideoDuration(videoModel, parseFloat(String(duration ?? '')) || undefined);
+    const quality = normalizeVideoQuality(videoModel, typeof body.quality === 'string' ? body.quality : resolution ?? videoOutputResolution(engine, videoModel));
+    const ratio = typeof aspectRatio === 'string' ? aspectRatio : '16:9';
+    const creditCost = videoCredits(videoModel, quality, seconds, ratio);
     const deducted = await deductCreditsForUser(user.id, creditCost);
     if (!deducted) {
       return NextResponse.json(
@@ -63,19 +71,26 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    console.log('🎬 Submitting img2vid task to Vertex PredictLongRunning API...');
-    const { operationName, model: targetModel } = await submitVeoJob({
+    console.log(`🎬 Submitting img2vid task (${engine})...`);
+    const job = await submitVideoJob({
+      engine,
       imageUrl,
       prompt,
       negativePrompt,
-      model,
-      aspectRatio,
-      duration,
-      numResults,
+      model: videoModel,
+      aspectRatio: ratio,
+      duration: seconds,
+      quality,
     });
-    console.log(`✅ LRO Job created successfully! Operation ID: ${operationName}`);
-    const videoSeconds = parseDurationSeconds(duration, 5) * Math.max(1, Number(numResults) || 1);
-    const estimatedCostUsd = estimateGoogleVideoCostUsd({ model: targetModel, duration, numResults });
+    const { operationName, model: targetModel } = job;
+    console.log(`✅ Video job created successfully! Operation ID: ${operationName}`);
+    // Rendered for less than was charged (a fallback model): refund the difference.
+    const actualCredits = videoCredits(targetModel, job.quality, job.durationSeconds, ratio);
+    const creditsKept = Math.min(creditCost, actualCredits);
+    if (creditsKept < creditCost) await refundCreditsForUser(user.id, creditCost - creditsKept);
+    chargedUserId = null;
+    const videoSeconds = job.durationSeconds;
+    const estimatedCostUsd = Number(videoCostUsd(targetModel, job.quality, job.durationSeconds, ratio).toFixed(4));
 
     await logUsage({
       user,
@@ -83,24 +98,40 @@ export async function POST(request: NextRequest) {
       feature: 'video_generation',
       videoSeconds,
       estimatedCostUsd,
-      creditCost,
+      creditCost: creditsKept,
       metadata: {
         mode: 'img2vid',
         operationId: operationName,
-        aspectRatio: aspectRatio || '16:9',
-        resolution: resolution || (targetModel.includes('veo-3') ? '1080p' : '720p'),
+        // What /api/video-status needs to retry or refund, and /api/video/upgrade to re-render it.
+        operationIds: [operationName],
+        retries: 0,
+        heroUrl: imageUrl,
+        prompt: typeof prompt === 'string' ? prompt : '',
+        negativePrompt: typeof negativePrompt === 'string' ? negativePrompt : undefined,
+        aspectRatio: ratio,
+        resolution: job.resolution,
+        videoEngine: job.engine,
+        videoModel: targetModel,
+        durationSeconds: job.durationSeconds,
+        quality: job.quality,
+        draft: job.quality === 'draft',
+        nativeDraft: job.nativeDraft === true,
+        seed: job.seed ?? null,
+        notice: job.notice ?? null,
         chargedServerSide: true,
       },
-    });
+    }).catch((error) => console.error('Video usage logging failed:', error));
 
     // Step 2: Return Operation ID Immediately for the client to begin polling
     return NextResponse.json({
       success: true,
       operationId: operationName,
+      video: { model: targetModel, engine: job.engine, quality: job.quality, durationSeconds: job.durationSeconds, nativeDraft: job.nativeDraft === true },
+      notice: job.notice,
       usage: {
         videoSeconds,
         estimatedCostUsd,
-        creditsDeducted: creditCost,
+        creditsDeducted: creditsKept,
       },
     });
   } catch (error) {

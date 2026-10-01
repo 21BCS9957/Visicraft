@@ -23,6 +23,8 @@ export interface VeoJobOptions {
   model?: string;
   /** Overrides the model's default output resolution (Veo 3.1: "720p", "1080p" or "4k"). */
   resolution?: string;
+  /** "fast" renders with Veo's Fast tier (a quarter of the price at 720p): what a draft uses. */
+  tier?: 'standard' | 'fast';
   aspectRatio?: string;
   duration?: string | number;
   numResults?: number;
@@ -47,7 +49,7 @@ export const DEFAULT_VEO_MODEL = process.env.VEO_MODEL || 'veo-3.1-generate-001'
 const LOCATION = process.env.VEO_LOCATION || 'us-central1';
 const MODEL_CACHE_TTL_MS = 60 * 60 * 1000;
 
-let geminiModelCache: { resolvedAt: number; model: string } | null = null;
+const geminiModelCache: Partial<Record<'standard' | 'fast', { resolvedAt: number; model: string }>> = {};
 
 export function getVideoProvider(): VideoProvider | null {
   const forced = process.env.VIDEO_PROVIDER;
@@ -86,10 +88,12 @@ function veoVersion(name: string): number {
 /**
  * Picks the strongest Veo the key can use on the Gemini API: highest version,
  * standard quality over "fast"/"lite", GA over preview. VEO_MODEL wins when the
- * key actually lists it. Cached for an hour.
+ * key actually lists it. The "fast" tier picks the newest Fast model instead (drafts),
+ * falling back to the standard pick. Cached for an hour.
  */
-export async function resolveGeminiVeoModel(): Promise<string> {
-  if (geminiModelCache && Date.now() - geminiModelCache.resolvedAt < MODEL_CACHE_TTL_MS) return geminiModelCache.model;
+export async function resolveGeminiVeoModel(tier: 'standard' | 'fast' = 'standard'): Promise<string> {
+  const cached = geminiModelCache[tier];
+  if (cached && Date.now() - cached.resolvedAt < MODEL_CACHE_TTL_MS) return cached.model;
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
 
@@ -107,11 +111,14 @@ export async function resolveGeminiVeoModel(): Promise<string> {
   const preferred = process.env.VEO_MODEL;
   const rank = (name: string) =>
     veoVersion(name) * 100 + (/fast|lite/.test(name) ? 0 : 10) + (/preview|exp/.test(name) ? 0 : 1);
-  const model = preferred && candidates.includes(preferred)
-    ? preferred
-    : [...candidates].sort((a, b) => rank(b) - rank(a))[0];
-  geminiModelCache = { resolvedAt: Date.now(), model };
-  console.log(`Veo on Gemini API: using ${model} (available: ${candidates.join(', ')})`);
+  const fast = candidates.filter((name) => /fast/.test(name));
+  const model = tier === 'fast' && fast.length
+    ? [...fast].sort((a, b) => veoVersion(b) - veoVersion(a) || rank(b) - rank(a))[0]
+    : preferred && candidates.includes(preferred)
+      ? preferred
+      : [...candidates].sort((a, b) => rank(b) - rank(a))[0];
+  geminiModelCache[tier] = { resolvedAt: Date.now(), model };
+  console.log(`Veo on Gemini API (${tier}): using ${model} (available: ${candidates.join(', ')})`);
   return model;
 }
 
@@ -139,9 +146,10 @@ async function veoFrame(url: string, size: { width: number; height: number } | n
   return { bytesBase64Encoded: fitted.toString('base64'), mimeType: 'image/jpeg' };
 }
 
+/** Veo 3.1 renders 4, 6 or 8 seconds: the nearest of those. */
 function clampDuration(duration: string | number | undefined): number {
   const raw = typeof duration === 'number' ? duration : parseFloat(String(duration || '8')) || 8;
-  return Math.min(8, Math.max(4, Math.round(raw)));
+  return [4, 6, 8].reduce((best, d) => (Math.abs(d - raw) < Math.abs(best - raw) ? d : best), 8);
 }
 
 export async function submitVeoJob(options: VeoJobOptions): Promise<VeoJob> {
@@ -164,7 +172,7 @@ export async function submitVeoJob(options: VeoJobOptions): Promise<VeoJob> {
 
   if (provider === 'gemini') {
     const apiKey = process.env.GEMINI_API_KEY as string;
-    const model = await resolveGeminiVeoModel();
+    const model = await resolveGeminiVeoModel(options.tier);
     const capabilities = veoCapabilities(model);
     const resolution = options.resolution || capabilities.resolution;
     const { image, lastFrame } = await frames(resolution);
@@ -196,9 +204,11 @@ export async function submitVeoJob(options: VeoJobOptions): Promise<VeoJob> {
   const projectId = credentials.project_id;
   if (!projectId) throw new Error('GOOGLE_VIDEO_SERVICE_ACCOUNT_JSON has no project_id.');
   const accessToken = await vertexAccessToken(credentials);
-  const model = resolveVeoModel(options.model);
+  const standard = resolveVeoModel(options.model);
+  const model = options.tier === 'fast' && !/fast/.test(standard) ? standard.replace('-generate-', '-fast-generate-') : standard;
   const capabilities = veoCapabilities(model);
-  const { image, lastFrame } = await frames(capabilities.resolution);
+  const resolution = options.resolution || capabilities.resolution;
+  const { image, lastFrame } = await frames(resolution);
   const endpoint = `https://${LOCATION}-aiplatform.googleapis.com/v1beta1/projects/${projectId}/locations/${LOCATION}/publishers/google/models/${model}:predictLongRunning`;
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -208,7 +218,7 @@ export async function submitVeoJob(options: VeoJobOptions): Promise<VeoJob> {
       parameters: {
         sampleCount: options.numResults || 1,
         durationSeconds,
-        resolution: capabilities.resolution,
+        resolution,
         aspectRatio,
         negativePrompt: options.negativePrompt || undefined,
         generateAudio: capabilities.generateAudio,

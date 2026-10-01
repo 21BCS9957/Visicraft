@@ -163,6 +163,10 @@ export async function requestGeminiText(
       console.warn(`${operation} failed with ${providerModel}:`, status ?? error.code, upstreamMessage);
       if (unavailableModel || transient) continue;
 
+      // Google blocks every call from a project whose billing is unpaid ("dunning").
+      if (status === 403 && /dunning|billing/i.test(upstreamMessage)) {
+        throw new Error('Google blocked the Gemini API key: the Google Cloud project behind it has an unpaid or failed payment. Fix it in Google Cloud Console → Billing (or AI Studio → Billing), then try again.');
+      }
       throw new Error(`Google ${operation.toLowerCase()} failed${status ? ` (${status})` : ''}: ${upstreamMessage}`);
     }
   }

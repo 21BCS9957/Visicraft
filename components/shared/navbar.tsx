@@ -54,12 +54,18 @@ export function Navbar() {
     }
   }, [showUserMenu]);
 
-  if (pathname?.startsWith('/workflow')) {
+  // Full-screen tools draw their own top bar: a Playground project (and its Canvas) and the
+  // Video Studio. The Playground hub and the Library keep the navbar.
+  const fullScreen = pathname?.startsWith('/workflow')
+    // Inside an image project (and its Canvas) or a video project; the hubs and the Library keep it.
+    || /^\/playground\/(video\/[^/]+|[0-9a-f-]{8,}|preview)(\/|$)/i.test(pathname ?? '');
+  if (fullScreen) {
     return null;
   }
 
   const links = [
     { href: '/', label: 'Home' },
+    { href: '/playground', label: 'Playground' },
     { href: '/workflow', label: 'Workflow' },
     { href: '/generate', label: 'Generate' },
     { href: '/pricing', label: 'Pricing' },
@@ -89,7 +95,7 @@ export function Navbar() {
           {/* Navigation Links */}
           <div className="absolute left-1/2 z-10 hidden -translate-x-1/2 items-center gap-2 rounded-full border border-white/8 bg-white/[0.035] px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] md:flex">
             {links.map((item) => {
-              const isActive = pathname === item.href;
+              const isActive = pathname === item.href || (item.href !== '/' && pathname?.startsWith(`${item.href}/`));
               
               return (
                 <Link

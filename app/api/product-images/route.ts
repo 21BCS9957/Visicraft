@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Slow stores: the page, the Shopify data and every photo are fetched and checked.
+export const maxDuration = 60;
+
 interface ProductImage {
   url: string;
   alt?: string;

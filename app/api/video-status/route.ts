@@ -1,7 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleAuth } from 'google-auth-library';
 import { isGeminiOperation, pollGeminiVeoJob } from '@/lib/server/veo';
-import { handleFailedVideo } from '@/lib/server/videoJobs';
+import { isSeedanceOperation, pollSeedanceJob } from '@/lib/server/seedance';
+import { findSavedVideo, handleFailedVideo, saveFinishedVideo } from '@/lib/server/videoJobs';
+
+// Downloading a finished clip and copying it to storage can take a while.
+export const maxDuration = 300;
+
+/** A finished take is kept on its usage row, so the Video Studio's history can show it later. */
+async function keep<T extends { done?: boolean; url?: string; error?: string }>(operationId: string, poll: T): Promise<T> {
+  if (poll.done && poll.url && !poll.error) {
+    await saveFinishedVideo(operationId, poll.url).catch((error) => console.warn('Saving the finished video failed:', error));
+  }
+  return poll;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,11 +23,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Operation ID is required' }, { status: 400 });
     }
 
+    // Already finished and saved (the Video Studio checking on it again): no second download.
+    if (typeof operationId === 'string') {
+      const saved = await findSavedVideo(operationId).catch(() => null);
+      if (saved) return NextResponse.json({ done: true, progress: 100, url: saved });
+    }
+
+    // Seedance tasks on BytePlus ModelArk (ARK_API_KEY).
+    if (typeof operationId === 'string' && isSeedanceOperation(operationId)) {
+      const poll = await pollSeedanceJob(operationId);
+      // Refused or failed: retry once where it can help, otherwise refund the credits.
+      return NextResponse.json(poll.error ? await handleFailedVideo(operationId, poll.error) : await keep(operationId, poll));
+    }
+
     // Jobs submitted through the Gemini API (same GEMINI_API_KEY, no service account).
     if (typeof operationId === 'string' && isGeminiOperation(operationId)) {
       const poll = await pollGeminiVeoJob(operationId);
       // Filtered or failed: retry once with a neutral prompt, otherwise refund the credits.
-      return NextResponse.json(poll.error ? await handleFailedVideo(operationId, poll.error) : poll);
+      return NextResponse.json(poll.error ? await handleFailedVideo(operationId, poll.error) : await keep(operationId, poll));
     }
 
     const serviceAccountJsonStr = process.env.GOOGLE_VIDEO_SERVICE_ACCOUNT_JSON;

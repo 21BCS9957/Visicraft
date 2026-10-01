@@ -23,6 +23,15 @@ async function regionColour(image: Buffer, region: { left: number; top: number; 
   return { r: data[0], g: data[1], b: data[2] };
 }
 
+/** The frame format closest to a photo's own shape, for an edit that should not reframe it. */
+export async function closestFormat(photoUrl: string): Promise<FrameFormat> {
+  const dataUrl = await imageToBase64(photoUrl);
+  const meta = await sharp(Buffer.from(dataUrl.split(',')[1] ?? '', 'base64')).metadata();
+  const ratio = (meta.width ?? 0) / (meta.height || 1);
+  return (Object.entries(RATIOS) as Array<[FrameFormat, number]>)
+    .reduce((best, entry) => (Math.abs(entry[1] - ratio) < Math.abs(best[1] - ratio) ? entry : best))[0];
+}
+
 /**
  * The store photo on a canvas of the target format, at its own scale. Returns the photo's
  * URL untouched when it already has that shape.
@@ -94,5 +103,38 @@ ${options.setting
     : 'Background: keep the photograph\'s own background and light; you may add only a very soft, out-of-focus depth that matches the existing light.'}
 ${options.copy ? `\n${options.copy}\nSet the copy only in the empty background, never over the person or the garment.\n` : '\nAdd no text anywhere.\n'}
 The final image must read as one real photograph from edge to edge: no visible seams, bands, borders, colour steps, watermarks or logos.
+`.trim();
+}
+
+/**
+ * Intimate wear worn by a model: video models refuse the person, and a garment redrawn without
+ * them loses its lace. Editing the store photo so the person becomes a faceless display
+ * mannequin keeps the garment's own pixels and leaves no person in the frame. The edit keeps
+ * the photo's own shape: asked to reframe in the same edit, the model leaves bands and moves
+ * the pose. extendCanvasPrompt() then takes it to another format when a video needs one.
+ */
+export function mannequinPrompt(options: {
+  /** Short description of the garment (from the garment spec). */
+  garment?: string;
+}): string {
+  return `
+Reference image 1 is an e-commerce store photograph of a garment worn by a model.
+
+Edit it: replace the person with a matte ivory display mannequin, a smooth, featureless fibreglass mannequin with a plain egg-shaped head, no face, no hair and no skin texture, standing in exactly the same pose, position and scale, so the garment sits on the mannequin exactly where it sits now.
+
+Keep every part of the garment${options.garment ? ` (${options.garment.slice(0, 400)})` : ''} exactly as it is in the photograph, pixel for pixel: its fabric, lace, embroidery, motifs at the same size, colours, sheen, straps, hardware and trims. Do not redraw, simplify, restyle, recolour, add or remove anything on it.
+
+Keep the room, background, light and camera framing of the photograph unchanged. No person, no face, no skin anywhere. Add no text, logos or watermarks. The result must read as one real photograph of the garment displayed on a mannequin.
+`.trim();
+}
+
+/** A finished product photograph (no person in it) on a taller canvas: only the strips are painted. */
+export function extendCanvasPrompt(): string {
+  return `
+Reference image 1 is a finished product photograph placed on a larger canvas of the final format. The flat strips around it are only placeholders.
+
+Paint the placeholder strips as a seamless, natural continuation of the photograph: the same room, wall, floor and light, at the same perspective. Keep the photograph's framing and the size of everything in it exactly as they are; do not zoom out, re-compose or move anything. Where the mannequin or the garment meets a strip, let it continue exactly as it already is, with no new fabric, motifs, straps or objects.
+
+Everything inside the original photograph stays pixel-faithful. No person, no face, no hands. Add no text, logos or watermarks. The final image must read as one real photograph from edge to edge: no visible seams, bands, borders or colour steps.
 `.trim();
 }

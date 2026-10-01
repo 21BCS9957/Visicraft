@@ -22,10 +22,10 @@ export interface StageState {
   data?: Record<string, unknown>;
 }
 
-export type StageId = 'capture' | 'understand' | 'research' | 'analyze' | 'plan' | 'generate' | 'storyboard' | 'render' | 'done';
+export type StageId = 'capture' | 'understand' | 'research' | 'analyze' | 'plan' | 'generate' | 'storyboard' | 'review' | 'render' | 'done';
 
 export const IMAGE_STAGES: StageId[] = ['capture', 'understand', 'research', 'analyze', 'plan', 'generate', 'done'];
-export const VIDEO_STAGES: StageId[] = ['capture', 'understand', 'research', 'analyze', 'plan', 'generate', 'storyboard', 'render', 'done'];
+export const VIDEO_STAGES: StageId[] = ['capture', 'understand', 'research', 'analyze', 'plan', 'generate', 'storyboard', 'review', 'render', 'done'];
 
 export const STAGE_TITLES: Record<StageId, string> = {
   capture: 'Capture product',
@@ -34,7 +34,8 @@ export const STAGE_TITLES: Record<StageId, string> = {
   analyze: 'Study the winners',
   plan: 'Write the briefs',
   generate: 'Generate, product locked',
-  storyboard: 'Storyboard',
+  storyboard: 'Video prompt · Claude Opus 5.5',
+  review: 'Your approval',
   render: 'Render video',
   done: 'Ready',
 };
@@ -310,7 +311,7 @@ function StageBody({ stage }: { stage: StageState }) {
               </li>
             ))}
           </ol>
-          {sb.promptJson && <PromptJson label="Veo prompt (JSON)" value={sb.promptJson} />}
+          {sb.promptJson && <PromptJson label="Claude's plan (JSON)" value={sb.promptJson} />}
         </div>
       );
     }

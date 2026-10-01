@@ -4,7 +4,10 @@ import { groundVideoStoryboard, planVideoStoryboard } from '@/lib/server/videoSt
 import { describeGarmentSpec } from '@/lib/server/productSpec';
 import { submitVeoJob } from '@/lib/server/veo';
 import type { ShopifyProductContext } from '@/lib/prompts/shopifyCreative';
+import type { AdDesign } from '@/lib/server/metaAdResearch';
 import type { VideoStyle } from '@/lib/videoStyles';
+
+export const maxDuration = 300;
 
 /**
  * Development-only harness: video-ad research (optionally for one style) → timed sequences →
@@ -32,6 +35,10 @@ export async function POST(request: NextRequest) {
     negativePrompt?: string;
     /** Garments: store photos for the exact pattern spec (main photo first, then close-ups). */
     specImageUrls?: string[];
+    /** Winning designs given directly (with research: false), to test Claude's writing alone. */
+    winningDesigns?: AdDesign[];
+    productImages?: string[];
+    guidelines?: string;
   };
   const started = Date.now();
   try {
@@ -47,7 +54,9 @@ export async function POST(request: NextRequest) {
     const draft = await planVideoStoryboard({
       context: body.productContext,
       adPatterns: research?.patterns,
-      winningDesigns: research?.designs,
+      winningDesigns: research?.designs ?? body.winningDesigns,
+      productImages: body.productImages,
+      guidelines: body.guidelines,
       durationSeconds: body.durationSeconds ?? 8,
       style: body.videoStyle,
       productKind: body.productKind,
