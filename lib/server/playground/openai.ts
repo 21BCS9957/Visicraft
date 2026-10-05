@@ -7,9 +7,8 @@ import type { ReferenceSnapshot } from '@/lib/playground/types';
 
 /**
  * Playground images from OpenAI's GPT Image 2.5 models (OPENAI_API_KEY). With references the
- * image goes through POST /v1/images/edits (up to 16 images, high input fidelity so products
- * stay faithful); without, POST /v1/images/generations. Both answer with base64 PNG and token
- * usage, which prices the image.
+ * image goes through POST /v1/images/edits (up to 16 images); without, POST
+ * /v1/images/generations. Both answer with base64 PNG and token usage, which prices the image.
  */
 
 const API_BASE = 'https://api.openai.com/v1';
@@ -131,7 +130,7 @@ export async function generateOpenAiImage(options: {
         });
         form.append('size', size);
         form.append('quality', quality);
-        form.append('input_fidelity', 'high');
+        // No input_fidelity: GPT Image 2.5 rejects it (only the gpt-image-1 models take it).
         form.append('output_format', 'png');
         form.append('n', '1');
         response = await fetch(`${API_BASE}/images/edits`, {

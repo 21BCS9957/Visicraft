@@ -359,25 +359,12 @@ export function Composer({ onHeight }: { onHeight: (height: number) => void }) {
             className="w-80"
             trigger={<Chip>{model.name} <ChevronDown className="h-3 w-3" /></Chip>}
           >
-            {PLAYGROUND_MODELS.map((option) => {
-              const offered = enabledSizes(option);
-              const fromCredits = Math.min(...offered.map((s) => sizePrice(s, modelQuality(option, null)).credits));
-              return (
-                <button key={option.id} type="button" onClick={() => chooseModel(option.id)} className="flex w-full items-start justify-between gap-3 rounded-xl px-2.5 py-2 text-left hover:bg-white/8">
-                  <span>
-                    <span className="flex items-center gap-1.5 text-sm text-white">
-                      {option.name}
-                      <span className="rounded-full border border-white/12 px-1.5 py-px text-[9px] uppercase tracking-wide text-white/45">{option.provider === 'openai' ? 'OpenAI' : 'Google'}</span>
-                    </span>
-                    <span className="block text-[11px] text-white/45">{option.blurb}</span>
-                    <span className="mt-0.5 block text-[11px] text-white/35">
-                      {offered.map((s) => s.label).join(' · ')} · from {fromCredits} credits
-                    </span>
-                  </span>
-                  {option.id === model.id && <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#fff05a]" />}
-                </button>
-              );
-            })}
+            {PLAYGROUND_MODELS.map((option) => (
+              <button key={option.id} type="button" onClick={() => chooseModel(option.id)} className="flex w-full items-center justify-between gap-3 rounded-xl px-2.5 py-2 text-left hover:bg-white/8">
+                <span className="text-sm text-white">{option.name}</span>
+                {option.id === model.id && <Check className="h-4 w-4 shrink-0 text-[#fff05a]" />}
+              </button>
+            ))}
           </Popover>
 
           <Popover side="top" className="w-72" trigger={<Chip>{size.label} <ChevronDown className="h-3 w-3" /></Chip>}>

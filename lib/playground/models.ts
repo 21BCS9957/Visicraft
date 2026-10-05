@@ -143,7 +143,7 @@ export const PLAYGROUND_MODELS: PlaygroundModelSpec[] = [
     ratios: STANDARD_RATIOS,
     // Our starting guidance; OpenAI takes up to 16 images in all.
     referenceGuide: { product: 8, person: 5, style: 3 },
-    // About 1,600 image-input tokens at $8 per million (high input fidelity); measured later.
+    // About 1,600 image-input tokens at $8 per million; measured later.
     usdPerReference: 0.013,
     creditsPerReference: 5,
     thinking: false,
