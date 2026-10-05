@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import { DEFAULT_PLAYGROUND_MODEL, isPlaygroundModel, nearestSize, playgroundModel } from './models';
+import { DEFAULT_PLAYGROUND_MODEL, DEFAULT_QUALITY, isPlaygroundModel, nearestSize, playgroundModel, type ImageQuality } from './models';
 import type { PlaygroundBundle, PlaygroundItem, PlaygroundProject, PlaygroundReference, PlaygroundRun, PlaygroundSettings } from './types';
 
 export const DEFAULT_SETTINGS: PlaygroundSettings = {
@@ -10,7 +10,10 @@ export const DEFAULT_SETTINGS: PlaygroundSettings = {
   ratios: ['4:5'],
   variations: 1,
   thinking: 'minimal',
+  quality: DEFAULT_QUALITY,
 };
+
+const QUALITIES: ImageQuality[] = ['high', 'xhigh', 'max'];
 
 /** The project's saved composer choices, made valid for the model. */
 export function settingsFrom(saved: Partial<PlaygroundSettings> | undefined): PlaygroundSettings {
@@ -22,6 +25,7 @@ export function settingsFrom(saved: Partial<PlaygroundSettings> | undefined): Pl
     ratios: ratios.length ? ratios : ['1:1'],
     variations: Math.min(4, Math.max(1, Number(saved?.variations) || 1)),
     thinking: saved?.thinking === 'high' ? 'high' : 'minimal',
+    quality: QUALITIES.includes(saved?.quality as ImageQuality) ? (saved?.quality as ImageQuality) : DEFAULT_QUALITY,
   };
 }
 

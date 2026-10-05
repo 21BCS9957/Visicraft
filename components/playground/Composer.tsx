@@ -9,19 +9,25 @@ import { useCredits } from '@/lib/contexts/CreditsContext';
 import { playgroundApi } from '@/lib/playground/api';
 import {
   dimensionLabel,
+  enabledSizes,
   MAX_ENABLED_REFERENCES,
+  modelQuality,
   nearestSize,
   PLAYGROUND_MODELS,
   playgroundModel,
+  QUALITY_LABELS,
   RATIO_PRESETS,
   runCost,
   runMinutes,
   sizeOption,
+  sizePrice,
 } from '@/lib/playground/models';
 import { MAX_IMAGES_PER_RUN, MAX_VARIATIONS, parseCsvPrompts, parsePromptList, type SplitMode } from '@/lib/playground/prompts';
 import { enqueue } from '@/lib/playground/runner';
 import { usePlaygroundStore } from '@/lib/playground/store';
 import type { PlaygroundItem, PlaygroundRun } from '@/lib/playground/types';
+import { dictationErrorMessage, useSpeechDictation } from '@/lib/useSpeechDictation';
+import { DictationButton } from '@/components/shared/DictationButton';
 import { PromptWriter } from './PromptWriter';
 import { Chip, cx, Popover } from './ui';
 
@@ -53,11 +59,14 @@ function previewRun(prompts: string[], settings: ReturnType<typeof usePlayground
       });
     }
   }));
+  const quality = modelQuality(model, settings.quality);
   return {
     run: {
       id, model: model.id, size: settings.size, ratios: settings.ratios, variations: settings.variations,
-      thinking: model.thinking ? settings.thinking : null, brief, references: [], prompts,
-      imageCount: items.length, creditsPerImage: sizeOption(model, settings.size)?.credits ?? 0, cancelledAt: null, createdAt,
+      thinking: model.thinking ? settings.thinking : null, quality, brief, references: [], prompts,
+      imageCount: items.length,
+      creditsPerImage: runCost({ model: model.id, size: settings.size, promptCount: 1, ratioCount: 1, variations: 1, quality }).creditsPerImage,
+      cancelledAt: null, createdAt,
     },
     items,
   };
@@ -89,8 +98,35 @@ export function Composer({ onHeight }: { onHeight: (height: number) => void }) {
 
   const parsed = useMemo(() => parsePromptList(text, mode), [text, mode]);
   const prompts = edited ?? parsed.prompts;
+
+  // Voice input: each dictation starts a new prompt, on a new line (a blank line when the box uses them).
+  const dictation = useSpeechDictation((value) => { setText(value); setEdited(null); }, {
+    onError: (code) => {
+      const message = dictationErrorMessage(code);
+      if (message) toast.error(message, TOAST);
+    },
+  });
+  const { cancel: cancelDictation } = dictation;
+  const dictationText = edited ? edited.join('\n\n') : text;
+  const dictationSeparator = edited || mode === 'blocks' || /\n\s*\n/.test(text) ? '\n\n' : '\n';
+  const openForDictation = () => {
+    setExpanded(true);
+    setView('write');
+    // Prompts edited one by one become the text first, so dictating keeps the edits.
+    if (edited) {
+      setText(edited.join('\n\n'));
+      setMode('blocks');
+      setEdited(null);
+    }
+  };
+  const openWriter = () => {
+    cancelDictation();
+    setWriterOpen(true);
+  };
   const model = playgroundModel(settings.model);
-  const size = sizeOption(model, settings.size) ?? model.sizes[0];
+  const size = sizeOption(model, settings.size) ?? enabledSizes(model)[0];
+  // OpenAI models' level (High by default); null for Gemini models.
+  const quality = modelQuality(model, settings.quality);
   const enabledRefs = references.filter((reference) => reference.enabled);
   const cost = runCost({
     model: model.id,
@@ -99,7 +135,10 @@ export function Composer({ onHeight }: { onHeight: (height: number) => void }) {
     ratioCount: settings.ratios.length,
     variations: settings.variations,
     referenceCount: enabledRefs.length,
+    quality,
   });
+  // Shown next to each size and quality: one image, with the switched-on references.
+  const imageCredits = (price: { credits: number }) => price.credits + enabledRefs.length * model.creditsPerReference;
   const tooMany = cost.images > MAX_IMAGES_PER_RUN;
   const tooManyRefs = enabledRefs.length > MAX_ENABLED_REFERENCES;
   const short = !preview && !creditsLoading && Boolean(user) && credits < cost.credits;
@@ -108,12 +147,13 @@ export function Composer({ onHeight }: { onHeight: (height: number) => void }) {
   // "Reuse prompts" from a run.
   useEffect(() => {
     if (composerDraft === null) return;
+    cancelDictation();
     setText(composerDraft);
     setEdited(null);
     setView('write');
     setExpanded(true);
     setComposerDraft(null);
-  }, [composerDraft, setComposerDraft]);
+  }, [composerDraft, setComposerDraft, cancelDictation]);
 
   // Remember the choices with the project.
   useEffect(() => {
@@ -146,14 +186,20 @@ export function Composer({ onHeight }: { onHeight: (height: number) => void }) {
     if (has && settings.ratios.length === 1) return;
     setSettings({ ratios: has ? settings.ratios.filter((known) => known !== ratio) : [...settings.ratios, ratio] });
   };
+  // Editing one prompt stops the mic, whose next result would replace the whole list.
   const editPrompt = (index: number, value: string) => {
+    cancelDictation();
     const next = [...prompts];
     next[index] = value;
     setEdited(next);
   };
-  const removePrompt = (index: number) => setEdited(prompts.filter((_, i) => i !== index));
+  const removePrompt = (index: number) => {
+    cancelDictation();
+    setEdited(prompts.filter((_, i) => i !== index));
+  };
 
   const takeWritten = (list: string[], mode: 'replace' | 'add') => {
+    cancelDictation();
     const next = mode === 'add' ? [...prompts, ...list] : list;
     setText(next.join('\n\n'));
     setMode('blocks');
@@ -163,6 +209,7 @@ export function Composer({ onHeight }: { onHeight: (height: number) => void }) {
   };
 
   const importFile = async (file: File) => {
+    cancelDictation();
     const content = await file.text();
     const list = /\.csv$/i.test(file.name) ? parseCsvPrompts(content).prompts : parsePromptList(content).prompts;
     setText(list.join('\n\n'));
@@ -174,6 +221,7 @@ export function Composer({ onHeight }: { onHeight: (height: number) => void }) {
 
   const generate = async () => {
     if (!project || !canGenerate) return;
+    cancelDictation();
     const clean = prompts.map((prompt) => prompt.trim()).filter(Boolean);
     setSubmitting(true);
     try {
@@ -187,6 +235,7 @@ export function Composer({ onHeight }: { onHeight: (height: number) => void }) {
           aspectRatios: settings.ratios,
           variations: settings.variations,
           thinking: model.thinking ? settings.thinking : undefined,
+          quality: quality ?? undefined,
           brief: project.brief,
           referenceIds: enabledRefs.map((reference) => reference.id),
         });
@@ -218,7 +267,7 @@ export function Composer({ onHeight }: { onHeight: (height: number) => void }) {
                 <button type="button" onClick={() => setView('write')} className={cx('rounded-full px-3 py-1', view === 'write' ? 'bg-white/12 text-white' : 'text-white/55 hover:text-white')}>
                   Write
                 </button>
-                <button type="button" onClick={() => setView('review')} disabled={!prompts.length} className={cx('flex items-center gap-1 rounded-full px-3 py-1 disabled:opacity-40', view === 'review' ? 'bg-white/12 text-white' : 'text-white/55 hover:text-white')}>
+                <button type="button" onClick={() => { dictation.stop(); setView('review'); }} disabled={!prompts.length} className={cx('flex items-center gap-1 rounded-full px-3 py-1 disabled:opacity-40', view === 'review' ? 'bg-white/12 text-white' : 'text-white/55 hover:text-white')}>
                   <ListOrdered className="h-3 w-3" /> Review {prompts.length || ''}
                 </button>
               </div>
@@ -236,12 +285,12 @@ export function Composer({ onHeight }: { onHeight: (height: number) => void }) {
                   ))}
                 </Popover>
               )}
-              <Chip onClick={() => setWriterOpen(true)} className="border-[#fff05a]/30 text-[#fff6a8] hover:border-[#fff05a]/60"><Sparkles className="h-3 w-3" /> Write with Claude</Chip>
+              <Chip onClick={openWriter} className="border-[#fff05a]/30 text-[#fff6a8] hover:border-[#fff05a]/60"><Sparkles className="h-3 w-3" /> Write with Claude</Chip>
               <Chip onClick={() => fileRef.current?.click()}><FileText className="h-3 w-3" /> Import .txt / .csv</Chip>
               <input ref={fileRef} type="file" accept=".txt,.csv,text/plain,text/csv" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importFile(file); event.target.value = ''; }} />
               <span className="ml-auto flex items-center gap-1">
                 {(text || edited) && (
-                  <button type="button" onClick={() => { setText(''); setEdited(null); setView('write'); }} className="rounded-full px-2.5 py-1 text-xs text-white/50 hover:bg-white/8 hover:text-white">
+                  <button type="button" onClick={() => { cancelDictation(); setText(''); setEdited(null); setView('write'); }} className="rounded-full px-2.5 py-1 text-xs text-white/50 hover:bg-white/8 hover:text-white">
                     Clear
                   </button>
                 )}
@@ -252,14 +301,18 @@ export function Composer({ onHeight }: { onHeight: (height: number) => void }) {
             </div>
 
             {view === 'write' ? (
-              <textarea
-                autoFocus
-                value={text}
-                onChange={(event) => { setText(event.target.value); setEdited(null); }}
-                onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) void generate(); }}
-                placeholder={'Paste all your prompts at once, for example:\n1. Hero shot of the product on dark walnut, warm diya light\n2. Flat lay on linen with loose chamomile\n3. …'}
-                className="max-h-[38vh] min-h-[140px] w-full resize-y rounded-2xl border border-white/8 bg-black/20 px-3.5 py-3 text-sm leading-relaxed text-white outline-none placeholder:text-white/25 focus:border-white/20"
-              />
+              <div className="relative">
+                <textarea
+                  autoFocus
+                  value={text}
+                  onChange={(event) => { if (dictation.isListening) cancelDictation(); setText(event.target.value); setEdited(null); }}
+                  onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) void generate(); }}
+                  placeholder={'Paste all your prompts at once, or tap the mic and say them, for example:\n1. Hero shot of the product on dark walnut, warm diya light\n2. Flat lay on linen with loose chamomile\n3. …'}
+                  className="max-h-[38vh] min-h-[140px] w-full resize-y rounded-2xl border border-white/8 bg-black/20 py-3 pl-3.5 pr-12 text-sm leading-relaxed text-white outline-none placeholder:text-white/25 focus:border-white/20"
+                />
+                {/* Clear of the resize grip in the corner; touch screens make buttons 44 px, so it moves into the padding. */}
+                <DictationButton dictation={dictation} text={dictationText} separator={dictationSeparator} onStart={openForDictation} size="sm" toastOptions={TOAST} className="absolute bottom-2.5 right-3.5 pointer-coarse:right-1" />
+              </div>
             ) : (
               <ol className="max-h-[38vh] space-y-2 overflow-y-auto pr-1">
                 {prompts.map((prompt, index) => (
@@ -293,7 +346,8 @@ export function Composer({ onHeight }: { onHeight: (height: number) => void }) {
               <FileText className="h-4 w-4 shrink-0 text-white/40" />
               <span className="truncate">{prompts.length ? `${prompts.length} prompts ready. Click to review` : 'Paste your prompts: all 40 at once, one image each…'}</span>
             </button>
-            <Chip onClick={() => setWriterOpen(true)} className="shrink-0 border-[#fff05a]/30 text-[#fff6a8] hover:border-[#fff05a]/60">
+            <DictationButton dictation={dictation} text={dictationText} separator={dictationSeparator} onStart={openForDictation} size="sm" toastOptions={TOAST} />
+            <Chip onClick={openWriter} className="shrink-0 border-[#fff05a]/30 text-[#fff6a8] hover:border-[#fff05a]/60">
               <Sparkles className="h-3 w-3" /> Write with Claude
             </Chip>
           </div>
@@ -305,30 +359,48 @@ export function Composer({ onHeight }: { onHeight: (height: number) => void }) {
             className="w-80"
             trigger={<Chip>{model.name} <ChevronDown className="h-3 w-3" /></Chip>}
           >
-            {PLAYGROUND_MODELS.map((option) => (
-              <button key={option.id} type="button" onClick={() => chooseModel(option.id)} className="flex w-full items-start justify-between gap-3 rounded-xl px-2.5 py-2 text-left hover:bg-white/8">
-                <span>
-                  <span className="block text-sm text-white">{option.name}</span>
-                  <span className="block text-[11px] text-white/45">{option.blurb}</span>
-                  <span className="mt-0.5 block text-[11px] text-white/35">
-                    {option.sizes.map((s) => s.label).join(' · ')} · from {Math.min(...option.sizes.map((s) => s.credits))} credits
+            {PLAYGROUND_MODELS.map((option) => {
+              const offered = enabledSizes(option);
+              const fromCredits = Math.min(...offered.map((s) => sizePrice(s, modelQuality(option, null)).credits));
+              return (
+                <button key={option.id} type="button" onClick={() => chooseModel(option.id)} className="flex w-full items-start justify-between gap-3 rounded-xl px-2.5 py-2 text-left hover:bg-white/8">
+                  <span>
+                    <span className="flex items-center gap-1.5 text-sm text-white">
+                      {option.name}
+                      <span className="rounded-full border border-white/12 px-1.5 py-px text-[9px] uppercase tracking-wide text-white/45">{option.provider === 'openai' ? 'OpenAI' : 'Google'}</span>
+                    </span>
+                    <span className="block text-[11px] text-white/45">{option.blurb}</span>
+                    <span className="mt-0.5 block text-[11px] text-white/35">
+                      {offered.map((s) => s.label).join(' · ')} · from {fromCredits} credits
+                    </span>
                   </span>
-                </span>
-                {option.id === model.id && <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#fff05a]" />}
-              </button>
-            ))}
+                  {option.id === model.id && <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#fff05a]" />}
+                </button>
+              );
+            })}
           </Popover>
 
           <Popover side="top" className="w-72" trigger={<Chip>{size.label} <ChevronDown className="h-3 w-3" /></Chip>}>
-            <p className="px-2 pb-1 pt-1 text-[11px] uppercase tracking-wide text-white/40">Quality</p>
+            <p className="px-2 pb-1 pt-1 text-[11px] uppercase tracking-wide text-white/40">Resolution</p>
             {model.sizes.map((option) => (
-              <button key={option.id} type="button" onClick={() => setSettings({ size: option.id })} className="flex w-full items-center justify-between gap-3 rounded-xl px-2.5 py-2 text-left hover:bg-white/8">
+              <button
+                key={option.id}
+                type="button"
+                disabled={Boolean(option.disabled)}
+                title={option.disabled}
+                onClick={() => setSettings({ size: option.id })}
+                className="flex w-full items-center justify-between gap-3 rounded-xl px-2.5 py-2 text-left hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+              >
                 <span>
                   <span className="block text-sm text-white">{option.label}</span>
-                  <span className="block text-[11px] text-white/40">{dimensionLabel(option.id, settings.ratios[0])} px at {settings.ratios[0]}</span>
+                  <span className="block text-[11px] text-white/40">
+                    {option.disabled ?? `${dimensionLabel(option.id, settings.ratios[0])} px at ${settings.ratios[0]}`}
+                  </span>
                 </span>
                 <span className="flex items-center gap-2 text-xs text-white/60">
-                  {option.credits} credits
+                  {option.disabled
+                    ? <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] uppercase tracking-wide">Off</span>
+                    : `${imageCredits(sizePrice(option, quality))} credits`}
                   {option.id === size.id && <Check className="h-4 w-4 text-[#fff05a]" />}
                 </span>
               </button>
@@ -391,6 +463,29 @@ export function Composer({ onHeight }: { onHeight: (height: number) => void }) {
             </Popover>
           )}
 
+          {quality && (
+            <Popover side="top" className="w-64" trigger={<Chip>{QUALITY_LABELS[quality]} <ChevronDown className="h-3 w-3" /></Chip>}>
+              <p className="px-2 pb-1 pt-1 text-[11px] uppercase tracking-wide text-white/40">Quality</p>
+              {model.qualities.map((level) => (
+                <button key={level} type="button" onClick={() => setSettings({ quality: level })} className="flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left hover:bg-white/8">
+                  <span>
+                    <span className="block text-sm text-white">{QUALITY_LABELS[level]}</span>
+                    <span className="block text-[11px] text-white/40">
+                      {level === 'high' ? 'Sharp and quick, right for most images' : level === 'xhigh' ? 'Finer detail and text, slower' : 'The most detail OpenAI makes, slowest'}
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-2 text-xs text-white/60">
+                    {imageCredits(sizePrice(size, level))} credits
+                    {quality === level && <Check className="h-4 w-4 text-[#fff05a]" />}
+                  </span>
+                </button>
+              ))}
+              {model.creditsPerReference > 0 && (
+                <p className="px-2.5 pt-1 text-[11px] text-white/35">Includes {model.creditsPerReference} credits per switched-on reference: OpenAI charges for reference images.</p>
+              )}
+            </Popover>
+          )}
+
           <span className={cx('text-[11px]', tooManyRefs ? 'text-red-300' : 'text-white/40')}>
             {enabledRefs.length} reference{enabledRefs.length === 1 ? '' : 's'}
           </span>
@@ -400,7 +495,7 @@ export function Composer({ onHeight }: { onHeight: (height: number) => void }) {
               <div className={cx(tooMany ? 'text-red-300' : 'text-white/70')}>{summary}</div>
               {prompts.length > 0 && (
                 <div className={cx(short ? 'text-red-300' : 'text-white/40')}>
-                  {cost.credits.toLocaleString('en-IN')} credits · about {runMinutes(model.id, size.id, cost.images)} min
+                  {cost.credits.toLocaleString('en-IN')} credits · about {runMinutes(model.id, size.id, cost.images, quality)} min
                   {tooMany && ` · max ${MAX_IMAGES_PER_RUN} per run`}
                   {short && <> · you have {credits.toLocaleString('en-IN')} · <Link href="/pricing" className="underline">get credits</Link></>}
                 </div>
@@ -422,7 +517,7 @@ export function Composer({ onHeight }: { onHeight: (height: number) => void }) {
         <PromptWriter open={writerOpen} onOpenChange={setWriterOpen} existing={prompts} onPrompts={takeWritten} />
         {tooManyRefs && (
           <p className="flex items-center gap-1.5 px-4 pb-3 text-[11px] text-red-300">
-            <X className="h-3 w-3" /> Switch some references off: Gemini takes at most {MAX_ENABLED_REFERENCES} per image.
+            <X className="h-3 w-3" /> Switch some references off: a run takes at most {MAX_ENABLED_REFERENCES} per image.
           </p>
         )}
       </div>

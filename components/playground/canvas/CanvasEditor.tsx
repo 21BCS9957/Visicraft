@@ -23,7 +23,7 @@ import { ChevronDown, ChevronLeft, Download, Loader2, Maximize, Minus, Plus, Red
 import toast from '@/lib/toast';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { canvasApi, PlaygroundApiError } from '@/lib/playground/api';
-import { playgroundModel, sizeForImage, sizeOption } from '@/lib/playground/models';
+import { enabledSizes, playgroundModel, sizeForImage, sizeOption } from '@/lib/playground/models';
 import { Popover, PopoverClose } from '../ui';
 import { canvasFont, loadCanvasFont } from './fonts';
 import { NO_ADJUSTMENTS, type Adjustments, type CanvasDoc, type EditorApi, type Layer, type ShapeKind, type TextPreset, type Tool } from './editorTypes';
@@ -587,7 +587,8 @@ export default function CanvasEditor({ source }: { source: CanvasSource }) {
     const prices: Record<string, number> = {};
     for (const id of ['gemini-3.1-flash-image', 'gemini-3-pro-image']) {
       const model = playgroundModel(id);
-      prices[id] = sizeOption(model, sizeForImage(W, H, model.sizes.map((option) => option.id)))?.credits ?? 0;
+      // 4K is turned off: a big picture is priced (and edited) at the largest size still offered.
+      prices[id] = sizeOption(model, sizeForImage(W, H, enabledSizes(model).map((option) => option.id)))?.credits ?? 0;
     }
     return prices;
   }, [W, H]);

@@ -48,6 +48,7 @@ export function previewBundle(): PlaygroundBundle {
     ratios: ['4:5', '9:16'],
     variations: 1,
     thinking: null,
+    quality: null,
     brief: 'Brand: Brew Sage. Product: Night Unwind chamomile & lemongrass infusion, 30 tea bags. Keep the purple pill, logo and "CAFFEINE FREE" ribbon exactly. Warm, calm, premium; Indian festive season.',
     references: [
       { id: 'ref-1', url: SAMPLES[0], role: 'product', label: 'Box front' },

@@ -6,7 +6,7 @@ import { Dialog } from 'radix-ui';
 import { ChevronLeft, ChevronRight, Copy, Download, FolderOutput, ImagePlus, RotateCcw, Star, Trash2, Wand2, X } from 'lucide-react';
 import toast from '@/lib/toast';
 import { playgroundApi } from '@/lib/playground/api';
-import { dimensionLabel, playgroundModel, ROLE_LABELS, sizeOption } from '@/lib/playground/models';
+import { dimensionLabel, nearestSize, playgroundModel, QUALITY_LABELS, ROLE_LABELS, sizeOption } from '@/lib/playground/models';
 import { enqueue } from '@/lib/playground/runner';
 import { runItems, usePlaygroundStore } from '@/lib/playground/store';
 import type { PlaygroundItem, PlaygroundRun } from '@/lib/playground/types';
@@ -41,10 +41,12 @@ function LightboxBody({ item, run, onPrev, onNext }: {
         clientKey: crypto.randomUUID(),
         prompts: [prompt],
         model: run.model,
-        size: run.size,
+        // An old 4K run makes its new take at the nearest size still offered.
+        size: nearestSize(playgroundModel(run.model), run.size),
         aspectRatios: [item.aspectRatio],
         variations: 1,
         thinking: run.thinking ?? undefined,
+        quality: run.quality ?? undefined,
         brief: usePlaygroundStore.getState().project?.brief ?? run.brief,
         referenceIds: usePlaygroundStore.getState().references.filter((reference) => reference.enabled).map((reference) => reference.id),
       });
@@ -140,7 +142,8 @@ function LightboxBody({ item, run, onPrev, onNext }: {
             <h3 className="text-xs font-medium uppercase tracking-wide text-white/45">Settings</h3>
             <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
               <dt className="text-white/40">Model</dt><dd className="text-white/80">{model.name}</dd>
-              <dt className="text-white/40">Quality</dt><dd className="text-white/80">{sizeOption(model, run.size)?.label ?? run.size}</dd>
+              <dt className="text-white/40">Resolution</dt><dd className="text-white/80">{sizeOption(model, run.size)?.label ?? run.size}</dd>
+              {run.quality && <><dt className="text-white/40">Quality</dt><dd className="text-white/80">{QUALITY_LABELS[run.quality]}</dd></>}
               <dt className="text-white/40">Size</dt><dd className="text-white/80">{item.aspectRatio}</dd>
               <dt className="text-white/40">Pixels</dt><dd className="text-white/80">{item.width && item.height ? `${item.width} × ${item.height}` : dimensionLabel(run.size, item.aspectRatio)}</dd>
               {run.thinking && <><dt className="text-white/40">Thinking</dt><dd className="text-white/80">{run.thinking === 'high' ? 'Thorough' : 'Fast'}</dd></>}

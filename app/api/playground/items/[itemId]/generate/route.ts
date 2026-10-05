@@ -1,24 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ApiError, apiErrorResponse, assertDb, requireUuid, withUser } from '@/lib/server/playground/http';
 import { claimItem, getOwnedItem, ITEM_COLUMNS, playgroundDb, releaseItem, toItem, toRun } from '@/lib/server/playground/db';
-import { generatePlaygroundImage, PlaygroundGenerationError } from '@/lib/server/playground/gemini';
+import { PlaygroundGenerationError } from '@/lib/server/playground/errors';
+import { generatePlaygroundImage } from '@/lib/server/playground/generate';
 import { savePlaygroundImage } from '@/lib/server/playground/images';
 import { logUsage } from '@/lib/server/usage';
-import { playgroundModel } from '@/lib/playground/models';
+import { playgroundModel, sizeOption, sizePrice } from '@/lib/playground/models';
 import type { GenerateResponse, PlaygroundRun } from '@/lib/playground/types';
 
 export const maxDuration = 300;
 
 type Context = { params: Promise<{ itemId: string }> };
 
-/** An image that keeps hitting a busy Gemini is failed after this many tries. */
+/** An image that keeps hitting a busy provider is failed after this many tries. */
 const MAX_ATTEMPTS = 5;
 
 /**
  * Makes one queued image: claims it and charges the run's price in one database step,
- * sends Gemini the brief, the references and this image's prompt, stores the result, and
- * refunds on any failure. A busy Gemini puts the image back in the queue (429); a billing
- * or key problem pauses the run (503).
+ * sends the model's provider (Gemini or OpenAI) the brief, the references and this image's
+ * prompt, stores the result, and refunds on any failure. A busy provider puts the image back
+ * in the queue (429); a billing or key problem pauses the run (503).
  */
 export async function POST(request: NextRequest, { params }: Context) {
   const deadline = Date.now() + 270_000;
@@ -56,6 +57,7 @@ export async function POST(request: NextRequest, { params }: Context) {
         size: run.size,
         aspectRatio: item.aspect_ratio as string,
         thinking: run.thinking,
+        quality: run.quality,
         brief: run.brief,
         references: run.references,
         prompt,
@@ -81,19 +83,23 @@ export async function POST(request: NextRequest, { params }: Context) {
         .maybeSingle();
       assertDb(finished.error, 'save the image');
 
+      const model = playgroundModel(run.model);
+      const listed = sizeOption(model, run.size) ?? model.sizes.find((size) => size.id === run.size);
       await Promise.all([
         db.from('playground_projects')
           .update({ cover_url: saved.previewUrl, updated_at: new Date().toISOString() })
           .eq('id', item.project_id as string),
         logUsage({
           user,
+          provider: model.provider,
           model: run.model,
           feature: 'image_generation',
           inputTokens: generated.usage.inputTokens,
           outputTokens: generated.usage.outputTokens,
           totalTokens: generated.usage.totalTokens,
           imageCount: 1,
-          estimatedCostUsd: playgroundModel(run.model).sizes.find((size) => size.id === run.size)?.usd ?? 0,
+          // OpenAI's token usage gives the real price; Gemini's comes from the price list.
+          estimatedCostUsd: generated.costUsd ?? (listed ? sizePrice(listed, run.quality).usd : 0),
           creditCost: claim.credits,
           metadata: {
             mode: 'playground',
@@ -102,6 +108,7 @@ export async function POST(request: NextRequest, { params }: Context) {
             itemId,
             aspectRatio: item.aspect_ratio,
             imageSize: run.size,
+            quality: run.quality,
             variation: item.variation,
             referenceCount: run.references.length,
             attempt: item.attempts,
@@ -129,7 +136,7 @@ export async function POST(request: NextRequest, { params }: Context) {
       }
 
       const message = failure.kind === 'rate_limited'
-        ? 'Gemini stayed busy for this image. Try it again in a few minutes.'
+        ? `${playgroundModel(run.model).provider === 'openai' ? 'OpenAI' : 'Gemini'} stayed busy for this image. Try it again in a few minutes.`
         : failure.message;
       await releaseItem(db, itemId, user.id, 'failed', message);
       const current = toItem(await getOwnedItem(db, itemId, user.id, ITEM_COLUMNS));

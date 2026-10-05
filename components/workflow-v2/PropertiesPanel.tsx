@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { useWorkflow } from './WorkflowContext';
 import { getCreditCost } from '@/lib/credits/calculator';
+import { FOUR_K_OFF } from '@/lib/playground/models';
 import { executeGeneration } from '@/lib/workflow/generateNode';
 import { executeVideoGeneration, getVideoGenerationCreditCost } from '@/lib/workflow/videoGenerateNode';
 import { collectGenerationInputs, collectPromptText } from '@/lib/workflow/collectReferenceUrls';
@@ -50,7 +51,7 @@ const ASPECT_RATIOS = [
 ];
 
 const RESOLUTIONS = [
-  { id: '4K', name: '4K (3840x2160)', emoji: '🎬' },
+  { id: '4K', name: '4K (3840x2160)', emoji: '🎬', disabled: FOUR_K_OFF },
   { id: '2K', name: '2K (2560x1440)', emoji: '📹' },
   { id: '1080p', name: '1080p (1920x1080)', emoji: '🎥' },
   { id: '720p', name: '720p (1280x720)', emoji: '📷' },
@@ -186,7 +187,11 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
         contextUpdateNodeData(selectedNode.id, { model: nextModel });
       }
       setSelectedAspect(selectedNode.data.aspectRatio || '16:9');
-      setSelectedResolution(selectedNode.data.resolution || (isVideo ? '720p' : '1080p'));
+      const resolution = selectedNode.data.resolution || (isVideo ? '720p' : '1080p');
+      // 4K images are turned off: an image node set to 4K moves to 2K.
+      const allowed = !isVideo && resolution === '4K' ? '2K' : resolution;
+      setSelectedResolution(allowed);
+      if (allowed !== resolution) contextUpdateNodeData(selectedNode.id, { resolution: allowed });
       setSelectedDuration(selectedNode.data.duration || '5s');
       setSelectedVideoMode(selectedNode.data.mode || 'omni_reference');
     }
@@ -619,17 +624,23 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
                 exit={{ opacity: 0, y: -10 }}
                 className="absolute top-full left-0 right-0 mt-2 bg-[#1a1a1a] border border-white/10 rounded-lg overflow-hidden shadow-xl z-20"
               >
-                {activeResolutions.map((resolution) => (
-                  <button
-                    key={resolution.id}
-                    onClick={() => handleResolutionSelect(resolution.id)}
-                    className={`w-full px-4 py-3 text-left hover:bg-white/10 transition-colors flex items-center gap-2 ${selectedResolution === resolution.id ? 'bg-white/5 text-[#fff05a]' : 'text-white'
-                      }`}
-                  >
-                    <span>{resolution.emoji}</span>
-                    <span>{resolution.name}</span>
-                  </button>
-                ))}
+                {activeResolutions.map((resolution) => {
+                  const off = (resolution as { disabled?: string }).disabled;
+                  return (
+                    <button
+                      key={resolution.id}
+                      disabled={Boolean(off)}
+                      title={off}
+                      onClick={() => handleResolutionSelect(resolution.id)}
+                      className={`w-full px-4 py-3 text-left hover:bg-white/10 transition-colors flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent ${selectedResolution === resolution.id ? 'bg-white/5 text-[#fff05a]' : 'text-white'
+                        }`}
+                    >
+                      <span>{resolution.emoji}</span>
+                      <span>{resolution.name}</span>
+                      {off && <span className="ml-auto rounded-full border border-white/15 px-2 py-0.5 text-[10px] uppercase tracking-wide">Off</span>}
+                    </button>
+                  );
+                })}
               </motion.div>
             )}
           </AnimatePresence>

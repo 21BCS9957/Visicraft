@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ApiError, apiErrorResponse, readJson, requireUuid, withUser } from '@/lib/server/playground/http';
 import { getOwnedItem, isOwnStorageUrl, playgroundDb } from '@/lib/server/playground/db';
 import { aiEditImage, closestRatio, sizeForImage, type AiEditMode } from '@/lib/server/playground/aiEdit';
-import { PlaygroundGenerationError } from '@/lib/server/playground/gemini';
+import { PlaygroundGenerationError } from '@/lib/server/playground/errors';
 import { PLAYGROUND_BUCKET } from '@/lib/server/playground/images';
 import { uploadBufferToBucket } from '@/lib/server/supabaseStorage';
 import { deductCreditsForUser, logUsage, refundCreditsForUser } from '@/lib/server/usage';
-import { isPlaygroundModel, playgroundModel, sizeOption } from '@/lib/playground/models';
+import { enabledSizes, isPlaygroundModel, playgroundModel, sizeOption } from '@/lib/playground/models';
 
 export const maxDuration = 300;
 
@@ -51,9 +51,12 @@ export async function POST(request: NextRequest, { params }: Context) {
     if (mode === 'replace' && !instruction) throw new ApiError(400, 'Say what to put in the painted area.', 'bad_request');
 
     const model = playgroundModel(isPlaygroundModel(body.model) ? body.model : DEFAULT_EDIT_MODEL);
+    // The masked edit is built for Gemini; OpenAI models make Playground images only.
+    if (model.provider !== 'google') throw new ApiError(400, `${model.name} can't edit in the Canvas. Pick Nano Banana 2 or Nano Banana Pro.`, 'bad_request');
     const width = typeof body.width === 'number' && body.width > 0 ? body.width : Number(item.width) || 1024;
     const height = typeof body.height === 'number' && body.height > 0 ? body.height : Number(item.height) || 1024;
-    const size = sizeForImage(width, height, model.sizes.map((option) => option.id));
+    // 4K is turned off, so a big picture is edited at the largest size still offered.
+    const size = sizeForImage(width, height, enabledSizes(model).map((option) => option.id));
     const price = sizeOption(model, size)!;
     const ratio = model.ratios.includes(item.aspect_ratio as string) ? (item.aspect_ratio as string) : closestRatio(width, height, model.ratios);
 

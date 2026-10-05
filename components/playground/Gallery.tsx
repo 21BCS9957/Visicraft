@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Download, ImageIcon, Loader2, Pause, Play, RotateCcw, Sparkles, Square, TextQuote, Upload } from 'lucide-react';
 import toast from '@/lib/toast';
 import { playgroundApi } from '@/lib/playground/api';
-import { playgroundModel, sizeOption } from '@/lib/playground/models';
+import { playgroundModel, QUALITY_LABELS, sizeOption } from '@/lib/playground/models';
 import { cancelRun, cancelWaiting, resume, resumeWaiting, retryItem } from '@/lib/playground/runner';
 import { runItems, usePlaygroundStore } from '@/lib/playground/store';
 import type { PlaygroundItem, PlaygroundRun } from '@/lib/playground/types';
@@ -63,6 +63,7 @@ function RunSection({ run, density, onOpen, onCanvas }: {
             <span className="text-white/65">{model.name}</span>
             <span className="text-white/25">·</span>
             <span className="text-white/65">{sizeOption(model, run.size)?.label ?? run.size}</span>
+            {run.quality && <><span className="text-white/25">·</span><span className="text-white/65">{QUALITY_LABELS[run.quality]}</span></>}
             <span className="text-white/25">·</span>
             <span className="text-white/65">{run.ratios.join(', ')}</span>
             {run.variations > 1 && <><span className="text-white/25">·</span><span className="text-white/65">×{run.variations}</span></>}

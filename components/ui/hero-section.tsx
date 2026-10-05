@@ -10,7 +10,6 @@ import {
   Download,
   Eye,
   Image as ImageIcon,
-  Mic,
   Orbit,
   Pause,
   Play,
@@ -30,7 +29,8 @@ import {
   useVelocity,
 } from 'framer-motion';
 import toast from '@/lib/toast';
-import { useSpeechDictation } from '@/lib/useSpeechDictation';
+import { dictationErrorMessage, useSpeechDictation } from '@/lib/useSpeechDictation';
+import { DictationButton } from '@/components/shared/DictationButton';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { getCreditCost } from '@/lib/credits/calculator';
@@ -949,13 +949,8 @@ export function HeroSection() {
 
   const speech = useSpeechDictation(setPromptValue, {
     onError: (code) => {
-      if (code === 'not-allowed') {
-        toast.error('Microphone access denied. Allow the microphone in your browser settings.');
-      } else if (code === 'service-not-allowed') {
-        toast.error('Voice input is not available. Check your browser permissions.');
-      } else if (code === 'network') {
-        toast.error('Voice recognition failed (network). Check your connection.');
-      }
+      const message = dictationErrorMessage(code);
+      if (message) toast.error(message);
     },
   });
 
@@ -1525,7 +1520,11 @@ export function HeroSection() {
                     className="min-h-[72px] w-full resize-none appearance-none bg-transparent py-2 pr-12 text-base font-light text-white placeholder:text-white/40 !border-0 !outline-none !ring-0 !shadow-none focus:!border-0 focus:!outline-none focus:!ring-0 focus:!shadow-none focus-visible:!border-0 focus-visible:!outline-none focus-visible:!ring-0 focus-visible:!shadow-none sm:min-h-[84px] sm:text-xl"
                     placeholder=""
                     value={promptValue}
-                    onChange={(e) => setPromptValue(e.target.value)}
+                    onChange={(e) => {
+                      // Typing takes over from the mic, so a late result can't overwrite it.
+                      if (speech.isListening) speech.cancel();
+                      setPromptValue(e.target.value);
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey && !isGenerating) {
                         e.preventDefault();
@@ -1827,43 +1826,7 @@ export function HeroSection() {
                   </div>
 
                   <div className="flex items-center justify-end gap-2">
-                    {/* Mic */}
-                    <button
-                      type="button"
-                      aria-pressed={speech.isListening}
-                      aria-label={speech.isListening ? 'Stop voice input' : 'Start voice input'}
-                      title={
-                        speech.isListening
-                          ? 'Stop listening'
-                          : speech.supported
-                            ? 'Voice input'
-                            : 'Voice input not supported in this browser'
-                      }
-                      onClick={() => {
-                        if (!speech.supported) {
-                          toast.error(
-                            'Voice input is not supported in this browser. Try Chrome, Edge, or Safari.'
-                          );
-                          return;
-                        }
-                        speech.toggle(promptValue);
-                      }}
-                      className={cn(
-                        'flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors',
-                        speech.isListening
-                          ? 'animate-mic-listening bg-white/12 ring-1 ring-white/10 hover:bg-white/16'
-                          : 'text-white/60 hover:bg-white/10 hover:text-white'
-                      )}
-                    >
-                      {speech.isListening ? (
-                        <span
-                          className="block h-[11px] w-[11px] rounded-[2.5px] bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.55)]"
-                          aria-hidden
-                        />
-                      ) : (
-                        <Mic className="h-5 w-5" />
-                      )}
-                    </button>
+                    <DictationButton dictation={speech} text={promptValue} />
                     {/* Generate button */}
                     <button
                       type="button"

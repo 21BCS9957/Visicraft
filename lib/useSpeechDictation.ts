@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
 
@@ -26,12 +26,35 @@ function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
+const noSubscribe = () => () => {};
+const isSupported = () => getSpeechRecognitionCtor() !== null;
+
 export type SpeechDictationOptions = {
-  /** BCP 47 language tag, e.g. en-US */
+  /** BCP 47 language tag; Indian English (en-IN) by default */
   lang?: string;
+  /** Put between the existing text and the dictated words when the text doesn't end in whitespace (default a space) */
+  separator?: string;
   /** Fired for recoverable and fatal errors (e.g. `not-allowed`, `network`) */
   onError?: (error: string) => void;
 };
+
+/** What to tell the user about a recognition error (or `unsupported`); null when it needs no message. */
+export function dictationErrorMessage(code: string): string | null {
+  switch (code) {
+    case 'not-allowed':
+      return 'Microphone access denied. Allow the microphone in your browser settings.';
+    case 'service-not-allowed':
+      return 'Voice input is not available. Check your browser permissions.';
+    case 'network':
+      return 'Voice recognition failed (network). Check your connection.';
+    case 'audio-capture':
+      return 'No microphone found. Check that one is connected.';
+    case 'unsupported':
+      return 'Voice input is not supported in this browser. Try Chrome, Edge, or Safari.';
+    default:
+      return null;
+  }
+}
 
 /**
  * Browser speech-to-text (Web Speech API), similar to ChatGPT voice input:
@@ -42,13 +65,18 @@ export function useSpeechDictation(
   options?: SpeechDictationOptions
 ) {
   const onErrorRef = useRef(options?.onError);
-  onErrorRef.current = options?.onError;
+  // The latest handler, kept after each render (refs can't be written during render).
+  useEffect(() => {
+    onErrorRef.current = options?.onError;
+  });
   const [isListening, setIsListening] = useState(false);
-  const [supported, setSupported] = useState(true);
+  // The server render assumes support; the browser's answer replaces it on hydration.
+  const supported = useSyncExternalStore(noSubscribe, isSupported, () => true);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const baseRef = useRef('');
   const finalsRef = useRef('');
-  const lang = options?.lang ?? 'en-US';
+  const lang = options?.lang ?? 'en-IN';
+  const defaultSeparator = options?.separator ?? ' ';
 
   const getOnError = () => onErrorRef.current;
 
@@ -68,7 +96,6 @@ export function useSpeechDictation(
   }, []);
 
   useEffect(() => {
-    setSupported(getSpeechRecognitionCtor() !== null);
     return () => {
       disposeRecognition();
     };
@@ -87,16 +114,20 @@ export function useSpeechDictation(
     }
   }, [disposeRecognition]);
 
+  /** Stops at once and drops any result still on its way, so it can't overwrite an edit. */
+  const cancel = useCallback(() => {
+    disposeRecognition();
+    setIsListening(false);
+  }, [disposeRecognition]);
+
   const start = useCallback(
-    (currentText: string) => {
+    (currentText: string, separator: string = defaultSeparator) => {
       const Ctor = getSpeechRecognitionCtor();
-      if (!Ctor) {
-        setSupported(false);
-        return;
-      }
+      if (!Ctor) return;
 
       disposeRecognition();
-      baseRef.current = currentText;
+      // Dictated words start after a separator, not glued to the last typed word.
+      baseRef.current = currentText && !/\s$/.test(currentText) ? currentText + separator : currentText;
       finalsRef.current = '';
 
       const rec = new Ctor();
@@ -146,15 +177,15 @@ export function useSpeechDictation(
         disposeRecognition();
       }
     },
-    [disposeRecognition, lang, setText]
+    [defaultSeparator, disposeRecognition, lang, setText]
   );
 
   const toggle = useCallback(
-    (currentText: string) => {
+    (currentText: string, separator?: string) => {
       if (isListening) {
         stop();
       } else {
-        start(currentText);
+        start(currentText, separator);
       }
     },
     [isListening, start, stop]
@@ -165,6 +196,9 @@ export function useSpeechDictation(
     supported,
     start,
     stop,
+    cancel,
     toggle,
   };
 }
+
+export type SpeechDictation = ReturnType<typeof useSpeechDictation>;

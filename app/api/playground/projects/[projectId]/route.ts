@@ -53,6 +53,7 @@ export async function PATCH(request: NextRequest, { params }: Context) {
         ratios: Array.isArray(settings.ratios) ? settings.ratios.filter((ratio) => typeof ratio === 'string').slice(0, 14) : undefined,
         variations: typeof settings.variations === 'number' ? Math.min(MAX_VARIATIONS, Math.max(1, Math.round(settings.variations))) : undefined,
         thinking: settings.thinking === 'high' ? 'high' : 'minimal',
+        quality: ['high', 'xhigh', 'max'].includes(settings.quality as string) ? settings.quality : undefined,
       };
     }
 

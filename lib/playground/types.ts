@@ -1,6 +1,6 @@
 /** Rows and API shapes of the Playground, shared by the page and the server. */
 
-import type { PlaygroundModelId, PlaygroundSize, ReferenceRole, ThinkingLevel } from './models';
+import type { ImageQuality, PlaygroundModelId, PlaygroundSize, ReferenceRole, ThinkingLevel } from './models';
 
 export type ItemStatus = 'queued' | 'generating' | 'done' | 'failed' | 'cancelled';
 
@@ -10,6 +10,8 @@ export interface PlaygroundSettings {
   ratios: string[];
   variations: number;
   thinking: ThinkingLevel;
+  /** OpenAI models' quality level; kept while a Gemini model is picked. */
+  quality: ImageQuality;
 }
 
 export type ProjectKind = 'image' | 'video';
@@ -95,6 +97,8 @@ export interface PlaygroundRun {
   ratios: string[];
   variations: number;
   thinking: ThinkingLevel | null;
+  /** OpenAI models only. */
+  quality: ImageQuality | null;
   brief: string;
   references: ReferenceSnapshot[];
   prompts: string[];

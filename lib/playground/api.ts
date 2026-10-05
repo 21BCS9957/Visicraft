@@ -1,7 +1,7 @@
 'use client';
 
 import { getAuthenticatedHeaders } from '@/lib/supabase/auth';
-import type { ReferenceRole, ThinkingLevel } from './models';
+import type { ImageQuality, ReferenceRole, ThinkingLevel } from './models';
 import type {
   GenerateResponse,
   LibraryItem,
@@ -62,6 +62,8 @@ export interface NewRunRequest {
   aspectRatios: string[];
   variations: number;
   thinking?: ThinkingLevel;
+  /** OpenAI models only. */
+  quality?: ImageQuality;
   brief: string;
   referenceIds: string[];
 }

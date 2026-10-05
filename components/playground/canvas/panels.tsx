@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import type { Textbox } from 'fabric';
 import {
   AlignCenter,
@@ -31,9 +31,14 @@ import {
   Upload,
   Wand2,
 } from 'lucide-react';
+import toast from '@/lib/toast';
+import { dictationErrorMessage, useSpeechDictation } from '@/lib/useSpeechDictation';
+import { DictationButton } from '@/components/shared/DictationButton';
 import { cx, Tip } from '../ui';
 import { CANVAS_FONTS, canvasFont } from './fonts';
 import type { Adjustments, EditorApi, Layer, ShapeKind, TextPreset, Tool } from './editorTypes';
+
+const MAX_INSTRUCTION_CHARS = 600;
 
 const TOOLS: Array<{ id: Tool; label: string; icon: typeof Type; hint: string }> = [
   { id: 'select', label: 'Select', icon: MousePointer2, hint: 'Select and move (V)' },
@@ -203,6 +208,20 @@ export function AiPanel({ mode, brush, onBrush, strokes, onUndoStroke, onClear, 
   onRun: () => void;
 }) {
   const replace = mode === 'replace';
+  const dictation = useSpeechDictation(
+    (value) => onInstruction((typeof value === 'function' ? value(instruction) : value).slice(0, MAX_INSTRUCTION_CHARS)),
+    {
+      onError: (code) => {
+        const message = dictationErrorMessage(code);
+        if (message) toast.error(message, { position: 'top-center' });
+      },
+    },
+  );
+  const { cancel: cancelDictation } = dictation;
+  // AI Erase has no text box, so switching to it turns the mic off.
+  useEffect(() => {
+    if (!replace) cancelDictation();
+  }, [replace, cancelDictation]);
   return (
     <div className="space-y-5">
       <PanelTitle hint={replace ? 'Paint the area to change, then say what should be there.' : 'Paint over what you want gone. Gemini fills it in; nothing else in the photo changes.'}>
@@ -214,10 +233,21 @@ export function AiPanel({ mode, brush, onBrush, strokes, onUndoStroke, onClear, 
         <button type="button" disabled={!strokes || busy} onClick={onClear} className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/70 hover:bg-white/8 disabled:opacity-40">Clear painting</button>
       </div>
       {replace && (
-        <label className="block">
-          <span className="text-xs text-white/70">What goes in the painted area</span>
-          <textarea value={instruction} onChange={(event) => onInstruction(event.target.value)} rows={3} maxLength={600} placeholder="e.g. a white marble tabletop" className="mt-2 w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white outline-none placeholder:text-white/25 focus:border-white/25" />
-        </label>
+        <div>
+          <label htmlFor="ai-replace-instruction" className="text-xs text-white/70">What goes in the painted area</label>
+          <div className="relative mt-2">
+            <textarea
+              id="ai-replace-instruction"
+              value={instruction}
+              onChange={(event) => { if (dictation.isListening) dictation.cancel(); onInstruction(event.target.value); }}
+              rows={3}
+              maxLength={MAX_INSTRUCTION_CHARS}
+              placeholder="e.g. a white marble tabletop"
+              className="w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] py-2 pl-3 pr-12 text-sm text-white outline-none placeholder:text-white/25 focus:border-white/25"
+            />
+            <DictationButton dictation={dictation} text={instruction} disabled={busy} size="sm" toastOptions={{ position: 'top-center' }} className="absolute bottom-2 right-1.5 pointer-coarse:right-1" />
+          </div>
+        </div>
       )}
       <div className="space-y-1.5">
         <span className="text-xs text-white/70">Model</span>
@@ -230,7 +260,7 @@ export function AiPanel({ mode, brush, onBrush, strokes, onUndoStroke, onClear, 
       </div>
       <button
         type="button"
-        onClick={onRun}
+        onClick={() => { dictation.cancel(); onRun(); }}
         disabled={busy || !strokes || (replace && !instruction.trim())}
         className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#fff05a] text-sm font-medium text-black hover:bg-white disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-white/40"
       >

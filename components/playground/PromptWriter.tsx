@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Dialog } from 'radix-ui';
 import { Loader2, Sparkles, X } from 'lucide-react';
 import toast from '@/lib/toast';
@@ -8,10 +8,13 @@ import { useCredits } from '@/lib/contexts/CreditsContext';
 import { playgroundApi } from '@/lib/playground/api';
 import { MAX_ENABLED_REFERENCES, MAX_WRITTEN_PROMPTS, playgroundModel, promptWriterCredits, ROLE_LABELS, type ReferenceRole } from '@/lib/playground/models';
 import { usePlaygroundStore } from '@/lib/playground/store';
+import { dictationErrorMessage, useSpeechDictation } from '@/lib/useSpeechDictation';
+import { DictationButton } from '@/components/shared/DictationButton';
 import { cx } from './ui';
 
 const TOAST = { position: 'top-center' as const };
 const COUNTS = [10, 20, 40, 50];
+const MAX_GOAL_CHARS = 2000;
 
 /** Dev preview: plausible prompts without calling Claude. */
 function previewPrompts(goal: string, count: number): string[] {
@@ -34,6 +37,21 @@ export function PromptWriter({ open, onOpenChange, existing, onPrompts }: {
   const [goal, setGoal] = useState('');
   const [count, setCount] = useState(20);
   const [busy, setBusy] = useState(false);
+  const dictation = useSpeechDictation(
+    (value) => setGoal((prev) => (typeof value === 'function' ? value(prev) : value).slice(0, MAX_GOAL_CHARS)),
+    {
+      onError: (code) => {
+        const message = dictationErrorMessage(code);
+        if (message) toast.error(message, TOAST);
+      },
+    },
+  );
+  const { cancel: cancelDictation } = dictation;
+
+  // The dialog stays mounted when closed: closing it turns the mic off.
+  useEffect(() => {
+    if (!open) cancelDictation();
+  }, [open, cancelDictation]);
 
   const enabled = references.filter((reference) => reference.enabled).slice(0, MAX_ENABLED_REFERENCES);
   const counts = enabled.reduce<Record<ReferenceRole, number>>((acc, reference) => ({ ...acc, [reference.role]: acc[reference.role] + 1 }), { product: 0, person: 0, style: 0 });
@@ -44,6 +62,7 @@ export function PromptWriter({ open, onOpenChange, existing, onPrompts }: {
 
   const write = async (mode: 'replace' | 'add') => {
     if (!project || !canWrite) return;
+    cancelDictation();
     setBusy(true);
     try {
       const prompts = preview
@@ -106,19 +125,23 @@ export function PromptWriter({ open, onOpenChange, existing, onPrompts }: {
             )}
           </div>
 
-          <label className="mt-5 block">
-            <span className="text-sm text-white/85">What do you want?</span>
-            <textarea
-              autoFocus
-              value={goal}
-              onChange={(event) => setGoal(event.target.value)}
-              maxLength={2000}
-              rows={4}
-              disabled={busy}
-              placeholder={'e.g. Diwali Meta ads for the saree: half studio shots, half lifestyle with Indian models; warm festive light; three with the text "Festive offer: 20% off".'}
-              className="mt-2 w-full resize-none rounded-2xl border border-white/10 bg-black/25 px-3.5 py-3 text-sm leading-relaxed text-white outline-none placeholder:text-white/25 focus:border-white/25 disabled:opacity-60"
-            />
-          </label>
+          <div className="mt-5">
+            <label htmlFor="prompt-writer-goal" className="text-sm text-white/85">What do you want?</label>
+            <div className="relative mt-2">
+              <textarea
+                id="prompt-writer-goal"
+                autoFocus
+                value={goal}
+                onChange={(event) => { if (dictation.isListening) cancelDictation(); setGoal(event.target.value); }}
+                maxLength={MAX_GOAL_CHARS}
+                rows={4}
+                disabled={busy}
+                placeholder={'e.g. Diwali Meta ads for the saree: half studio shots, half lifestyle with Indian models; warm festive light; three with the text "Festive offer: 20% off". Or tap the mic and say it.'}
+                className="w-full resize-none rounded-2xl border border-white/10 bg-black/25 py-3 pl-3.5 pr-12 text-sm leading-relaxed text-white outline-none placeholder:text-white/25 focus:border-white/25 disabled:opacity-60"
+              />
+              <DictationButton dictation={dictation} text={goal} disabled={busy} size="sm" toastOptions={TOAST} className="absolute bottom-2.5 right-2.5 pointer-coarse:right-1" />
+            </div>
+          </div>
 
           <div className="mt-4">
             <span className="text-sm text-white/85">How many prompts?</span>

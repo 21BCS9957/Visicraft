@@ -53,6 +53,15 @@ export function isMissingKindColumn(error: { code?: string; message?: string } |
 export const VIDEO_SETUP_MESSAGE =
   'Video projects need one more database step. Run supabase/migrations/202610010002_video_projects.sql in the Supabase SQL Editor.';
 
+/** The quality column (migration 202610050001) isn't there yet. */
+export function isMissingQualityColumn(error: { code?: string; message?: string } | null | undefined): boolean {
+  if (!error) return false;
+  return (error.code === '42703' || error.code === 'PGRST204' || /does not exist|could not find/i.test(error.message ?? '')) && /\bquality\b/.test(error.message ?? '');
+}
+
+export const QUALITY_SETUP_MESSAGE =
+  'OpenAI image models need one more database step. Run supabase/migrations/202610050001_playground_quality.sql in the Supabase SQL Editor.';
+
 export function toReference(row: Row): PlaygroundReference {
   return {
     id: str(row.id),
@@ -75,6 +84,7 @@ export function toRun(row: Row): PlaygroundRun {
     ratios: (row.aspect_ratios as string[]) ?? [],
     variations: num(row.variations, 1),
     thinking: (strOrNull(row.thinking) as PlaygroundRun['thinking']) ?? null,
+    quality: (['high', 'xhigh', 'max'].includes(str(row.quality)) ? row.quality : null) as PlaygroundRun['quality'],
     brief: str(row.brief),
     references: (row.reference_snapshot as ReferenceSnapshot[]) ?? [],
     prompts: (row.prompts as string[]) ?? [],

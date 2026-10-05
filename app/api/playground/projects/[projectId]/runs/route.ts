@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { ApiError, apiErrorResponse, assertDb, readJson, requireUuid, withUser } from '@/lib/server/playground/http';
-import { getOwnedProject, ITEM_COLUMNS, playgroundDb, toItem, toRun } from '@/lib/server/playground/db';
-import { isPlaygroundModel, MAX_ENABLED_REFERENCES, playgroundModel, runCost, sizeOption } from '@/lib/playground/models';
+import { getOwnedProject, isMissingQualityColumn, ITEM_COLUMNS, playgroundDb, QUALITY_SETUP_MESSAGE, toItem, toRun } from '@/lib/server/playground/db';
+import { DEFAULT_QUALITY, isPlaygroundModel, MAX_ENABLED_REFERENCES, modelQuality, playgroundModel, QUALITY_LABELS, runCost, sizeOption } from '@/lib/playground/models';
 import { MAX_BRIEF_CHARS, MAX_IMAGES_PER_RUN, MAX_PROMPT_CHARS, MAX_PROMPTS, MAX_VARIATIONS } from '@/lib/playground/prompts';
 import type { ReferenceSnapshot } from '@/lib/playground/types';
 
@@ -16,6 +16,8 @@ const RunRequest = z.object({
   aspectRatios: z.array(z.string()).min(1).max(14),
   variations: z.number().int().min(1).max(MAX_VARIATIONS),
   thinking: z.enum(['minimal', 'high']).optional(),
+  /** OpenAI models' quality level. */
+  quality: z.enum(['high', 'xhigh', 'max']).optional(),
   brief: z.string().max(MAX_BRIEF_CHARS),
   referenceIds: z.array(z.uuid()).max(MAX_ENABLED_REFERENCES),
 });
@@ -55,8 +57,15 @@ export async function POST(request: NextRequest, { params }: Context) {
 
     if (!isPlaygroundModel(body.model)) throw new ApiError(400, 'Unknown model.', 'bad_request');
     const model = playgroundModel(body.model);
+    const turnedOff = model.sizes.find((option) => option.id === body.size)?.disabled;
+    if (turnedOff) throw new ApiError(400, `${turnedOff}.`, 'bad_request');
     const size = sizeOption(model, body.size);
     if (!size) throw new ApiError(400, `${model.name} can't make ${body.size} images.`, 'bad_request');
+    if (body.quality && !model.qualities.includes(body.quality)) {
+      throw new ApiError(400, `${model.name} has no ${QUALITY_LABELS[body.quality]} quality.`, 'bad_request');
+    }
+    // Null for models without quality levels (Gemini).
+    const quality = modelQuality(model, body.quality ?? DEFAULT_QUALITY);
     const ratios = [...new Set(body.aspectRatios)];
     const unsupported = ratios.find((ratio) => !model.ratios.includes(ratio));
     if (unsupported) throw new ApiError(400, `${model.name} can't make ${unsupported} images.`, 'bad_request');
@@ -68,6 +77,7 @@ export async function POST(request: NextRequest, { params }: Context) {
       ratioCount: ratios.length,
       variations: body.variations,
       referenceCount: body.referenceIds.length,
+      quality,
     });
     if (cost.images > MAX_IMAGES_PER_RUN) {
       throw new ApiError(400, `A run can make up to ${MAX_IMAGES_PER_RUN} images; this one would make ${cost.images}.`, 'too_many');
@@ -115,8 +125,11 @@ export async function POST(request: NextRequest, { params }: Context) {
         reference_snapshot: snapshot,
         prompts: body.prompts,
         image_count: cost.images,
-        credits_per_image: size.credits,
+        // Includes the quality level and, for OpenAI, the reference images.
+        credits_per_image: cost.creditsPerImage,
         usd_per_image: cost.images ? Number((cost.usd / cost.images).toFixed(4)) : size.usd,
+        // Sent only for OpenAI models, so Gemini runs work before the quality migration.
+        ...(quality ? { quality } : {}),
       })
       .select('*')
       .single();
@@ -124,6 +137,7 @@ export async function POST(request: NextRequest, { params }: Context) {
       const again = await existingRun(db, user.id, body.clientKey);
       if (again) return NextResponse.json(again);
     }
+    if (isMissingQualityColumn(inserted.error)) throw new ApiError(503, QUALITY_SETUP_MESSAGE, 'setup');
     assertDb(inserted.error, 'create the run');
     const run = inserted.data as Record<string, unknown>;
 
@@ -153,7 +167,7 @@ export async function POST(request: NextRequest, { params }: Context) {
       .from('playground_projects')
       .update({
         brief: body.brief,
-        settings: { model: model.id, size: size.id, ratios, variations: body.variations, thinking: thinking ?? 'minimal' },
+        settings: { model: model.id, size: size.id, ratios, variations: body.variations, thinking: thinking ?? 'minimal', quality: quality ?? body.quality ?? DEFAULT_QUALITY },
         updated_at: new Date().toISOString(),
       })
       .eq('id', projectId);

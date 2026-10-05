@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { FOUR_K_OFF } from '@/lib/playground/models';
 import {
   normalizeReferenceImages,
   runImageGeneration,
@@ -97,6 +98,10 @@ export async function POST(request: NextRequest) {
     const model = typeof body.model === 'string' ? body.model : undefined;
     const aspectRatio = typeof body.aspectRatio === 'string' ? body.aspectRatio : undefined;
     const resolution = typeof body.resolution === 'string' ? body.resolution : undefined;
+    // 4K images are turned off. A 4K video ad still renders its own 4K frame (from videoQuality).
+    if (resolution?.toUpperCase() === '4K') {
+      return NextResponse.json({ error: `${FOUR_K_OFF}. Pick 2K instead.` }, { status: 400 });
+    }
     const creativeSet = body.creativeSet === true && mode === 'generate';
     const productContext = readProductContext(body.productContext);
     // Video ad: one clean hero frame (real product pasted in) + one clip animated from it.

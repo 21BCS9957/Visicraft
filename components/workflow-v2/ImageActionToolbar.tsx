@@ -86,7 +86,8 @@ export function ImageActionToolbar({
           label: action === 'upscale' ? 'Upscale Image' : 'Edit Image',
           model: 'nano-banana-pro',
           aspectRatio: '16:9',
-          resolution: action === 'upscale' ? '4K' : '2K',
+          // 4K images are turned off, so Upscale makes the largest size still offered.
+          resolution: '2K',
           promptText: action === 'upscale'
             ? 'Upscale this image with cleaner detail, sharper edges, and premium high-resolution quality. Preserve the original composition exactly.'
             : 'Edit this image while preserving the main subject, composition, and style.',
