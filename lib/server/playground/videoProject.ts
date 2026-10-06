@@ -1,6 +1,8 @@
 import 'server-only';
 
+import { MAX_REFERENCE_VIDEOS } from '@/lib/playground/libraryVideo';
 import type { VideoProjectProduct, VideoProjectSettings } from '@/lib/playground/types';
+import { isVideoAspect } from '@/lib/videoModels';
 
 /** What a video project may save as its product and New video choices, cleaned and capped. */
 
@@ -62,8 +64,11 @@ export function cleanVideoSettings(raw: unknown): VideoProjectSettings | null {
     model: text(r.model, 120) ?? '',
     duration: Number.isFinite(duration) && duration > 0 && duration <= 60 ? Math.round(duration) : 8,
     quality: ['draft', '720p', '1080p', '4k'].includes(String(r.quality)) ? String(r.quality) : '1080p',
+    aspectRatio: isVideoAspect(r.aspectRatio) ? r.aspectRatio : '9:16',
     style: ['ugc', 'talking_head', 'demo', 'cinematic', 'any'].includes(String(r.style)) ? String(r.style) : 'any',
-    research: typeof r.research === 'boolean' ? r.research : null,
+    referenceVideoIds: Array.isArray(r.referenceVideoIds)
+      ? [...new Set(r.referenceVideoIds.filter((id): id is string => typeof id === 'string' && /^[0-9a-f-]{36}$/i.test(id)))].slice(0, MAX_REFERENCE_VIDEOS)
+      : [],
     notes: text(r.notes, 1500) ?? '',
   };
 }

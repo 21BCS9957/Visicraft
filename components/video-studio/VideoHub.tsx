@@ -165,7 +165,7 @@ export function VideoHub() {
           <div>
             <h1 className="text-3xl font-light tracking-tight sm:text-4xl">Video Studio</h1>
             <p className="mt-2 max-w-xl text-sm leading-relaxed text-white/55">
-              Each project keeps your product, guidelines and videos. Gemini studies the winning video ads, Claude Opus 5.5 writes the prompt, and you approve it before anything renders.
+              Each project keeps your product, guidelines and videos.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">

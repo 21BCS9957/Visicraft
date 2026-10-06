@@ -227,6 +227,7 @@ export function explainSeedanceError(model: string, code?: string, message?: str
   if (code === 'AuthenticationError') return 'BytePlus rejected ARK_API_KEY (missing or invalid).';
   if (code.startsWith('AccountOverdue')) return 'the BytePlus account has an overdue balance; top it up to keep generating.';
   if (code.endsWith('PrivacyInformation')) return `${name} does not accept a frame with a real person's face.`;
+  if (/OutputAudioSensitiveContentDetected/.test(code)) return `Seedance's music check stopped this video: the music it made sounded too close to an existing song.`;
   if (/SensitiveContentDetected/.test(code)) return `Seedance's safety check stopped this video.`;
   if (/RateLimit|ServerOverloaded|QuotaExceeded/.test(code)) return 'Seedance is busy right now; try again in a minute.';
   return message || code;

@@ -2,23 +2,30 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { deductCreditsForUser, refundCreditsForUser, requireAuthenticatedUser } from '@/lib/server/usage';
 import { isVideoEngineConfigured, submitVideoJob, videoEngineSetup } from '@/lib/server/video';
+import { isOwnStorageUrl } from '@/lib/server/playground/db';
 import type { VideoReview } from '@/lib/server/videoReview';
-import { videoCostUsd, videoCredits } from '@/lib/videoModels';
+import { retimePrompt, promptSeconds } from '@/lib/video/shared';
+import { videoCostUsd, videoCredits, videoModelOptions } from '@/lib/videoModels';
 
 // Starting a render (and its refund on failure) must not be cut off after the charge.
 export const maxDuration = 300;
 
+/** Reference images one render can take (Seedance 2.0 takes up to 9). */
+const MAX_REFERENCE_IMAGES = 9;
+
 /**
  * Approves (or cancels) a video the pipeline prepared for review. The user may edit the
- * prompt and drop reference images; everything else is what they were shown. Video credits
- * are charged here, not when the ad was generated, and refunded if the job cannot start.
+ * prompt, drop, replace or add reference images (their own uploads, in the order the prompt's
+ * "Image k" numbers follow), replace the first frame and pick another length the engine
+ * renders; everything else is what they were shown. Video credits are charged here, not when the ad was generated, and refunded if the
+ * job cannot start.
  */
 export async function POST(request: NextRequest) {
   let charged: { userId: string; credits: number } | null = null;
   let reopen: (() => Promise<void>) | null = null;
   try {
     const user = await requireAuthenticatedUser(request);
-    const body = (await request.json()) as { approvalId?: unknown; prompt?: unknown; negativePrompt?: unknown; frames?: unknown; cancel?: unknown };
+    const body = (await request.json()) as { approvalId?: unknown; prompt?: unknown; negativePrompt?: unknown; frames?: unknown; durationSeconds?: unknown; cancel?: unknown };
     const approvalId = typeof body.approvalId === 'string' || typeof body.approvalId === 'number' ? String(body.approvalId) : '';
     if (!approvalId) return NextResponse.json({ error: 'approvalId is required.' }, { status: 400 });
 
@@ -43,13 +50,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ cancelled: true });
     }
 
-    // Only frames that were offered, in their order; a first frame cannot be swapped.
+    // The frames offered, or the user's own uploads in their place; in the order sent, since the
+    // prompt's "Image k" numbers follow it.
     const planned = review.frames.map((f) => f.url);
-    const kept = review.mode === 'reference' && Array.isArray(body.frames)
-      ? planned.filter((url) => (body.frames as unknown[]).includes(url))
-      : planned;
+    const allowed = (url: string) => planned.includes(url) || isOwnStorageUrl(url);
+    const sent = Array.isArray(body.frames)
+      ? [...new Set((body.frames as unknown[]).filter((url): url is string => typeof url === 'string'))]
+      : null;
+    if (sent?.some((url) => !allowed(url))) return NextResponse.json({ error: 'Images must be uploaded first.' }, { status: 400 });
+    const kept = review.mode === 'reference'
+      ? sent ? sent.slice(0, MAX_REFERENCE_IMAGES) : planned
+      : sent?.[0] ? [sent[0]] : planned.slice(0, 1);
     if (kept.length === 0) return NextResponse.json({ error: 'Keep at least one reference image.' }, { status: 400 });
-    const prompt = typeof body.prompt === 'string' && body.prompt.trim() ? body.prompt.trim().slice(0, 6000) : review.prompt;
+    // A first frame the user swapped in may show a real person.
+    const replacedFirstFrame = review.mode === 'first_frame' && kept[0] !== planned[0];
+    // Another length the engine renders, if the user picked one; the shots are timed to match.
+    const asked = Number(body.durationSeconds);
+    const seconds = videoModelOptions(review.model).durations.includes(asked) ? asked : review.durationSeconds;
+    const written = typeof body.prompt === 'string' && body.prompt.trim() ? body.prompt.trim().slice(0, 6000) : review.prompt;
+    const prompt = promptSeconds(written) === seconds ? written : retimePrompt(written, seconds);
+    // Veo pins a last frame only on 8-second clips.
+    const lastFramePinned = review.lastFramePinned && (review.engine !== 'veo' || seconds === 8);
     const negativePrompt = typeof body.negativePrompt === 'string' ? body.negativePrompt.trim().slice(0, 1500) : review.negativePrompt;
     if (!isVideoEngineConfigured(review.engine)) {
       return NextResponse.json({ error: `Video generation is not configured yet (set ${videoEngineSetup(review.engine)}).` }, { status: 500 });
@@ -68,7 +89,7 @@ export async function POST(request: NextRequest) {
     };
     reopen = reopenReview;
 
-    const credits = videoCredits(review.model, review.quality, review.durationSeconds, review.aspectRatio);
+    const credits = videoCredits(review.model, review.quality, seconds, review.aspectRatio);
     if (!(await deductCreditsForUser(user.id, credits))) {
       await reopenReview();
       return NextResponse.json({ error: `Insufficient credits. Need ${credits} credits.` }, { status: 402 });
@@ -79,16 +100,16 @@ export async function POST(request: NextRequest) {
       engine: review.engine,
       model: review.model,
       quality: review.quality,
-      duration: review.durationSeconds,
+      duration: seconds,
       aspectRatio: review.aspectRatio,
       imageUrl: kept[0],
-      lastFrameUrl: review.mode === 'first_frame' && review.lastFramePinned ? kept[0] : undefined,
+      lastFrameUrl: review.mode === 'first_frame' && lastFramePinned ? kept[0] : undefined,
       referenceImageUrls: review.mode === 'reference' ? kept : undefined,
       prompt,
       negativePrompt,
       promptIsFinal: true,
       cameraFixed: review.cameraFixed,
-      realFace: review.realFace,
+      realFace: review.realFace || replacedFirstFrame,
       needsAudio: review.needsAudio,
     });
 
@@ -121,6 +142,8 @@ export async function POST(request: NextRequest) {
           heroUrl: kept[0],
           referenceImageUrls: review.mode === 'reference' ? kept : null,
           prompt,
+          // What the user approved; `prompt` follows any retry, this stays for "Try again".
+          approvedPrompt: prompt,
           negativePrompt: negativePrompt ?? null,
           promptIsFinal: true,
           promptEdited: prompt !== review.prompt,
@@ -132,7 +155,7 @@ export async function POST(request: NextRequest) {
           seed: job.seed ?? null,
           durationSeconds: job.durationSeconds,
           aspectRatio: review.aspectRatio,
-          lastFramePinned: review.lastFramePinned,
+          lastFramePinned,
           cameraFixed: review.cameraFixed,
           realFace: review.realFace,
           needsAudio: review.needsAudio,

@@ -41,7 +41,7 @@ export interface VideoProjectProduct {
   selected: string[];
   /** Uploaded or Library photos (in our storage). */
   photos: Array<{ url: string; name: string }>;
-  /** What the product is, when there is no store link (lets research find its niche). */
+  /** What the product is, when there is no store link (the name the prompts use). */
   name: string;
 }
 
@@ -50,9 +50,11 @@ export interface VideoProjectSettings {
   model: string;
   duration: number;
   quality: string;
+  /** The video's shape: 9:16, 16:9, 1:1 or 3:4. */
+  aspectRatio?: string;
   style: string;
-  /** null: on when there is a product link. */
-  research: boolean | null;
+  /** Library videos whose shots the video copies (Gemini watches them; never sent to the engine). */
+  referenceVideoIds: string[];
   notes: string;
 }
 
@@ -161,9 +163,11 @@ export interface GenerateResponse {
 }
 
 /** An image or a guideline document in the user's Library, reusable in any project. */
+export type LibraryKind = 'image' | 'document' | 'video';
+
 export interface LibraryItem {
   id: string;
-  kind: 'image' | 'document';
+  kind: LibraryKind;
   name: string;
   url: string | null;
   /** Documents: the first few hundred characters (the full text comes from GET /library/[id]). */
@@ -175,5 +179,33 @@ export interface LibraryItem {
   mimeType: string | null;
   sizeBytes: number | null;
   source: 'upload' | 'generated' | 'project';
+  createdAt: string;
+  /** The folder it is filed in; null when it isn't filed. */
+  folderId: string | null;
+  /** Videos: a still for the tile and the length in seconds. */
+  posterUrl: string | null;
+  durationSeconds: number | null;
+  /** Videos: what Gemini saw when it watched the video; null until then. */
+  analysis: LibraryVideoAnalysis | null;
+}
+
+/** A Library video as Gemini watched it: its timed shot sequence and how it is built. */
+export interface LibraryVideoAnalysis {
+  format: string;
+  hook: string;
+  style: string | null;
+  audio: string | null;
+  brief: string;
+  sequence: Array<{ t: string; shot: string; camera?: string; text?: string; purpose?: string }>;
+  analyzedAt: string;
+}
+
+/** A folder in one Library tab. */
+export interface LibraryFolder {
+  id: string;
+  kind: LibraryKind;
+  name: string;
+  /** Items filed in it. */
+  count: number;
   createdAt: string;
 }

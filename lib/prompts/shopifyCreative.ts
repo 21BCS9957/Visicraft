@@ -2,16 +2,16 @@ export interface ShopifyProductContext {
   title?: string;
   vendor?: string;
   description?: string;
-  /** Selling price in major units; currency defaults to INR (research runs in India). */
+  /** Selling price in major units; currency defaults to INR (the app sells in India). */
   price?: number;
   currency?: string;
-  /** Where the price sits within its own category, judged during research; overrides the fixed bands. */
+  /** Where the price sits within its own category, when known; overrides the fixed bands. */
   tier?: PriceTier;
 }
 
 export type PriceTier = 'mass' | 'mid' | 'premium' | 'luxury';
 
-/** Market tier, so research compares against the same kind of buyer. Fixed bands are the fallback. */
+/** Market tier, so every prompt positions the product for the right buyer. Fixed bands are the fallback. */
 export function priceTier(context?: ShopifyProductContext): PriceTier | undefined {
   if (context?.tier) return context.tier;
   const price = context?.price;
@@ -47,33 +47,33 @@ export interface AdAngle {
   /** The single promise the ad makes, in the shopper's words. */
   promise?: string;
   scene: string;
-  /** Decided by the planner from what the winning ads do; falls back to the slot default. */
+  /** Decided by the planner from what the references do; falls back to the slot default. */
   withText?: boolean;
   /** The planner's full expert image brief for this creative (composition, subject, light, palette, type). */
   brief?: string;
-  /** Mirrored winners: the creative director's detailed JSON shot spec (camera, lens, light, wardrobe...). */
+  /** A detailed JSON shot spec (camera, lens, light, wardrobe...), when one was written. */
   shot?: Record<string, unknown>;
   /** Present only for text-overlay slots. */
   headline?: string;
   subline?: string;
-  /** Mirrored winners only: our words for the winner's small kicker line and in-image button, when it has them. */
+  /** Our words for a small kicker line and an in-image button, when the creative has them. */
   kicker?: string;
   cta?: string;
-  /** Layout/design notes distilled from a winning ad this angle is modelled on. */
+  /** Layout/design notes distilled from the reference this angle is modelled on. */
   design?: string;
-  /** Advertiser page of the winning ad this angle is modelled on, for the UI. */
+  /** Name of the reference this angle is modelled on, for the UI. */
   modelledOn?: string;
-  /** The winning ad this creative is modelled on; shown to the image model as a layout & style reference. */
+  /** An image shown to the image model as a layout & style reference. */
   referenceImage?: string;
-  /** Output format, matched to the winning ad (Meta feed 1:1 / 4:5, or 9:16). */
-  aspectRatio?: '1:1' | '4:5' | '9:16';
-  /** The winning ad's exact text treatment (font style, weight, case, size, colour, placement). */
+  /** Output format (Meta feed 1:1 / 4:5, or 9:16; a video's hero frame also 16:9 or 3:4). */
+  aspectRatio?: '1:1' | '4:5' | '9:16' | '16:9' | '3:4';
+  /** An exact text treatment (font style, weight, case, size, colour, placement). */
   typography?: string;
 }
 
 /**
- * Default copy decision per slot when nothing better is known: clean. Copy comes only
- * from mirroring a winning ad that carries copy (or from the planner with winners).
+ * Default copy decision per slot when nothing better is known: clean. Copy comes only from
+ * the planner, when the references it models carry copy.
  */
 export const CREATIVE_SLOTS = [
   { withText: false },
@@ -99,11 +99,14 @@ Reference image 1 (with any closer views of it) shows the exact garment being ad
 SCALE: fine patterns must be copied, never invented, so frame the garment no tighter than the product photos show its detail. If the only photo is full length, keep the garment from at least the waist down to the knees in frame; go closer only where a closer product view shows that part.
 `.trim();
 
-const PERFORMANCE_STANDARD = `
+/** Meta's interface covers the top and bottom of a tall frame; a wide (16:9) or 3:4 video frame has no such zone. */
+const hasSafeZone = (format: string) => format === '9:16' || format === '4:5' || format === '1:1';
+
+const performanceStandard = (format: string) => `
 PERFORMANCE AD STANDARD - this image exists to make money on Meta
 It is a paid ad for Indian shoppers scrolling Instagram and Facebook on a phone. It has one job: stop the thumb in under a second and make the promise obvious at a glance, so the viewer taps. Everything in the frame serves that.
 
-Composition: one clear focal point, the product large and sharp (roughly 35-55% of the frame height), placed on a rule-of-thirds line, standing on a real surface with a true contact shadow and reflections that match the scene light. Strong figure-ground contrast between product and background. Keep the top ~14% and bottom ~20% of the 9:16 frame free of the product and any headline so Meta's UI never covers them; leave a calm area of negative space where copy sits or could sit.
+Composition: one clear focal point, the product large and sharp (roughly 35-55% of the frame height), placed on a rule-of-thirds line, standing on a real surface with a true contact shadow and reflections that match the scene light. Strong figure-ground contrast between product and background.${hasSafeZone(format) ? ` Keep the top ~14% and bottom ~20% of the ${format} frame free of the product and any headline so Meta's UI never covers them;` : ''} leave a calm area of negative space where copy sits or could sit.
 
 Photography: a real campaign photograph, not an illustration or 3D render. Name-the-camera realism: 50mm or 85mm lens, shallow but believable depth of field, one motivated key light with soft fill and a subtle rim, honest colour, fine grain. Settings and people are recognisably Indian and current (real homes, kitchens, desks, gyms, streets), styled like a premium D2C brand shoot, never like stock. People, if any, are adults 21-35 with natural skin texture, correct hands and proportions, candid expressions, and they never hide the product's front.
 
@@ -163,12 +166,12 @@ ${subline ? `- Supporting line: "${subline}"\n` : ''}Typography like a top D2C b
 }
 
 /**
- * The on-image copy for a creative: every text element of a mirrored winner with our own
- * words and its typography, or the house style when there is no typography to follow.
+ * The on-image copy for a creative: every text element of the reference it follows with our
+ * own words and its typography, or the house style when there is no typography to follow.
  */
 export function adCopyBlock(angle: AdAngle): string {
   if (!(angle.withText && angle.headline && angle.typography)) return textOverlayBlock(angle);
-  // Every text element of the winner gets our own words, so the model never fills a gap with theirs.
+  // Every text element of the reference gets our own words, so the model never fills a gap with theirs.
   const lines = [
     angle.kicker ? `- Kicker (the small line in the reference's kicker position): "${clean(angle.kicker, 60)}"` : '',
     `- Headline: "${clean(angle.headline, 60)}"`,
@@ -205,16 +208,16 @@ export function buildMetaAdCreativePrompt(options: {
   const critique = clean(options.critique, 500);
   const lock = options.productKind === 'apparel' ? APPAREL_LOCK : PRODUCT_LOCK;
 
-  // Modelled on a specific winning ad: the creative director's prompt is the shot.
+  // Modelled on a specific reference: the creative director's prompt is the shot.
   if (angle.brief && angle.modelledOn) {
     const format = angle.aspectRatio ?? '9:16';
     const textBlock = adCopyBlock(angle);
     return `
-Create exactly one finished, standalone ${format} Meta ad image for our product, modelled on a proven winning ad in this niche. Reference image 1 (and any closer views of it) is our product${angle.referenceImage ? '; the last reference image is the winning ad to follow for layout, light and typography' : ''}.
+Create exactly one finished, standalone ${format} Meta ad image for our product, modelled on a reference ad the brand chose. Reference image 1 (and any closer views of it) is our product${angle.referenceImage ? '; the last reference image is the ad to follow for layout, light and typography' : ''}.
 
 ${productBrief(options.context)}
 ${direction ? `Client direction: ${direction}\n` : ''}${manifest ? `\nFORENSIC PRODUCT IDENTITY MANIFEST - use this only to verify the preserved product; never re-typeset from it:\n${manifest}\n` : ''}${specBlock}
-THE SHOT (${angle.shot ? 'JSON spec' : 'brief'} written by our creative director from the winning ad; follow every detail):
+THE SHOT (${angle.shot ? 'JSON spec' : 'brief'} written by our creative director from the reference; follow every detail):
 ${angle.shot ? JSON.stringify(angle.shot).slice(0, 6000) : clean(angle.brief, 1600)}
 
 ${textBlock}
@@ -231,24 +234,25 @@ Output only the final image.
 `.trim();
   }
 
+  const format = angle.aspectRatio ?? '9:16';
   return `
-You are the creative director of a top Indian D2C performance agency, making a Meta ad that has to earn its media spend. Create exactly one finished standalone 9:16 ad image by preserving the canonical product asset and building the scene around it.
+You are the creative director of a top Indian D2C performance agency, making a Meta ad that has to earn its media spend. Create exactly one finished standalone ${format} ad image by preserving the canonical product asset and building the scene around it.
 
 ${productBrief(options.context)}
 ${direction ? `User art direction: ${direction}` : ''}
 ${manifest ? `\nFORENSIC PRODUCT IDENTITY MANIFEST - use this only to verify the preserved pixels; never re-typeset from it:\n${manifest}\n` : ''}${specBlock}
 CREATIVE ANGLE - ${clean(angle.name, 60)}
 The one promise this ad makes: ${clean(angle.promise, 160) || 'the product\'s core benefit, shown not told'}
-${angle.brief ? `CREATIVE BRIEF (written by the strategist after studying the winning ads in this niche; follow it closely):\n${clean(angle.brief, 1200)}\n` : `Scene: ${clean(angle.scene, 600)}\n`}${angle.design ? `Design reference (structure of a long-running ad in this niche; reproduce the layout logic, product placement and visual hierarchy, never any brand, wording or claim from it): ${clean(angle.design, 500)}\n` : ''}
+${angle.brief ? `CREATIVE BRIEF (written by the strategist; follow it closely):\n${clean(angle.brief, 1200)}\n` : `Scene: ${clean(angle.scene, 600)}\n`}${angle.design ? `Design reference (structure of a reference ad; reproduce the layout logic, product placement and visual hierarchy, never any brand, wording or claim from it): ${clean(angle.design, 500)}\n` : ''}
 ${textOverlayBlock(angle)}
 ${options.frontalProduct ? `\nCAMERA ON THE PRODUCT: shoot the package at its own height with its front face parallel to the image plane (no top-down or three-quarter views of the pack); it stands on a level surface with a soft contact shadow. Props, people and the environment may be angled freely; only the package stays square-on.\n` : ''}${critique ? `\nFIXES FROM CREATIVE REVIEW - a previous render of this ad was rejected; apply every fix:\n${critique}\n` : ''}
 ${lock}
 
-${PERFORMANCE_STANDARD}
+${performanceStandard(format)}
 
 FINAL PRE-FLIGHT CHECK - perform silently before rendering
 1. Product: compare it against reference image 1 at high magnification; if any ${options.productKind === 'apparel' ? 'colour, pattern, cut, trim, closure or hardware' : 'character, logo, illustration, label geometry, silhouette, proportion, material or colour'} differs, simplify the composition rather than alter the product.
-2. Performance: at phone size, is the focal point instant, is the promise obvious, is the copy (if any) exactly as specified and legible, is nothing important in the top 14% or bottom 20%?
+2. Performance: at phone size, is the focal point instant, is the promise obvious, is the copy (if any) exactly as specified and legible${hasSafeZone(format) ? ', is nothing important in the top 14% or bottom 20%' : ''}?
 3. Craft: hands, faces, props and surfaces are physically correct; no artifacts.
 Output only the final image.
 `.trim();
@@ -264,7 +268,7 @@ export function buildMetaVideoPrompt(options: {
   return `
 Vertical 9:16 Meta Reels ad for ${clean(options.context?.title, 140) || 'this product'}${options.context?.vendor ? ` by ${clean(options.context.vendor, 80)}` : ''}.
 Open with a scroll-stopping first second: immediate motion toward the product, bright clean light, product fully visible and unchanged from the reference frame. One smooth, purposeful camera move (slow push-in or orbit), product stays sharp and front-facing, packaging text and logo never warp or change. Realistic Indian setting, photoreal, no on-screen text.
-${patterns ? `Borrow the pacing and hook structure of the longest-running ads in this niche (never their branding):\n${patterns}` : ''}
+${patterns ? `Borrow the pacing and hook structure of the reference videos (never their branding):\n${patterns}` : ''}
 ${direction ? `User direction: ${direction}` : ''}
 `.trim();
 }
@@ -275,4 +279,49 @@ export function safeCompositionBrief(productKind: 'packaged' | 'apparel' | 'obje
   return productKind === 'apparel'
     ? `Luxurious editorial still life with no person in frame. The complete garment ${name} from reference image 1 is displayed front-on on an elegant tailored dress form, or laid out on a satin-draped bed, in a softly lit boudoir-style bedroom: warm bedside lamp glow, rich textiles, a few tasteful accessories arranged nearby. Every fabric, lace and trim detail is crisp and true to the reference, and the garment fills the centre of the frame. Premium, tasteful, high-end brand hero shot; 50mm lens, shallow depth of field, soft warm key light.`
     : `Premium editorial still life with no person in frame. ${name} from reference image 1 stands front-on as the clear hero on a styled surface, surrounded by a few props that suggest how and when it is used, in warm, directional natural light with a soft contact shadow. Product sharp and identical to the reference; high-end brand hero shot; 50mm lens, shallow depth of field.`;
+}
+
+const SCENE_APPAREL_LOCK = `
+PRODUCT IDENTITY LOCK - HIGHEST PRIORITY
+Reference image 1 (with any closer views of it) shows the exact garment. The garment is immutable: its colour, fabric, weave, lace, print, embroidery and border patterns, cut and silhouette, panels, straps, hems, trims and any label or logo must appear exactly as in the reference. Do not recolour, restyle, simplify, embellish, or swap it for a similar garment. Show it completely and clearly as the hero of the frame, with its construction visible. Fine patterns must be copied, never invented, so frame the garment no tighter than the product photos show its detail. Add no text on the garment.
+`.trim();
+
+/**
+ * A people-free still for one shot of a Seedance film: Claude describes the scene, Nano
+ * Banana Pro makes it from the product photos, and Seedance gets it as an extra reference
+ * image for that shot. Seedance 2.x refuses real people, so none may appear.
+ */
+export function sceneStillPrompt(options: {
+  scene: string;
+  /** The film's one location and its look, so the still matches the other shots. */
+  setting?: string;
+  look?: string;
+  context?: ShopifyProductContext;
+  identityManifest?: string;
+  productKind?: 'packaged' | 'apparel' | 'object';
+  productSpec?: string;
+  critique?: string;
+  /** The film's shape, which the still is made in. */
+  aspectRatio?: string;
+}): string {
+  const apparel = options.productKind === 'apparel';
+  const manifest = clean(options.identityManifest, 3200);
+  const critique = clean(options.critique, 500);
+  return `
+Create exactly one photorealistic, full-bleed ${options.aspectRatio ?? '9:16'} still photograph: one scene of a product film. A video model gets this photo as a reference image for that shot, so it must be a clean, natural photograph of the real product in place.
+
+THE SCENE (written by the film's director; follow it closely):
+${clean(options.scene, 700)}
+${options.setting ? `The whole film takes place in: ${clean(options.setting, 400)}\n` : ''}${options.look ? `Look: ${clean(options.look, 260)}\n` : ''}
+${productBrief(options.context)}
+${manifest ? `\nFORENSIC PRODUCT IDENTITY MANIFEST - use this only to verify the preserved product; never re-typeset from it:\n${manifest}\n` : ''}${options.productSpec ? `\nGARMENT SPEC - reproduce every listed detail exactly; the product photos win if anything differs:\n${options.productSpec.slice(0, 4000)}\n` : ''}
+${apparel ? SCENE_APPAREL_LOCK : PRODUCT_LOCK}
+${critique ? `\nFIXES - a previous render of this scene was rejected; apply every fix:\n${critique}\n` : ''}
+SCENE RULES
+- No people at all: no face, hands, arms, skin, hair or body${apparel ? ', and no mannequin or dress form: the garment is laid out, draped or hung on its own' : ''}.
+- No text, captions, logos or watermarks anywhere except what is printed on the product itself.
+- Exactly one product, complete, unobstructed and tack-sharp, where the scene puts it and at a believable size, with real surfaces, contact shadows and light that match the scene.
+- A real photograph: no illustration, 3D render, collage, borders, bands, padding or mirrored edges.
+Output only the final image.
+`.trim();
 }

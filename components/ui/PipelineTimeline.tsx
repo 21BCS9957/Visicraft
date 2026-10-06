@@ -4,11 +4,12 @@ import { Check, ChevronDown, X } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { videoStyleLabel } from '@/lib/videoStyles';
+import { cssAspect, isWideAspect } from '@/lib/videoModels';
 
 /**
  * The visible pipeline: one glass row per stage, the active stage expanded with
- * its live artifact (product card, niche chips, research counters, winners,
- * ad briefs, generation counters, storyboard), finished stages collapsed.
+ * its live artifact (product card, locked details, reference videos' shots, ad
+ * briefs, generation counters, storyboard, scene images), finished stages collapsed.
  */
 
 export type StageStatus = 'pending' | 'active' | 'done' | 'failed' | 'skipped';
@@ -22,19 +23,19 @@ export interface StageState {
   data?: Record<string, unknown>;
 }
 
-export type StageId = 'capture' | 'understand' | 'research' | 'analyze' | 'plan' | 'generate' | 'storyboard' | 'review' | 'render' | 'done';
+export type StageId = 'capture' | 'understand' | 'analyze' | 'plan' | 'generate' | 'storyboard' | 'scenes' | 'review' | 'render' | 'done';
 
-export const IMAGE_STAGES: StageId[] = ['capture', 'understand', 'research', 'analyze', 'plan', 'generate', 'done'];
-export const VIDEO_STAGES: StageId[] = ['capture', 'understand', 'research', 'analyze', 'plan', 'generate', 'storyboard', 'review', 'render', 'done'];
+export const IMAGE_STAGES: StageId[] = ['capture', 'understand', 'plan', 'generate', 'done'];
+export const VIDEO_STAGES: StageId[] = ['capture', 'understand', 'analyze', 'plan', 'generate', 'storyboard', 'scenes', 'review', 'render', 'done'];
 
 export const STAGE_TITLES: Record<StageId, string> = {
   capture: 'Capture product',
-  understand: 'Understand product & niche',
-  research: 'Find winning ads',
-  analyze: 'Study the winners',
+  understand: 'Understand the product',
+  analyze: 'Read your reference videos',
   plan: 'Write the briefs',
   generate: 'Generate, product locked',
-  storyboard: 'Video prompt · Claude Opus 5.5',
+  storyboard: 'Write the video prompt',
+  scenes: 'Make scene images',
   review: 'Your approval',
   render: 'Render video',
   done: 'Ready',
@@ -141,9 +142,9 @@ function Counter({ label, value, active }: { label: string; value: number | stri
 }
 
 interface CaptureData { title?: string; brand?: string; images?: string[]; canonicalImage?: string }
-interface UnderstandData { canonicalImage?: string; title?: string; brand?: string; niche?: string; price?: string; tier?: string; keywords?: string[]; competitors?: string[]; locked?: string[]; productPasted?: boolean }
-interface ResearchData { scraped?: number; designed?: number; relevant?: number; styled?: number; winners?: number; ads?: Array<{ id: string; pageName: string; daysRunning: number; collationCount?: number; imageUrl?: string; videoUrl?: string; libraryUrl: string; mediaKind?: string; style?: string; styleConfirmed?: boolean }> }
-interface AnalyzeData { designs?: Array<{ pageName: string; format: string; hook: string; daysRunning: number; sequence?: Array<{ t: string; shot: string }> }> }
+interface UnderstandData { canonicalImage?: string; title?: string; brand?: string; price?: string; tier?: string; locked?: string[]; productPasted?: boolean }
+interface AnalyzeData { designs?: Array<{ pageName: string; format: string; hook: string; style?: string; sequence?: Array<{ t: string; shot: string }> }> }
+interface ScenesData { requests?: Array<{ shot: number; prompt: string }>; images?: Array<{ shot: number; url: string }>; aspectRatio?: string }
 interface PlanData { angles?: Array<{ index: number; name: string; promise?: string; headline?: string; subline?: string; kicker?: string; cta?: string; withText: boolean; modelledOn?: string; referenceImage?: string; brief?: string; shot?: Record<string, unknown> }> }
 interface GenerateData { passed?: number; withheld?: number; retrying?: number }
 interface StoryboardData { storyboard?: { hook: string; shots: Array<{ t: string; action: string; camera: string }>; modelledOn?: string; style?: string; script?: string; promptJson?: Record<string, unknown> } }
@@ -172,12 +173,11 @@ function StageBody({ stage }: { stage: StageState }) {
       const d = data as UnderstandData;
       return (
         <div className="space-y-2.5 text-left">
-          <div className="flex flex-wrap gap-1.5">
-            {d.niche && <Chip tone="accent">Niche · {d.niche}</Chip>}
-            {d.price && <Chip tone="accent">{d.price}{d.tier ? ` · ${d.tier} tier` : ''}</Chip>}
-            {(d.keywords ?? []).map((k) => <Chip key={k}>“{k}”</Chip>)}
-            {(d.competitors ?? []).map((c) => <Chip key={c} tone="lavender">{c}</Chip>)}
-          </div>
+          {d.price && (
+            <div className="flex flex-wrap gap-1.5">
+              <Chip tone="accent">{d.price}{d.tier ? ` · ${d.tier} tier` : ''}</Chip>
+            </div>
+          )}
           {(d.locked ?? []).length > 0 && (
             <div>
               <p className="text-[10px] uppercase tracking-[0.16em] text-white/40">Locked on the product{d.productPasted ? ' · real pixels will be pasted in' : ''}</p>
@@ -189,56 +189,13 @@ function StageBody({ stage }: { stage: StageState }) {
         </div>
       );
     }
-    case 'research': {
-      const d = data as ResearchData;
-      return (
-        <div className="space-y-3 text-left">
-          <div className="grid grid-cols-4 gap-2">
-            <Counter label="scraped" value={d.scraped ?? 0} active={stage.status === 'active' && !d.relevant} />
-            <Counter label="same category" value={d.relevant ?? 0} active={stage.status === 'active' && Boolean(d.scraped) && !d.winners} />
-            {d.styled !== undefined
-              ? <Counter label="style match" value={d.styled} />
-              : <Counter label="designed" value={d.designed ?? 0} />}
-            <Counter label="winners" value={d.winners ?? 0} active={stage.status === 'done'} />
-          </div>
-          {(d.ads ?? []).length > 0 && (
-            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-              {(d.ads ?? []).map((ad) => (
-                <a key={ad.id} href={ad.libraryUrl} target="_blank" rel="noopener noreferrer" className="w-28 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-black/30">
-                  <div className="aspect-square bg-white/5">
-                    {ad.videoUrl ? (
-                      <video
-                        src={ad.videoUrl}
-                        poster={ad.imageUrl}
-                        muted
-                        loop
-                        playsInline
-                        preload="none"
-                        onMouseEnter={(event) => { event.currentTarget.play().catch(() => undefined); }}
-                        onMouseLeave={(event) => { event.currentTarget.pause(); }}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : ad.imageUrl && <img src={ad.imageUrl} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" />}
-                  </div>
-                  <div className="p-1.5">
-                    <p className="truncate text-[10px] text-white/80">{ad.pageName}</p>
-                    <p className="text-[10px] text-[#fff05a]/80">{ad.daysRunning}d{ad.collationCount && ad.collationCount > 1 ? ` · ×${ad.collationCount}` : ''}{ad.mediaKind === 'video' && !ad.style ? ' · video' : ''}</p>
-                    {ad.style && <p className="truncate text-[10px] text-white/45">{videoStyleLabel(ad.style)}{ad.styleConfirmed ? ' · watched' : ''}</p>}
-                  </div>
-                </a>
-              ))}
-            </div>
-          )}
-        </div>
-      );
-    }
     case 'analyze': {
       const d = data as AnalyzeData;
       return (
         <ul className="space-y-1.5 text-left">
           {(d.designs ?? []).map((x, i) => (
             <li key={i} className="rounded-xl border border-white/8 bg-black/25 px-3 py-2">
-              <p className="text-[11px] text-white/85">{x.pageName} <span className="text-white/35">· {x.daysRunning}d</span></p>
+              <p className="text-[11px] text-white/85">{x.pageName}{x.style ? <span className="text-white/35"> · {videoStyleLabel(x.style)}</span> : null}{x.sequence?.length ? <span className="text-white/35"> · {x.sequence.length} shots</span> : null}</p>
               <p className="text-[11px] text-white/55">{x.format}{x.hook ? ` — ${x.hook}` : ''}</p>
               {x.sequence && x.sequence.length > 0 && (
                 <p className="mt-1 text-[10px] text-white/40">{x.sequence.slice(0, 4).map((b) => `[${b.t}] ${b.shot}`).join(' → ')}</p>
@@ -259,7 +216,7 @@ function StageBody({ stage }: { stage: StageState }) {
                   <span className="h-20 w-14 overflow-hidden rounded-lg border border-white/10 bg-white/5">
                     <img src={a.referenceImage} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" />
                   </span>
-                  <span className="text-[9px] uppercase tracking-[0.12em] text-white/35">winner</span>
+                  <span className="text-[9px] uppercase tracking-[0.12em] text-white/35">reference</span>
                 </div>
               )}
               <div className="min-w-0 flex-1">
@@ -311,7 +268,32 @@ function StageBody({ stage }: { stage: StageState }) {
               </li>
             ))}
           </ol>
-          {sb.promptJson && <PromptJson label="Claude's plan (JSON)" value={sb.promptJson} />}
+          {sb.promptJson && <PromptJson label="The plan (JSON)" value={sb.promptJson} />}
+        </div>
+      );
+    }
+    case 'scenes': {
+      const d = data as ScenesData;
+      const images = d.images ?? [];
+      return (
+        <div className="space-y-2 text-left">
+          {images.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+              {images.map((image) => (
+                <figure key={image.url} className={isWideAspect(d.aspectRatio) ? 'w-32 shrink-0' : 'w-20 shrink-0'}>
+                  <span className="block overflow-hidden rounded-lg border border-white/10 bg-white/5" style={{ aspectRatio: cssAspect(d.aspectRatio) }}>
+                    <img src={image.url} alt="" className="h-full w-full object-cover" />
+                  </span>
+                  <figcaption className="mt-1 text-[10px] text-white/50">For shot {image.shot}</figcaption>
+                </figure>
+              ))}
+            </div>
+          )}
+          {(d.requests ?? []).map((request) => (
+            <p key={request.shot} className="text-[11px] leading-relaxed text-white/55">
+              <span className="text-[#fbf2a0]">Shot {request.shot}:</span> {request.prompt}
+            </p>
+          ))}
         </div>
       );
     }

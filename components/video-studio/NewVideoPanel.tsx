@@ -1,20 +1,34 @@
 'use client';
 
 import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
-import { Check, FolderHeart, Link2, Loader2, Plus, Sparkles, X } from 'lucide-react';
+import { AlertCircle, Check, Clapperboard, FolderHeart, Info, Link2, Loader2, Plus, RotateCcw, Sparkles, X } from 'lucide-react';
 import toast from '@/lib/toast';
 import { VIDEO_STYLES, isSpeakingStyle, parseVideoStyle, videoStyleLabel, type VideoStyle } from '@/lib/videoStyles';
-import { seedanceSpec, videoCredits, videoEngineOf, type VideoQuality } from '@/lib/videoModels';
+import { seedanceSpec, videoCredits, videoEngineOf, type VideoAspect, type VideoQuality } from '@/lib/videoModels';
 import { videoApi, type ProductCapture } from '@/lib/video/client';
 import { previewCapture } from '@/lib/video/preview';
 import { HERO_FRAME_CREDITS } from '@/lib/video/shared';
-import { uploadImages } from '@/lib/playground/upload';
-import type { VideoProjectProduct } from '@/lib/playground/types';
+import { libraryApi, PlaygroundApiError } from '@/lib/playground/api';
+import { MAX_REFERENCE_VIDEOS, REFERENCE_VIDEO_FOLDER } from '@/lib/playground/libraryVideo';
+import { previewLibrary, previewVideoAnalysis } from '@/lib/playground/preview';
+import { uploadImages, uploadLibraryVideo } from '@/lib/playground/upload';
+import type { LibraryItem, VideoProjectProduct } from '@/lib/playground/types';
 import { LibraryPicker } from '@/components/playground/library/LibraryPicker';
-import { cx, Toggle } from '@/components/playground/ui';
-import { EnginePicker, LengthQualityPicker } from './VideoSettings';
+import { ShotSequence, VideoThumb } from '@/components/playground/library/libraryParts';
+import { cx, Popover, Tip } from '@/components/playground/ui';
+import { EnginePicker, LengthQualityPicker, ShapePicker } from './VideoSettings';
 
 const TOAST = { position: 'top-center' as const };
+/** Small secondary buttons (Upload, Library). */
+const SOFT = 'inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 text-xs text-white/75 hover:bg-white/[0.08] hover:text-white disabled:opacity-40';
+/** Short names for the style chips; the selected style's description shows under them. */
+const STYLE_CHIPS: Record<VideoStyle, string> = {
+  ugc: 'UGC review',
+  talking_head: 'Talking head',
+  demo: 'Product demo',
+  cinematic: 'Cinematic',
+  any: 'Match reference',
+};
 /** Photos sent to the planner: store photos and uploads together. */
 export const MAX_VIDEO_PHOTOS = 12;
 
@@ -36,9 +50,11 @@ export interface VideoChoices {
   model: string;
   duration: number;
   quality: VideoQuality;
+  /** The video's shape; the frames and prompt are made for it. */
+  aspectRatio: VideoAspect;
   style: VideoStyle;
-  /** null: on when there is a product link. */
-  research: boolean | null;
+  /** Library videos whose shots the video copies (never sent to the engine). */
+  referenceVideoIds: string[];
   notes: string;
 }
 
@@ -46,7 +62,8 @@ export interface PlanRequest {
   referenceImages: string[];
   productContext: { title?: string; vendor?: string; description?: string; price?: number; currency?: string } | null;
   title: string | null;
-  research: boolean;
+  /** Library videos to copy shots from. */
+  referenceVideoIds: string[];
   notes: string;
   choices: VideoChoices;
 }
@@ -71,25 +88,35 @@ function formatPrice(price: number | null, currency: string | null): string | nu
   }
 }
 
-function Step({ n, title, hint, children }: { n: number; title: string; hint?: string; children: ReactNode }) {
+/** One numbered step: a one-line title, an optional short hint on the right and one line of help. */
+function Step({ n, title, hint, note, children }: { n: number; title: string; hint?: string; note?: string; children: ReactNode }) {
   return (
     <section className="border-b border-white/6 px-4 py-4">
-      <div className="mb-3 flex items-baseline gap-2">
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-white/15 text-[10px] text-white/60">{n}</span>
-        <h3 className="text-sm text-white">{title}</h3>
-        {hint && <span className="ml-auto text-[11px] text-white/35">{hint}</span>}
+      <div className="flex items-center gap-2">
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-[10px] font-medium text-white/70">{n}</span>
+        <h3 className="min-w-0 flex-1 truncate text-sm text-white">{title}</h3>
+        {hint && <span className="shrink-0 text-[11px] text-white/35">{hint}</span>}
       </div>
-      {children}
+      {note && <p className="mt-1 pl-7 text-[11px] leading-snug text-white/40">{note}</p>}
+      <div className="mt-3">{children}</div>
     </section>
   );
 }
 
+/** A reference video the panel shows, with the progress of reading its shots. */
+interface ReferenceTile {
+  item: LibraryItem;
+  watching: boolean;
+  error: string | null;
+}
+
 /**
- * New video, for one project: the product (a store link and/or the user's photos), the
- * project's guidelines, the style, research and engine. The product and the choices are saved
- * with the project through `onProduct` and `onChoices`.
+ * New video, for one project: the images the video is made from (a store link and/or the
+ * user's photos), the reference videos whose shots it copies, the project's guidelines, the
+ * style and the engine. The product and the choices are saved with the project through
+ * `onProduct` and `onChoices`.
  */
-export function NewVideoPanel({ busy, preview, signedIn, credits, initialUrl, product, onProduct, choices, onChoices, guidelines, onPlan }: {
+export function NewVideoPanel({ busy, preview, signedIn, credits, initialUrl, product, onProduct, choices, onChoices, guidelines, cardOpen = false, onPlan }: {
   busy: boolean;
   preview: boolean;
   signedIn: boolean;
@@ -102,14 +129,20 @@ export function NewVideoPanel({ busy, preview, signedIn, credits, initialUrl, pr
   onChoices: (patch: Partial<VideoChoices>) => void;
   /** The project's guidelines editor. */
   guidelines: ReactNode;
+  /** A video waiting for approval or a new draft is open beside this panel (it has its own length). */
+  cardOpen?: boolean;
   onPlan: (request: PlanRequest) => void;
 }) {
   const [link, setLink] = useState(initialUrl ?? product.url ?? '');
   const [capturing, setCapturing] = useState(false);
   const [uploading, setUploading] = useState(0);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [referencePickerOpen, setReferencePickerOpen] = useState(false);
+  const [references, setReferences] = useState<Record<string, ReferenceTile>>({});
+  const [uploadingReferences, setUploadingReferences] = useState(0);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const referenceInput = useRef<HTMLInputElement>(null);
   // The product as last handed over, so async work (uploads, capture) builds on the newest one.
   const latest = useRef(product);
   useEffect(() => {
@@ -120,13 +153,110 @@ export function NewVideoPanel({ busy, preview, signedIn, credits, initialUrl, pr
   const images = [...product.selected, ...product.photos.map((photo) => photo.url)];
   const room = MAX_VIDEO_PHOTOS - images.length;
   const productTitle = product.title?.trim() || product.name.trim() || null;
-  const canResearch = Boolean(captured || product.name.trim());
-  // On by default for a product link; for photos alone, once the product is named.
-  const research = canResearch && (choices.research ?? captured);
-  const videoCost = videoCredits(choices.model, choices.quality, choices.duration);
+  const referenceIds = choices.referenceVideoIds;
+  const referenceRoom = MAX_REFERENCE_VIDEOS - referenceIds.length;
+  const watchingAny = referenceIds.some((id) => references[id]?.watching);
+  const videoCost = videoCredits(choices.model, choices.quality, choices.duration, choices.aspectRatio);
+  const seedance = videoEngineOf(choices.model) === 'seedance';
+  // Seedance 2.x has no hero frame: planning, plus a second scene image if Claude asks for one.
+  const sceneImages = seedance && ['2.0', '2.5'].includes(seedanceSpec(choices.model).family);
   const short = signedIn && !preview && credits < HERO_FRAME_CREDITS;
-  const noRealFaces = videoEngineOf(choices.model) === 'seedance' && !seedanceSpec(choices.model).realFaces;
-  const canPlan = !busy && !capturing && uploading === 0 && images.length > 0 && !short;
+  const noRealFaces = seedance && !seedanceSpec(choices.model).realFaces;
+  const canPlan = !busy && !capturing && uploading === 0 && uploadingReferences === 0 && !watchingAny && images.length > 0 && !short;
+
+  const patchReference = (id: string, patch: Partial<ReferenceTile>) => {
+    setReferences((current) => (current[id] ? { ...current, [id]: { ...current[id], ...patch } } : current));
+  };
+
+  /** A reference's shots are read as soon as it is added; the result is saved with the Library video. */
+  const watchReference = async (item: LibraryItem, again = false) => {
+    setReferences((current) => ({ ...current, [item.id]: { item: current[item.id]?.item ?? item, watching: true, error: null } }));
+    try {
+      if (preview) {
+        await new Promise((resolve) => setTimeout(resolve, 1800));
+        patchReference(item.id, { watching: false, item: { ...item, analysis: previewVideoAnalysis() } });
+        return;
+      }
+      const { item: watched } = await libraryApi.analyze(item.id, again);
+      patchReference(item.id, { watching: false, item: watched });
+    } catch (error) {
+      patchReference(item.id, { watching: false, error: error instanceof Error ? error.message : 'This video could not be read' });
+    }
+  };
+
+  // The saved reference videos' details (poster, shots); ones gone from the Library are dropped.
+  useEffect(() => {
+    const missing = referenceIds.filter((id) => !references[id]);
+    if (!missing.length) return;
+    let cancelled = false;
+    void (async () => {
+      const found: Record<string, ReferenceTile> = {};
+      const gone: string[] = [];
+      await Promise.all(missing.map(async (id) => {
+        if (preview) {
+          const item = previewLibrary('video').find((known) => known.id === id);
+          if (item) found[id] = { item, watching: false, error: null };
+          else gone.push(id);
+          return;
+        }
+        try {
+          const { item } = await libraryApi.get(id);
+          found[id] = { item, watching: false, error: null };
+        } catch (error) {
+          if (error instanceof PlaygroundApiError && error.status === 404) gone.push(id);
+        }
+      }));
+      if (cancelled) return;
+      setReferences((current) => ({ ...found, ...current }));
+      if (gone.length) onChoices({ referenceVideoIds: referenceIds.filter((id) => !gone.includes(id)) });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [referenceIds.join(','), preview]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const addReferences = (items: LibraryItem[]) => {
+    const fresh = items.filter((item) => item.kind === 'video' && !referenceIds.includes(item.id)).slice(0, Math.max(0, referenceRoom));
+    if (!fresh.length) return;
+    setReferences((current) => ({ ...current, ...Object.fromEntries(fresh.map((item) => [item.id, { item, watching: false, error: null }])) }));
+    onChoices({ referenceVideoIds: [...referenceIds, ...fresh.map((item) => item.id)] });
+    for (const item of fresh) if (!item.analysis) void watchReference(item);
+  };
+
+  const removeReference = (id: string) => {
+    onChoices({ referenceVideoIds: referenceIds.filter((known) => known !== id) });
+  };
+
+  /** Uploads go into the Library's "Reference videos" folder, then join this video. */
+  const uploadReferences = async (files: File[]) => {
+    const videos = files.slice(0, Math.max(0, referenceRoom));
+    if (!videos.length) {
+      if (files.length) toast.error(`Up to ${MAX_REFERENCE_VIDEOS} reference videos per video.`, TOAST);
+      return;
+    }
+    setUploadingReferences(videos.length);
+    try {
+      const uploaded = (await Promise.all(videos.map((file) => uploadLibraryVideo(file, { preview }).catch((error) => {
+        toast.error(error instanceof Error ? error.message : `Could not upload ${file.name}`, TOAST);
+        return null;
+      })))).filter((video): video is NonNullable<typeof video> => video !== null);
+      if (!uploaded.length) return;
+      if (preview) {
+        addReferences(uploaded.map((video, index) => ({
+          id: `local-ref-${Date.now()}-${index}`, kind: 'video', name: video.name, url: video.url, preview: null, length: null,
+          width: video.width, height: video.height, mimeType: video.mimeType, sizeBytes: video.sizeBytes, source: 'upload',
+          createdAt: new Date().toISOString(), folderId: null, posterUrl: video.posterUrl, durationSeconds: video.durationSeconds, analysis: null,
+        })));
+        return;
+      }
+      const folder = await libraryApi.folders.create('video', REFERENCE_VIDEO_FOLDER).then((result) => result.folder.id).catch(() => null);
+      addReferences((await libraryApi.addVideos(uploaded, folder)).items);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not upload the video', TOAST);
+    } finally {
+      setUploadingReferences(0);
+    }
+  };
 
   const update = (patch: Partial<VideoProjectProduct>) => {
     const next = { ...latest.current, ...patch };
@@ -218,35 +348,35 @@ export function NewVideoPanel({ busy, preview, signedIn, credits, initialUrl, pr
           }
         : product.name.trim() ? { title: product.name.trim() } : null,
       title: productTitle,
-      research,
+      referenceVideoIds: referenceIds,
       notes: choices.notes.trim(),
       choices,
     });
   };
 
+  const style = VIDEO_STYLES.find((option) => option.id === choices.style) ?? VIDEO_STYLES[VIDEO_STYLES.length - 1];
+  const photoHint = images.length ? `${images.length} of ${MAX_VIDEO_PHOTOS}` : `Up to ${MAX_VIDEO_PHOTOS}`;
+
   return (
     <div className="flex min-h-full flex-col">
-      <div className="px-4 pb-1 pt-4">
-        <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-white/40 max-lg:hidden">New video</p>
-        <p className="text-xs leading-relaxed text-white/50 lg:mt-1">We plan it, you approve the frames and prompt, then it renders.</p>
-      </div>
+      <p className="px-4 pt-4 text-[10px] font-medium uppercase tracking-[0.22em] text-white/40 max-lg:hidden">New video</p>
 
-      <Step n={1} title="Product" hint={images.length ? `${images.length} photo${images.length === 1 ? '' : 's'}` : undefined}>
+      <Step n={1} title="Images in your video" hint={photoHint} note="Your video is made from these, with the product kept exact.">
         <div
           onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
-          className={cx('space-y-3 rounded-2xl transition-colors', dragging && 'bg-[#fff05a]/[0.05] ring-1 ring-[#fff05a]/40')}
+          className={cx('space-y-2.5 rounded-2xl transition-colors', dragging && 'bg-[#fff05a]/[0.05] ring-1 ring-[#fff05a]/40')}
         >
           {captured ? (
             <div className="rounded-2xl border border-white/10 bg-black/25 p-3">
               <div className="flex items-start gap-3">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={product.storePhotos[0]} alt="" className="h-12 w-12 shrink-0 rounded-lg border border-white/10 object-cover" />
+                <img src={product.storePhotos[0]} alt="" className="h-11 w-11 shrink-0 rounded-lg border border-white/10 object-cover" />
                 <div className="min-w-0 flex-1">
                   <p className="line-clamp-2 text-sm leading-snug text-white">{product.title ?? 'Product'}</p>
                   <p className="mt-0.5 truncate text-[11px] text-white/45">
-                    {[formatPrice(product.price, product.currency), product.vendor, `${product.storePhotos.length} photos`].filter(Boolean).join(' · ')}
+                    {[formatPrice(product.price, product.currency), product.vendor].filter(Boolean).join(' · ') || `${product.storePhotos.length} photos`}
                   </p>
                 </div>
                 <button type="button" onClick={clearStore} disabled={busy} aria-label="Use another product" title="Use another product" className="rounded-full !p-1 text-white/45 hover:bg-white/8 hover:text-white disabled:opacity-40">
@@ -273,7 +403,7 @@ export function NewVideoPanel({ busy, preview, signedIn, credits, initialUrl, pr
                   );
                 })}
               </div>
-              <p className="mt-2 text-[11px] text-white/40">{product.selected.length} of {product.storePhotos.length} selected · tap a photo to leave it out</p>
+              <p className="mt-2 text-[11px] text-white/35">Tap a photo to leave it out</p>
             </div>
           ) : (
             <form
@@ -287,6 +417,7 @@ export function NewVideoPanel({ busy, preview, signedIn, credits, initialUrl, pr
                 disabled={busy || capturing}
                 placeholder="Paste a product link"
                 inputMode="url"
+                aria-label="Product link"
                 className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/30"
               />
               <button type="submit" disabled={busy || capturing || !link.trim()} className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-white/10 px-3 text-xs text-white hover:bg-white/15 disabled:opacity-40">
@@ -307,7 +438,7 @@ export function NewVideoPanel({ busy, preview, signedIn, credits, initialUrl, pr
                     disabled={busy}
                     onClick={() => update({ photos: product.photos.filter((item) => item.url !== photo.url) })}
                     aria-label={`Remove ${photo.name || 'photo'}`}
-                    className="absolute inset-0 flex items-center justify-center bg-black/55 !p-0 text-white opacity-0 transition-opacity group-hover:opacity-100 disabled:hidden"
+                    className="absolute inset-0 flex items-center justify-center bg-black/55 !p-0 text-white opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100 disabled:hidden"
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -328,101 +459,161 @@ export function NewVideoPanel({ busy, preview, signedIn, credits, initialUrl, pr
                 event.target.value = '';
               }}
             />
-            <button type="button" disabled={busy || room <= 0 || uploading > 0} onClick={() => fileInput.current?.click()} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 text-xs text-white/75 hover:bg-white/[0.08] hover:text-white disabled:opacity-40">
+            <button type="button" disabled={busy || room <= 0 || uploading > 0} onClick={() => fileInput.current?.click()} className={SOFT}>
               {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-              {uploading ? `Uploading ${uploading}…` : 'Upload photos'}
+              {uploading ? `Uploading ${uploading}…` : 'Upload'}
             </button>
-            <button type="button" disabled={busy || room <= 0} onClick={() => setLibraryOpen(true)} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 text-xs text-white/75 hover:bg-white/[0.08] hover:text-white disabled:opacity-40">
-              <FolderHeart className="h-3.5 w-3.5" /> From Library
+            <button type="button" disabled={busy || room <= 0} onClick={() => setLibraryOpen(true)} className={SOFT}>
+              <FolderHeart className="h-3.5 w-3.5" /> Library
             </button>
           </div>
 
-          {!captured && (
-            <label className="block">
-              <span className="text-[11px] text-white/45">What is it? <span className="text-white/30">(optional, helps research find its niche)</span></span>
-              <input
-                value={product.name}
-                onChange={(event) => update({ name: event.target.value })}
-                maxLength={160}
-                disabled={busy}
-                placeholder="e.g. Chamomile sleep tea, 30 bags"
-                className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-white outline-none placeholder:text-white/25 focus:border-white/25"
-              />
-            </label>
-          )}
-          {!images.length && !capturing && (
-            <p className="text-[11px] leading-relaxed text-white/35">Paste a link to use the store’s photos, or add your own photos (drop them here). Up to {MAX_VIDEO_PHOTOS}. Saved with the project.</p>
+          {!captured && product.photos.length > 0 && (
+            <input
+              value={product.name}
+              onChange={(event) => update({ name: event.target.value })}
+              maxLength={160}
+              disabled={busy}
+              aria-label="Product name"
+              placeholder="Product name (optional)"
+              className="w-full rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-white/25"
+            />
           )}
         </div>
       </Step>
 
-      <section className="border-b border-white/6 px-4 py-4">{guidelines}</section>
+      <Step
+        n={2}
+        title="Reference videos"
+        hint={referenceIds.length ? `${referenceIds.length} of ${MAX_REFERENCE_VIDEOS}` : 'Optional'}
+        note="We copy their shots and pacing, never their product, people or text."
+      >
+        <div className="space-y-2.5">
+          {referenceIds.length > 0 && (
+            <div className="grid grid-cols-4 gap-2">
+              {referenceIds.map((id) => {
+                const tile = references[id];
+                const analysis = tile?.item.analysis ?? null;
+                return (
+                  <div key={id} className="min-w-0">
+                    <div className="relative overflow-hidden rounded-xl border border-white/10">
+                      {tile ? <VideoThumb item={tile.item} className="aspect-[9/16] w-full" /> : <span className="flex aspect-[9/16] w-full items-center justify-center bg-black/30"><Loader2 className="h-4 w-4 animate-spin text-white/40" /></span>}
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => removeReference(id)}
+                        aria-label={`Remove ${tile?.item.name || 'reference video'}`}
+                        title="Remove from this video"
+                        className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 !p-0 text-white/85 hover:bg-black hover:text-white disabled:opacity-40"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <p className="mt-1 truncate text-[11px] text-white/75" title={tile?.item.name}>{tile?.item.name || 'Reference video'}</p>
+                    {tile?.watching ? (
+                      <p className="flex items-center gap-1 text-[10px] text-white/45"><Loader2 className="h-3 w-3 animate-spin" /> Reading shots…</p>
+                    ) : analysis ? (
+                      <Popover
+                        side="bottom"
+                        align="start"
+                        className="w-[min(360px,calc(100vw-32px))] p-3"
+                        trigger={<button type="button" className="text-left text-[10px] text-[#d9ccff] underline-offset-2 hover:underline">{analysis.sequence.length} shots</button>}
+                      >
+                        <ShotSequence analysis={analysis} compact />
+                      </Popover>
+                    ) : tile?.error ? (
+                      <button type="button" onClick={() => void watchReference(tile.item)} title={tile.error} className="flex items-center gap-1 text-left text-[10px] text-red-300 hover:text-red-200">
+                        <AlertCircle className="h-3 w-3 shrink-0" /> Retry
+                      </button>
+                    ) : tile ? (
+                      <button type="button" onClick={() => void watchReference(tile.item)} className="flex items-center gap-1 text-left text-[10px] text-white/50 hover:text-[#fff05a]">
+                        <RotateCcw className="h-3 w-3" /> Read shots
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <input
+              ref={referenceInput}
+              type="file"
+              accept="video/mp4,video/webm,video/quicktime"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                void uploadReferences(Array.from(event.target.files ?? []));
+                event.target.value = '';
+              }}
+            />
+            <button type="button" disabled={busy || referenceRoom <= 0 || uploadingReferences > 0} onClick={() => referenceInput.current?.click()} className={SOFT}>
+              {uploadingReferences ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+              {uploadingReferences ? `Uploading ${uploadingReferences}…` : 'Upload'}
+            </button>
+            <button type="button" disabled={busy || referenceRoom <= 0} onClick={() => setReferencePickerOpen(true)} className={SOFT}>
+              <Clapperboard className="h-3.5 w-3.5" /> Library
+            </button>
+          </div>
+        </div>
+      </Step>
 
-      <Step n={2} title="Style">
-        <div className="space-y-1.5">
-          {VIDEO_STYLES.map((style) => {
-            const on = choices.style === style.id;
+      <section className="border-b border-white/6 px-4 py-3">{guidelines}</section>
+
+      <Step n={3} title="Style">
+        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Style">
+          {VIDEO_STYLES.map((option) => {
+            const on = choices.style === option.id;
             return (
               <button
-                key={style.id}
+                key={option.id}
                 type="button"
+                role="radio"
+                aria-checked={on}
                 disabled={busy}
-                onClick={() => onChoices({ style: parseVideoStyle(style.id) ?? 'any' })}
-                className={cx('flex w-full items-start gap-2.5 rounded-xl border px-3 py-2 text-left transition-colors disabled:opacity-60', on ? 'border-[#fff05a]/40 bg-[#fff05a]/[0.06]' : 'border-white/8 hover:border-white/20')}
-                aria-pressed={on}
+                onClick={() => onChoices({ style: parseVideoStyle(option.id) ?? 'any' })}
+                className={cx('h-8 rounded-full border px-3 text-xs transition-colors disabled:opacity-60', on ? 'border-[#fff05a]/50 bg-[#fff05a]/10 text-[#fff05a]' : 'border-white/10 bg-black/25 text-white/70 hover:border-white/25 hover:text-white')}
               >
-                <span className={cx('mt-1 h-3 w-3 shrink-0 rounded-full border', on ? 'border-[#fff05a] bg-[#fff05a]' : 'border-white/30')} />
-                <span className="min-w-0">
-                  <span className={cx('block text-sm', on ? 'text-[#fff05a]' : 'text-white/90')}>{style.label}</span>
-                  <span className="block text-[11px] leading-relaxed text-white/45">{style.description}</span>
-                </span>
+                {STYLE_CHIPS[option.id]}
               </button>
             );
           })}
         </div>
+        <p className="mt-2 text-[11px] leading-snug text-white/40">{style.description}</p>
       </Step>
 
-      <Step n={3} title="Research">
-        <div className={cx('flex items-start gap-3 rounded-xl border border-white/8 px-3 py-2.5', !canResearch && 'opacity-60')}>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm text-white/90">Study winning video ads first</p>
-            <p className="mt-0.5 text-[11px] leading-relaxed text-white/45">
-              {canResearch
-                ? `Gemini watches the longest-running ${choices.style === 'any' ? '' : `${videoStyleLabel(choices.style)} `}video ads in your niche on Meta India, and Claude Opus 5.5 turns their shot sequence into your prompt · adds 1–2 min`
-                : 'Paste a product link, or say what the product is, to research its niche.'}
-            </p>
-          </div>
-          <Toggle checked={research} onCheckedChange={(value) => onChoices({ research: value })} disabled={busy || !canResearch} label="Study winning video ads first" />
-        </div>
-      </Step>
-
-      <Step n={4} title="Engine & quality">
+      <Step n={4} title="Engine & format">
         <div className="space-y-3">
           <EnginePicker model={choices.model} onModel={(model) => onChoices({ model })} disabled={busy} />
           {noRealFaces && isSpeakingStyle(choices.style) && (
-            <p className="rounded-xl border border-[#fff05a]/20 bg-[#fff05a]/[0.05] px-3 py-2 text-[11px] leading-relaxed text-[#fbf2a0]/85">
-              {seedanceSpec(choices.model).name} refuses frames with a realistic person, so a {videoStyleLabel(choices.style)} video may come out as a product-only film. For a person on screen, pick Google Veo or Seedance 1.0 Pro.
+            <p className="rounded-xl border border-[#fff05a]/20 bg-[#fff05a]/[0.05] px-3 py-2 text-[11px] leading-snug text-[#fbf2a0]/85">
+              {seedanceSpec(choices.model).name} can’t show a realistic person, so a {videoStyleLabel(choices.style)} may come out product-only. Pick Google Veo for a person on screen.
             </p>
           )}
+          <ShapePicker model={choices.model} value={choices.aspectRatio} onChange={(aspectRatio) => onChoices({ aspectRatio })} disabled={busy} />
           <LengthQualityPicker
             model={choices.model}
             duration={choices.duration}
             quality={choices.quality}
+            aspectRatio={choices.aspectRatio}
             onDuration={(duration) => onChoices({ duration })}
             onQuality={(quality) => onChoices({ quality })}
             disabled={busy}
           />
+          {cardOpen && (
+            <p className="text-[11px] leading-snug text-white/45">These are for your next new video. To change the open video’s length, use Length in its card; its shape is set when it’s planned.</p>
+          )}
         </div>
       </Step>
 
-      <Step n={5} title="Notes" hint="optional">
+      <Step n={5} title="Notes" hint="Optional">
         <textarea
           value={choices.notes}
           onChange={(event) => onChoices({ notes: event.target.value })}
           maxLength={1500}
           rows={3}
           disabled={busy}
-          placeholder="What should it say or show? e.g. “Launch offer: 20% off”, show it on a work desk, a calm female voice"
+          placeholder="e.g. 20% launch offer, show it on a work desk, a calm female voice"
           className="w-full resize-none rounded-xl border border-white/10 bg-black/25 px-3 py-2.5 text-sm leading-relaxed text-white outline-none placeholder:text-white/25 focus:border-white/25"
         />
       </Step>
@@ -435,12 +626,21 @@ export function NewVideoPanel({ busy, preview, signedIn, credits, initialUrl, pr
           className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#fff05a] text-sm font-medium text-black transition-colors hover:bg-white disabled:cursor-not-allowed disabled:bg-white/12 disabled:text-white/40"
         >
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-          {busy ? 'Planning your video…' : `Plan my video · ${HERO_FRAME_CREDITS} credits`}
+          {busy ? 'Planning your video…' : `Plan my video · ${sceneImages ? `up to ${HERO_FRAME_CREDITS * 2}` : HERO_FRAME_CREDITS} credits`}
         </button>
-        <p className={cx('mt-2 text-center text-[11px] leading-relaxed', short ? 'text-red-300' : 'text-white/40')}>
+        <p className={cx('mt-2 flex items-center justify-center gap-1 text-center text-[11px]', short ? 'text-red-300' : 'text-white/40')}>
           {short
-            ? `Planning needs ${HERO_FRAME_CREDITS} credits; you have ${credits}.`
-            : `${HERO_FRAME_CREDITS} now for the hero frame. The video (${videoCost} credits) is charged only when you approve it.`}
+            ? `You need ${HERO_FRAME_CREDITS} credits to plan; you have ${credits}.`
+            : watchingAny
+              ? 'Reading your reference videos…'
+              : <>
+                  The video ({videoCost} credits) is charged when you approve it.
+                  {sceneImages && (
+                    <Tip text={`${HERO_FRAME_CREDITS} to plan, including one scene image if one is needed. ${HERO_FRAME_CREDITS} more only if a second scene image is made.`}>
+                      <button type="button" aria-label="How planning is charged" className="rounded-full !p-0.5 text-white/40 hover:text-white"><Info className="h-3 w-3" /></button>
+                    </Tip>
+                  )}
+                </>}
         </p>
       </div>
 
@@ -453,6 +653,20 @@ export function NewVideoPanel({ busy, preview, signedIn, credits, initialUrl, pr
         max={Math.max(1, room)}
         confirmLabel={(count) => (count ? `Use ${count} photo${count === 1 ? '' : 's'}` : 'Use')}
         onPick={(items) => addPhotos(items.flatMap((item) => (item.url ? [{ url: item.url, name: item.name }] : [])))}
+      />
+
+      <LibraryPicker
+        open={referencePickerOpen}
+        onOpenChange={setReferencePickerOpen}
+        kind="video"
+        title="Reference videos from your Library"
+        description="Your video copies their shots and pacing. They never appear in it."
+        preview={preview}
+        max={Math.max(1, referenceRoom)}
+        exclude={referenceIds}
+        uploadFolder={REFERENCE_VIDEO_FOLDER}
+        confirmLabel={(count) => (count ? `Use ${count} video${count === 1 ? '' : 's'}` : 'Use')}
+        onPick={(items) => addReferences(items)}
       />
     </div>
   );

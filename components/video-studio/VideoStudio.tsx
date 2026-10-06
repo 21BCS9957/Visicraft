@@ -10,13 +10,13 @@ import { useCredits } from '@/lib/contexts/CreditsContext';
 import { getAuthenticatedHeaders } from '@/lib/supabase/auth';
 import { readNdjson } from '@/lib/ndjson';
 import { parseVideoStyle } from '@/lib/videoStyles';
-import { upgradeModelFor, videoCredits, videoQualityLabel, type FinalQuality } from '@/lib/videoModels';
+import { cssAspect, isWideAspect, upgradeModelFor, videoCredits, videoQualityLabel, type FinalQuality, type VideoAspect } from '@/lib/videoModels';
 import { downloadUrl, PlaygroundApiError, playgroundApi } from '@/lib/playground/api';
 import { usePlaygroundStore } from '@/lib/playground/store';
 import type { PlaygroundProject, VideoProjectProduct } from '@/lib/playground/types';
 import { pollVideoOperation, videoApi, VideoApiError, type PollReport, type StartedRender } from '@/lib/video/client';
-import { isVideoPreviewRequested, PREVIEW_CLIP, previewHistory, previewPlanEvents, previewVideoProject } from '@/lib/video/preview';
-import { readVideoReview, studioVideoStatus, videoModelName, type StudioVideo, type VideoInfo, type VideoTake } from '@/lib/video/shared';
+import { isVideoPreviewRequested, PREVIEW_CLIP, previewHistory, previewPlanEvents, previewReview, previewVideoProject } from '@/lib/video/preview';
+import { readVideoReview, studioVideoStatus, videoModelName, type StudioVideo, type VideoInfo, type VideoReviewState, type VideoTake } from '@/lib/video/shared';
 import { initialStages, PipelineTimeline, VIDEO_STAGES, type StageId, type StageState, type StageStatus } from '@/components/ui/PipelineTimeline';
 import { cx } from '@/components/playground/ui';
 import { GuidelinesEditor } from '@/components/playground/GuidelinesEditor';
@@ -43,6 +43,8 @@ interface LiveJob {
   error: string | null;
   collapsed: boolean;
   title: string | null;
+  /** The shape the video is planned in (the hero frame is made in it). */
+  aspectRatio: VideoAspect;
 }
 
 function withStage(job: LiveJob, id: StageId, status: StageStatus, detail?: string, data?: Record<string, unknown>): LiveJob {
@@ -171,7 +173,7 @@ function Topbar({ preview, project, onRename, panelOpen, onTogglePanel }: {
 function Welcome() {
   const steps = [
     ['Add your product', 'A store link, or your own photos'],
-    ['We plan it', 'Gemini studies the winning video ads; Claude Opus 5.5 writes the prompt'],
+    ['We plan it', 'Claude writes the prompt'],
     ['You approve', 'The frames and the exact prompt, editable'],
     ['It renders', 'Try a cheap draft, then upgrade the one you like'],
   ];
@@ -199,7 +201,7 @@ function JobCard({ job, preview }: { job: LiveJob; preview: boolean }) {
   const failed = job.status === 'failed';
   return (
     <div className="flex flex-col gap-5 rounded-[24px] border border-white/10 bg-[#111114] p-5 sm:flex-row">
-      <div className="relative mx-auto aspect-[9/16] w-40 shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-black/40 sm:mx-0">
+      <div className={cx('relative mx-auto shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-black/40 sm:mx-0', isWideAspect(job.aspectRatio) ? 'w-64' : 'w-40')} style={{ aspectRatio: cssAspect(job.aspectRatio) }}>
         {job.heroUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={job.heroUrl} alt="Hero frame" className="h-full w-full object-cover" style={{ animation: 'slotReveal 900ms cubic-bezier(0.2,0.8,0.2,1) both' }} />
@@ -268,6 +270,8 @@ export function VideoStudio({ projectId }: { projectId: string }) {
   const [job, setJob] = useState<LiveJob | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [viewing, setViewing] = useState<string | null>(null);
+  // A finished take open for small changes, to make a new draft of the same video.
+  const [redrafting, setRedrafting] = useState<{ videoId: string; take: VideoTake } | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
   const [mobilePanel, setMobilePanel] = useState<boolean | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -464,7 +468,7 @@ export function VideoStudio({ projectId }: { projectId: string }) {
       data: { title: request.title ?? undefined, brand: request.productContext?.vendor, images: request.referenceImages },
     };
     const understand: StageState = { id: 'understand', status: 'active', detail: 'Reading the product', startedAt: now };
-    setJob({ status: 'planning', stages: { ...initialStages(VIDEO_STAGES), capture, understand }, message: 'Reading the product…', heroUrl: null, videoId: null, error: null, collapsed: false, title: request.title });
+    setJob({ status: 'planning', stages: { ...initialStages(VIDEO_STAGES), capture, understand }, message: 'Reading the product…', heroUrl: null, videoId: null, error: null, collapsed: false, title: request.title, aspectRatio: request.choices.aspectRatio });
     setSelectedId(null);
     setMobilePanel(false);
     showStage();
@@ -478,14 +482,6 @@ export function VideoStudio({ projectId }: { projectId: string }) {
           break;
         case 'status':
           if (typeof event.message === 'string') setJob((job) => job && { ...job, message: event.message as string });
-          break;
-        case 'research': {
-          const research = obj(event.research) as { ads?: unknown[]; niche?: string } | undefined;
-          if (research?.ads) stage('research', 'done', `${research.ads.length} winners · ${research.niche ?? 'your niche'}`, { ads: research.ads, winners: research.ads.length });
-          break;
-        }
-        case 'research_failed':
-          toast.error(`${str(event.message) ?? 'Ad research failed.'} Continuing without research.`, { ...TOAST, duration: 6000 });
           break;
         case 'notice':
           if (typeof event.message === 'string') toast.info(event.message, { ...TOAST, duration: 8000 });
@@ -508,12 +504,13 @@ export function VideoStudio({ projectId }: { projectId: string }) {
             review,
             cancelled: false,
             prompt: review.prompt,
-            settings: { model: request.choices.model, quality: request.choices.quality, durationSeconds: request.choices.duration, style: request.choices.style },
+            settings: { model: request.choices.model, quality: request.choices.quality, durationSeconds: request.choices.duration, aspectRatio: review.aspectRatio, style: request.choices.style },
             takes: [],
           };
           setVideos((current) => [video, ...(current ?? []).filter((known) => known.id !== video.id)]);
           setSelectedId(video.id);
-          setJob((job) => job && { ...job, videoId: video.id, status: 'review' });
+          // The approval card is the focus now; the steps stay one tap away.
+          setJob((job) => job && { ...job, videoId: video.id, status: 'review', collapsed: true });
           break;
         }
         case 'done': {
@@ -537,7 +534,7 @@ export function VideoStudio({ projectId }: { projectId: string }) {
 
     try {
       if (preview) {
-        for (const step of previewPlanEvents(`preview-${now}`)) {
+        for (const step of previewPlanEvents(`preview-${now}`, request.choices.aspectRatio)) {
           await sleep(step.after);
           onEvent(step.event);
         }
@@ -554,17 +551,17 @@ export function VideoStudio({ projectId }: { projectId: string }) {
               referenceImages: request.referenceImages,
               prompt: request.notes,
               creativeSet: true,
-              aspectRatio: '9:16',
+              aspectRatio: request.choices.aspectRatio,
               resolution: '2K',
               model: 'nano-banana-pro',
               productContext: request.productContext ?? undefined,
-              research: request.research,
-              country: 'IN',
+              referenceVideoIds: request.referenceVideoIds.length ? request.referenceVideoIds : undefined,
               videoAd: true,
               videoStyle: request.choices.style,
               videoModel: request.choices.model,
               videoDuration: request.choices.duration,
               videoQuality: request.choices.quality,
+              videoAspectRatio: request.choices.aspectRatio,
               projectId,
             }),
           });
@@ -599,6 +596,7 @@ export function VideoStudio({ projectId }: { projectId: string }) {
         : await videoApi.approve(video.id, edits);
       if (started.notice) toast.info(started.notice, { ...TOAST, duration: 8000 });
       const model = started.video?.model ?? review.model;
+      const seconds = edits.durationSeconds ?? review.durationSeconds;
       const take: VideoTake = {
         key: video.id,
         operationId: started.operationId,
@@ -606,9 +604,10 @@ export function VideoStudio({ projectId }: { projectId: string }) {
         url: null,
         model,
         quality: started.video?.quality ?? review.quality,
-        durationSeconds: started.video?.durationSeconds ?? review.durationSeconds,
+        durationSeconds: started.video?.durationSeconds ?? seconds,
+        aspectRatio: review.aspectRatio,
         nativeDraft: started.video?.nativeDraft ?? false,
-        credits: review.credits,
+        credits: seconds === review.durationSeconds ? review.credits : videoCredits(review.model, review.quality, seconds, review.aspectRatio),
         error: null,
         createdAt: new Date().toISOString(),
         progress: 5,
@@ -653,7 +652,7 @@ export function VideoStudio({ projectId }: { projectId: string }) {
 
   const upgrade = async (video: StudioVideo, take: VideoTake, quality: FinalQuality) => {
     if (busyId) return;
-    const cost = videoCredits(upgradeModelFor(take.model), quality, take.durationSeconds);
+    const cost = videoCredits(upgradeModelFor(take.model), quality, take.durationSeconds, take.aspectRatio);
     if (balance !== null && balance < cost) {
       toast.error(`This upgrade needs ${cost} credits; you have ${balance}.`, TOAST);
       return;
@@ -673,12 +672,16 @@ export function VideoStudio({ projectId }: { projectId: string }) {
         model: started.video?.model ?? upgradeModelFor(take.model),
         quality: started.video?.quality ?? quality,
         durationSeconds: started.video?.durationSeconds ?? take.durationSeconds,
+        aspectRatio: take.aspectRatio,
         nativeDraft: false,
         credits: cost,
         error: null,
         createdAt: new Date().toISOString(),
         progress: 5,
         message: `Rendering the ${label} version…`,
+        prompt: take.prompt,
+        frames: take.frames,
+        from: take.operationId,
       };
       setVideos((current) => current?.map((known) => (known.id === video.id ? { ...known, takes: [...known.takes, next] } : known)) ?? current);
     } catch (error) {
@@ -689,11 +692,109 @@ export function VideoStudio({ projectId }: { projectId: string }) {
     }
   };
 
+  /** The editor for a new draft: the take's own images and prompt, priced as a draft. */
+  const redraftReview = (video: StudioVideo, take: VideoTake): VideoReviewState => {
+    const known = new Map((video.plan?.frames ?? []).map((frame) => [frame.url, frame]));
+    const urls = take.frames?.length ? take.frames : (video.plan?.frames ?? []).map((frame) => frame.url);
+    return {
+      id: `redraft:${take.key}`,
+      model: take.model,
+      quality: 'draft',
+      durationSeconds: take.durationSeconds,
+      aspectRatio: take.aspectRatio,
+      mode: video.plan?.mode ?? (urls.length > 1 ? 'reference' : 'first_frame'),
+      frames: urls.map((url) => known.get(url) ?? { url, label: 'Your upload', kind: 'photo' as const }),
+      prompt: take.prompt ?? video.prompt ?? '',
+      credits: videoCredits(take.model, 'draft', take.durationSeconds, take.aspectRatio),
+      notes: ['This makes a new draft of the same video with your changes. The take you were watching stays, and you can upgrade whichever draft you like.'],
+      referenceVideos: [],
+      outline: null,
+    };
+  };
+
+  /** Renders the edited take as a new draft of the same video. */
+  const startRedraft = async (video: StudioVideo, take: VideoTake, edits: ReviewEdits) => {
+    if (busyId) return;
+    const seconds = edits.durationSeconds ?? take.durationSeconds;
+    const cost = videoCredits(take.model, 'draft', seconds, take.aspectRatio);
+    if (balance !== null && balance < cost) {
+      toast.error(`A new draft needs ${cost} credits; you have ${balance}.`, TOAST);
+      return;
+    }
+    setBusyId(video.id);
+    try {
+      const started: StartedRender = preview
+        ? { operationId: `preview-redraft-${Date.now()}`, video: null }
+        : await videoApi.redraft(take.operationId, edits);
+      if (started.notice) toast.info(started.notice, { ...TOAST, duration: 8000 });
+      const next: VideoTake = {
+        key: `op:${started.operationId}`,
+        operationId: started.operationId,
+        status: 'rendering',
+        url: null,
+        model: started.video?.model ?? take.model,
+        quality: started.video?.quality ?? 'draft',
+        durationSeconds: started.video?.durationSeconds ?? seconds,
+        aspectRatio: take.aspectRatio,
+        nativeDraft: started.video?.nativeDraft ?? take.nativeDraft,
+        credits: cost,
+        error: null,
+        createdAt: new Date().toISOString(),
+        progress: 5,
+        message: 'Rendering your new draft…',
+        prompt: edits.prompt,
+        frames: edits.frames,
+        edited: true,
+        from: take.operationId,
+      };
+      setVideos((current) => current?.map((known) => (known.id === video.id ? { ...known, prompt: edits.prompt, takes: [...known.takes, next] } : known)) ?? current);
+      setRedrafting(null);
+      toast.success('Making your new draft', TOAST);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The new draft could not start', { ...TOAST, duration: 7000 });
+    } finally {
+      setBusyId(null);
+      if (!preview) void refreshCredits();
+    }
+  };
+
+  /** A video that didn't render: its approved plan comes back for approval as a new video. */
+  const tryAgain = async (video: StudioVideo) => {
+    if (busyId) return;
+    setBusyId(video.id);
+    try {
+      const { reviewId, review: raw } = preview
+        ? { reviewId: `preview-again-${Date.now()}`, review: { ...previewReview('preview-again'), notes: ['The last take was stopped by Seedance’s music check (its music sounded like an existing song), so this one has no music. You can describe music again in the prompt.'] } }
+        : await videoApi.again(video.id);
+      const review = readVideoReview(reviewId, raw);
+      if (!review) throw new Error('The video could not be prepared again.');
+      const next: StudioVideo = {
+        ...video,
+        id: review.id,
+        createdAt: new Date().toISOString(),
+        review,
+        cancelled: false,
+        prompt: review.prompt,
+        takes: [],
+        retryable: false,
+      };
+      setVideos((current) => [next, ...(current ?? [])]);
+      setSelectedId(next.id);
+      showStage();
+      toast.success('Ready for your approval', TOAST);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The video could not be prepared again', { ...TOAST, duration: 7000 });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const reuse = (video: StudioVideo) => {
     onChoices({
       model: pickerModel(video.settings.model),
       duration: video.settings.durationSeconds,
       quality: video.settings.quality,
+      aspectRatio: video.settings.aspectRatio,
       style: parseVideoStyle(video.settings.style) ?? 'any',
     });
     setPanelOpen(true);
@@ -703,6 +804,7 @@ export function VideoStudio({ projectId }: { projectId: string }) {
 
   const open = (video: StudioVideo) => {
     setSelectedId(video.id);
+    setRedrafting(null);
     setMobilePanel(false);
     showStage();
   };
@@ -774,7 +876,8 @@ export function VideoStudio({ projectId }: { projectId: string }) {
             onProduct={onProduct}
             choices={choices}
             onChoices={onChoices}
-            guidelines={<GuidelinesEditor emptyHint="Upload a .md file or write your guidelines: brand, product facts, tone, what to always or never show. Claude Opus 5.5 follows them when it writes each video prompt." />}
+            guidelines={<GuidelinesEditor compact emptyHint="Brand rules, product facts, tone, dos and don’ts, or how to write shots" />}
+            cardOpen={Boolean(selected?.review) || (redrafting !== null && redrafting.videoId === selected?.id)}
             onPlan={(request) => void plan(request)}
           />
         </aside>
@@ -791,7 +894,7 @@ export function VideoStudio({ projectId }: { projectId: string }) {
                     <>
                       <div className="flex items-center justify-between gap-3">
                         <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-white/40">
-                          {selectedStatus === 'review' ? 'Waiting for your approval' : selectedStatus === 'rendering' ? 'Rendering' : 'Video'}
+                          {selectedStatus === 'review' ? '' : selectedStatus === 'rendering' ? 'Rendering' : 'Video'}
                         </p>
                         <div className="flex items-center gap-2">
                           {job?.status === 'planning' && job.videoId !== selected.id && (
@@ -810,8 +913,23 @@ export function VideoStudio({ projectId }: { projectId: string }) {
                           review={selected.review}
                           busy={busyId === selected.id}
                           credits={balance}
+                          projectId={projectId}
+                          preview={preview}
                           onApprove={(edits) => void approve(selected, edits)}
                           onCancel={() => void cancel(selected)}
+                          onView={setViewing}
+                        />
+                      ) : redrafting?.videoId === selected.id ? (
+                        <ReviewCard
+                          key={`redraft-${redrafting.take.key}`}
+                          review={redraftReview(selected, redrafting.take)}
+                          redraft
+                          busy={busyId === selected.id}
+                          credits={balance}
+                          projectId={projectId}
+                          preview={preview}
+                          onApprove={(edits) => void startRedraft(selected, redrafting.take, edits)}
+                          onCancel={() => setRedrafting(null)}
                           onView={setViewing}
                         />
                       ) : (
@@ -823,6 +941,8 @@ export function VideoStudio({ projectId }: { projectId: string }) {
                           credits={balance}
                           onUpgrade={(take, quality) => void upgrade(selected, take, quality)}
                           onReuse={() => reuse(selected)}
+                          onTryAgain={() => void tryAgain(selected)}
+                          onRedraft={(take) => setRedrafting({ videoId: selected.id, take })}
                         />
                       )}
                     </>

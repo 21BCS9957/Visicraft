@@ -66,41 +66,15 @@ interface ProductImageCandidate {
   source: 'shopify' | 'metadata' | 'page';
 }
 
-interface WinningAd {
-  id: string;
-  pageName: string;
-  daysRunning: number;
-  collationCount?: number;
-  title?: string;
-  body?: string;
-  imageUrl?: string;
-  videoUrl?: string;
-  libraryUrl: string;
-  mediaKind?: 'image' | 'video';
-  /** Video ads: creative style, confirmed when research watched the video. */
-  style?: string;
-  styleConfirmed?: boolean;
-}
-
-interface AdResearch {
-  niche: string;
-  keywords: string[];
-  ads: WinningAd[];
-  patterns: string;
-  mock?: boolean;
-  videoStyle?: string;
-  styleFallback?: boolean;
-}
-
 interface CreativeSlot {
   angle?: string;
   withText?: boolean;
-  /** Advertiser whose long-running ad this creative's layout was modelled on. */
+  /** The reference this creative's layout was modelled on. */
   modelledOn?: string;
   url?: string;
   failed?: boolean;
   retrying?: boolean;
-  /** Output format, matched to the winning ad it mirrors. */
+  /** Output format. */
   aspectRatio?: string;
   /** The garment was kept from the store photo (edited setting) rather than redrawn. */
   exactGarment?: boolean;
@@ -108,7 +82,7 @@ interface CreativeSlot {
   failReason?: 'product' | 'generation' | 'safety' | 'quality';
 }
 
-type ProductFlowStep = 'none' | 'research';
+type ProductFlowStep = 'none' | 'ready';
 
 type DirectRatio = '4:5' | '9:16' | '1:1';
 const DIRECT_SIZES: Array<{ ratio: DirectRatio; label: string }> = [
@@ -911,7 +885,6 @@ export function HeroSection() {
   const [directRatio, setDirectRatio] = useState<DirectRatio>('4:5');
   const [directCount, setDirectCount] = useState(1);
   const [directRun, setDirectRun] = useState<{ count: number; ratio: DirectRatio } | null>(null);
-  const [adResearch, setAdResearch] = useState<AdResearch | null>(null);
   // The visible pipeline for product-link runs: one row per stage, live artifacts.
   const [pipeline, setPipeline] = useState<Record<string, StageState>>({});
   const [showPipeline, setShowPipeline] = useState(false);
@@ -969,10 +942,8 @@ export function HeroSection() {
     setIsGenerating(true);
     setPipeline({
       capture: { id: 'capture', status: 'done', detail: 'Night Unwind · Brew Sage', startedAt: t - 50000, finishedAt: t - 46000, data: { title: 'Night Unwind - Chamomile & Lemongrass Herbal Infusion', brand: 'Brew Sage', images: ['/Youtube%20Template/Youtube_Generated.png'], canonicalImage: '/Youtube%20Template/Youtube_Generated.png' } },
-      understand: { id: 'understand', status: 'done', detail: 'herbal sleep tea', startedAt: t - 46000, finishedAt: t - 34000, data: { niche: 'herbal sleep tea', keywords: ['sleep tea', 'chamomile tea'], competitors: ['VAHDAM India', 'Blue Tea', 'Teabox', 'Organic India'], locked: ['Brew Sage logo mark and wordmark', '"Night Unwind" title and "Chamomile & lemongrass Herbal Infusion"', 'Purple pill "Floral, soothing & gently citrusy"', '"30 Tea Bags" roundel and "60 G | 2 OZ"', '"CAFFEINE FREE" ribbon badge, lower right'], productPasted: true } },
-      research: { id: 'research', status: 'active', detail: '214 ads scraped, 61 designed creatives', startedAt: t - 34000, data: { scraped: 214, designed: 61, relevant: 0, winners: 0 } },
-      analyze: { id: 'analyze', status: 'pending' },
-      plan: { id: 'plan', status: 'pending' },
+      understand: { id: 'understand', status: 'done', detail: 'Product identity locked', startedAt: t - 46000, finishedAt: t - 34000, data: { price: '₹349', tier: 'mass', locked: ['Brew Sage logo mark and wordmark', '"Night Unwind" title and "Chamomile & lemongrass Herbal Infusion"', 'Purple pill "Floral, soothing & gently citrusy"', '"30 Tea Bags" roundel and "60 G | 2 OZ"', '"CAFFEINE FREE" ribbon badge, lower right'], productPasted: true } },
+      plan: { id: 'plan', status: 'active', detail: 'Writing four ad briefs', startedAt: t - 34000 },
       generate: { id: 'generate', status: 'pending' },
       done: { id: 'done', status: 'pending' },
     });
@@ -1190,7 +1161,6 @@ export function HeroSection() {
     const ratio = directRatio;
     setError('');
     setShowPipeline(false);
-    setAdResearch(null);
     setCreativeSlots([]);
     setResultKind('direct');
     setDirectRun({ count, ratio });
@@ -1230,10 +1200,10 @@ export function HeroSection() {
   }, [promptValue, directCount, directRatio, uploadedImages, uploadPhotos, refreshCredits]);
 
   /**
-   * Product-link flow: the first call captures the product and asks whether to study winning
-   * ads; the answer buttons call back in with `options` to generate the four image ads.
+   * Product-link flow: the first call captures the product and shows its photos; the next
+   * one generates the four image ads from the photos picked.
    */
-  const handleGenerate = useCallback(async (options?: { research: boolean }) => {
+  const handleGenerate = useCallback(async () => {
     setError('');
     setStatusMessage('');
     const activeProductUrl = extractFirstPublicUrl(promptValue);
@@ -1242,7 +1212,7 @@ export function HeroSection() {
       try {
         await captureProductImages(activeProductUrl);
         setPromptValue(removeUrlFromPrompt(promptValue, activeProductUrl));
-        setProductFlowStep('research');
+        setProductFlowStep('ready');
       } catch (err) {
         const msg = err instanceof Error && err.name === 'AbortError'
           ? 'That store took too long to respond. Please retry the product link once.'
@@ -1278,10 +1248,6 @@ export function HeroSection() {
       toast.error('Pick at least one product photo, or clear the product');
       return;
     }
-    if (!options) {
-      setProductFlowStep('research');
-      return;
-    }
     if (credits < creditCost) {
       toast.error(`Insufficient credits! Need ${creditCost}, have ${credits}`);
       return;
@@ -1295,11 +1261,9 @@ export function HeroSection() {
       price: activeProductCapture.price,
       currency: activeProductCapture.currency,
     };
-    const wantsResearch = options.research;
 
     setProductFlowStep('none');
     setGenerationReferenceUrls([...selectedProductUrls, ...uploadedImages.map((img) => img.preview)]);
-    setAdResearch(null);
     setPipeline((current) => ({
       ...initialStages(IMAGE_STAGES),
       capture: current.capture?.status === 'done'
@@ -1329,8 +1293,6 @@ export function HeroSection() {
           aspectRatio: '9:16',
           resolution: '2K',
           productContext,
-          research: wantsResearch,
-          country: 'IN',
           model: selectedModel,
         }),
       }, 295000);
@@ -1354,13 +1316,6 @@ export function HeroSection() {
           );
         } else if (event.type === 'status' && typeof event.message === 'string') {
           setStatusMessage(event.message);
-        } else if (event.type === 'research' && event.research) {
-          const research = event.research as AdResearch;
-          setAdResearch(research);
-          updateStage('research', 'done', `${research.ads.length} winners · ${research.niche}`, { ads: research.ads, winners: research.ads.length });
-          setStatusMessage(`Studied ${research.ads.length} winning ${research.niche} ads. Building your creatives...`);
-        } else if (event.type === 'research_failed') {
-          toast.error(`${typeof event.message === 'string' ? event.message : 'Ad research failed'} Continuing without research.`);
         } else if (event.type === 'angles' && Array.isArray(event.angles)) {
           setCreativeSlots((event.angles as Array<{ name: string; withText: boolean; modelledOn?: string; aspectRatio?: string }>).map((angle) => ({
             angle: angle.name,
@@ -1598,46 +1553,29 @@ export function HeroSection() {
                   </div>
                 )}
 
-                {productCapture && productFlowStep === 'research' && selectedProductUrls.length > 0 && (
+                {productCapture && productFlowStep === 'ready' && selectedProductUrls.length > 0 && (
                   <div className="px-3 pb-3 text-left sm:px-4">
-                    <div className="rounded-2xl border border-[#fff05a]/20 bg-[#fff05a]/[0.06] p-3 sm:p-4">
-                      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#fff05a]/20 bg-[#fff05a]/[0.06] p-3 sm:p-4">
+                      <div className="min-w-0">
                         <p className="text-sm font-light text-white sm:text-base">
-                          Study winning Meta image ads in this niche first?
+                          {PRODUCT_SET_SIZE} image ads from {selectedProductUrls.length === 1 ? 'this photo' : `these ${selectedProductUrls.length} photos`}
                         </p>
-                        <span className="text-xs text-white/45">
-                          {PRODUCT_SET_SIZE} image ads · {imageCreditCost * PRODUCT_SET_SIZE} credits
-                        </span>
-                      </div>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        <button
-                          type="button"
-                          onClick={() => handleGenerate({ research: true })}
-                          className="rounded-xl border border-white/10 bg-black/30 p-3 text-left transition-colors hover:border-[#fff05a]/50 hover:bg-black/45"
+                        <Link
+                          href={`/playground/video?url=${encodeURIComponent(productCapture.requestedUrl)}`}
+                          className="mt-1 inline-flex items-center gap-1.5 text-xs text-white/55 transition-colors hover:text-[#fff05a]"
                         >
-                          <span className="text-sm text-white">Yes, research winning ads</span>
-                          <span className="mt-1 block text-xs font-light text-white/50">
-                            Finds the longest-running active image ads in India and models them · adds 1-2 min
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleGenerate({ research: false })}
-                          className="rounded-xl border border-white/10 bg-black/30 p-3 text-left transition-colors hover:border-[#fff05a]/50 hover:bg-black/45"
-                        >
-                          <span className="text-sm text-white">No, generate now</span>
-                          <span className="mt-1 block text-xs font-light text-white/50">
-                            Skip research and save time
-                          </span>
-                        </button>
+                          <Clapperboard className="h-3.5 w-3.5" />
+                          Make a video instead →
+                        </Link>
                       </div>
-                      <Link
-                        href={`/playground/video?url=${encodeURIComponent(productCapture.requestedUrl)}`}
-                        className="mt-3 inline-flex items-center gap-1.5 text-xs text-white/55 transition-colors hover:text-[#fff05a]"
+                      <button
+                        type="button"
+                        onClick={() => handleGenerate()}
+                        disabled={isGenerating}
+                        className="h-10 shrink-0 rounded-full bg-[#fff05a] px-4 text-sm text-black transition-colors hover:bg-[#fff36f] disabled:cursor-wait disabled:bg-white/12 disabled:text-white/40"
                       >
-                        <Clapperboard className="h-3.5 w-3.5" />
-                        Make a video instead →
-                      </Link>
+                        Generate · {imageCreditCost * PRODUCT_SET_SIZE} credits
+                      </button>
                     </div>
                   </div>
                 )}
@@ -1861,7 +1799,7 @@ export function HeroSection() {
           </div>
 
           {/* Results / Progress Section */}
-          {(creativeSlots.length > 0 || adResearch || error || (showPipeline && !isGenerating)) && (
+          {(creativeSlots.length > 0 || error || (showPipeline && !isGenerating)) && (
             <div ref={resultsRef} className="mx-auto w-full max-w-[1780px] pt-6">
               {showPipeline && !isGenerating && (
                 <div className="mx-auto mb-6 w-full max-w-[1080px]">
@@ -1897,7 +1835,7 @@ export function HeroSection() {
                       style={{
                         animationDelay: `${i * 0.1}s`,
                         animationFillMode: 'forwards',
-                        // Each creative keeps its format: the winning ad it mirrors, or the size picked.
+                        // Each creative keeps its format: the planner's, or the size picked.
                         aspectRatio: (slot.aspectRatio ?? '9:16').replace(':', ' / '),
                       }}
                     >
@@ -1960,51 +1898,6 @@ export function HeroSection() {
                 </div>
               )}
 
-              {/* Winning ads used as research */}
-              {adResearch && adResearch.ads.length > 0 && (
-                <div className="mx-auto mt-6 w-full max-w-[1280px] text-left">
-                  <p className="mb-3 text-xs font-medium uppercase tracking-[0.2em] text-white/40">
-                    Based on the longest-running {adResearch.niche} ads on Meta India
-                    {adResearch.mock && (
-                      <span className="ml-2 rounded-full bg-[#fff05a]/15 px-2 py-0.5 normal-case tracking-normal text-[#fbf2a0]">
-                        Test mode: sample ads
-                      </span>
-                    )}
-                  </p>
-                  <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                    {adResearch.ads.map((ad) => (
-                      <a
-                        key={ad.id}
-                        href={ad.libraryUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="group w-40 flex-shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-[#151519] transition-colors hover:border-white/25"
-                      >
-                        <div className="aspect-square w-full overflow-hidden bg-white/5">
-                          {ad.imageUrl ? (
-                            <img
-                              src={ad.imageUrl}
-                              alt={`${ad.pageName} ad`}
-                              referrerPolicy="no-referrer"
-                              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                            />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center">
-                              <ImageIcon className="h-5 w-5 text-white/30" />
-                            </div>
-                          )}
-                        </div>
-                        <div className="p-2.5">
-                          <p className="truncate text-xs text-white/80">{ad.pageName}</p>
-                          <p className="mt-0.5 text-[11px] text-[#fff05a]/80">
-                            Running {ad.daysRunning} days{ad.collationCount && ad.collationCount > 1 ? ` · ${ad.collationCount} variants` : ''}
-                          </p>
-                        </div>
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           )}
 

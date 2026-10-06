@@ -4,7 +4,9 @@ import { getAuthenticatedHeaders } from '@/lib/supabase/auth';
 import type { ImageQuality, ReferenceRole, ThinkingLevel } from './models';
 import type {
   GenerateResponse,
+  LibraryFolder,
   LibraryItem,
+  LibraryKind,
   PlaygroundBundle,
   PlaygroundItem,
   PlaygroundProject,
@@ -121,21 +123,54 @@ export interface NewLibraryImage {
   source?: LibraryItem['source'];
 }
 
+/** A video uploaded to our storage, with the poster and frames the browser took. */
+export interface NewLibraryVideo {
+  url: string;
+  name: string;
+  posterUrl: string | null;
+  durationSeconds: number | null;
+  width: number | null;
+  height: number | null;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  frames: Array<{ url: string; t: number }>;
+  source?: LibraryItem['source'];
+}
+
 export const libraryApi = {
-  list: (kind: LibraryItem['kind'], options: { before?: string | null; q?: string } = {}) => {
+  /** `folder`: a folder id, "none" for un-filed items, or nothing for all. */
+  list: (kind: LibraryKind, options: { before?: string | null; q?: string; folder?: string | null } = {}) => {
     const query = new URLSearchParams({ kind });
     if (options.before) query.set('before', options.before);
     if (options.q?.trim()) query.set('q', options.q.trim());
-    return call<{ items: LibraryItem[]; nextBefore: string | null }>(`/api/playground/library?${query}`);
+    if (options.folder) query.set('folder', options.folder);
+    return call<{ items: LibraryItem[]; nextBefore: string | null; setupMessage?: string | null }>(`/api/playground/library?${query}`);
   },
-  addImages: (images: NewLibraryImage[]) =>
-    call<{ items: LibraryItem[] }>('/api/playground/library', { method: 'POST', body: json({ images }) }),
-  addDocument: (document: { name: string; content: string; source?: LibraryItem['source'] }) =>
-    call<{ items: LibraryItem[] }>('/api/playground/library', { method: 'POST', body: json({ document }) }),
+  addImages: (images: NewLibraryImage[], folderId?: string | null) =>
+    call<{ items: LibraryItem[] }>('/api/playground/library', { method: 'POST', body: json({ images, folderId: folderId ?? undefined }) }),
+  addVideos: (videos: NewLibraryVideo[], folderId?: string | null) =>
+    call<{ items: LibraryItem[] }>('/api/playground/library', { method: 'POST', body: json({ videos, folderId: folderId ?? undefined }) }),
+  addDocument: (document: { name: string; content: string; source?: LibraryItem['source'] }, folderId?: string | null) =>
+    call<{ items: LibraryItem[] }>('/api/playground/library', { method: 'POST', body: json({ document, folderId: folderId ?? undefined }) }),
   get: (id: string) => call<{ item: LibraryItem; content: string | null }>(`/api/playground/library/${id}`),
   rename: (id: string, name: string) =>
     call<{ item: LibraryItem }>(`/api/playground/library/${id}`, { method: 'PATCH', body: json({ name }) }),
+  /** Files an item in a folder; null un-files it. */
+  move: (id: string, folderId: string | null) =>
+    call<{ item: LibraryItem }>(`/api/playground/library/${id}`, { method: 'PATCH', body: json({ folderId }) }),
   remove: (id: string) => call<{ deleted: boolean }>(`/api/playground/library/${id}`, { method: 'DELETE' }),
+  /** Gemini watches a Library video (once; `again` watches it again) and its shots are saved with it. */
+  analyze: (id: string, again = false) =>
+    call<{ item: LibraryItem }>(`/api/playground/library/${id}/analyze${again ? '?again=1' : ''}`, { method: 'POST', body: json({}) }),
+  folders: {
+    list: (kind: LibraryKind) =>
+      call<{ folders: LibraryFolder[]; setupMessage?: string | null }>(`/api/playground/library/folders?kind=${kind}`),
+    create: (kind: LibraryKind, name: string) =>
+      call<{ folder: LibraryFolder; existed: boolean }>('/api/playground/library/folders', { method: 'POST', body: json({ kind, name }) }),
+    rename: (id: string, name: string) =>
+      call<{ folder: LibraryFolder }>(`/api/playground/library/folders/${id}`, { method: 'PATCH', body: json({ name }) }),
+    remove: (id: string) => call<{ deleted: boolean }>(`/api/playground/library/folders/${id}`, { method: 'DELETE' }),
+  },
 };
 
 export interface CanvasItemData {

@@ -765,6 +765,13 @@ export async function generateThumbnail(
         throw new Error('Invalid Gemini API key. Please check your GEMINI_API_KEY in .env.local');
       }
       
+      // Billing answers (some arrive as 429) won't clear by trying again in a moment.
+      if (/spend(ing)? cap/i.test(errorMessage || '')) {
+        throw new Error('Your Gemini project has reached its monthly spending cap. Raise the cap in Google AI Studio (ai.studio/spend), then try again.');
+      }
+      if (statusCode === 402 || /prepayment|credits are depleted/i.test(errorMessage || '')) {
+        throw new Error('Your Gemini prepaid credits are used up. Add credit in Google AI Studio, then try again.');
+      }
       if (statusCode === 429) {
         throw new Error('Rate limit exceeded. Please try again in a moment.');
       }

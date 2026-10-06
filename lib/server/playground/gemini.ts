@@ -79,9 +79,19 @@ export function classifyGeminiError(error: unknown): PlaygroundGenerationError {
       }
       return new PlaygroundGenerationError('failed', "Couldn't reach Gemini. Check the connection and try again.");
     }
+    // Billing answers (some come as 429 RESOURCE_EXHAUSTED) won't clear by waiting: pause instead of retrying.
+    if (/spend(ing)? cap/i.test(message)) {
+      return new PlaygroundGenerationError('paused', 'Your Gemini project has reached its monthly spending cap. Raise the cap in Google AI Studio (ai.studio/spend), then resume.');
+    }
+    if (status === 402 || /prepayment|credits are depleted/i.test(message)) {
+      return new PlaygroundGenerationError('paused', 'Your Gemini prepaid credits are used up. Add credit in Google AI Studio, then resume.');
+    }
     if (status === 429) {
       if (isDailyQuota(details)) {
         return new PlaygroundGenerationError('paused', "Today's Gemini image quota for this key is used up. It resets tomorrow, or raise the limit in Google AI Studio.");
+      }
+      if (/exceeded your current quota|check your plan and billing/i.test(message)) {
+        return new PlaygroundGenerationError('paused', "Gemini says this key's quota is used up. Check the plan and billing in Google AI Studio, then resume.");
       }
       return new PlaygroundGenerationError('rate_limited', 'Gemini is busy; this image is back in the queue.', retryDelayMs(details) ?? 20_000);
     }

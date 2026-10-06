@@ -15,10 +15,10 @@ const TOAST = { position: 'top-center' as const };
 
 /**
  * The project's Guidelines: a Markdown document (uploaded or written here) that goes with
- * every image to Gemini and first into Claude's prompt writing. `emptyHint` replaces the text
- * shown before any are written (video projects, where Claude writes the video prompts).
+ * every image and into every written prompt. `emptyHint` replaces the text shown before any
+ * are written; `compact` shows one row (name, size, actions) instead of the preview card.
  */
-export function GuidelinesEditor({ emptyHint }: { emptyHint?: string } = {}) {
+export function GuidelinesEditor({ emptyHint, compact = false }: { emptyHint?: string; compact?: boolean } = {}) {
   const project = usePlaygroundStore((state) => state.project);
   const setProject = usePlaygroundStore((state) => state.setProject);
   const preview = usePlaygroundStore((state) => state.preview);
@@ -99,6 +99,113 @@ export function GuidelinesEditor({ emptyHint }: { emptyHint?: string } = {}) {
     />
   );
 
+  const more = (
+    <Popover
+      side="right"
+      align="start"
+      className="w-56"
+      trigger={<button type="button" aria-label="More guideline actions" className="rounded-full border border-white/10 p-1 text-white/60 hover:bg-white/8 hover:text-white"><MoreHorizontal className="h-3.5 w-3.5" /></button>}
+    >
+      <PopoverClose asChild>
+        <button type="button" onClick={() => setPickerOpen(true)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-white/85 hover:bg-white/8"><FolderInput className="h-4 w-4" /> Load from Library</button>
+      </PopoverClose>
+      <PopoverClose asChild>
+        <button type="button" onClick={() => fileRef.current?.click()} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-white/85 hover:bg-white/8"><Upload className="h-4 w-4" /> Upload .md</button>
+      </PopoverClose>
+      <PopoverClose asChild>
+        <button type="button" disabled={!brief.trim()} onClick={() => void saveToLibrary()} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-white/85 hover:bg-white/8 disabled:opacity-40"><FolderOutput className="h-4 w-4" /> Save to Library</button>
+      </PopoverClose>
+      <PopoverClose asChild>
+        <button type="button" disabled={!brief.trim()} onClick={download} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-white/85 hover:bg-white/8 disabled:opacity-40"><Download className="h-4 w-4" /> Download .md</button>
+      </PopoverClose>
+      <div className="my-1 border-t border-white/8" />
+      <PopoverClose asChild>
+        <button type="button" disabled={!brief.trim()} onClick={() => window.confirm('Clear the guidelines?') && save({ brief: '', briefName: null }, true)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-red-300 hover:bg-red-500/10 disabled:opacity-40"><Trash2 className="h-4 w-4" /> Clear</button>
+      </PopoverClose>
+    </Popover>
+  );
+
+  const dialogs = (
+    <>
+      {fileInput}
+      <Dialog.Root open={editorOpen} onOpenChange={setEditorOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[80] bg-black/75 backdrop-blur-sm" />
+          <Dialog.Content className="fixed inset-3 z-[81] flex flex-col rounded-3xl border border-white/12 bg-[#121216] text-white shadow-[0_30px_120px_rgba(0,0,0,0.6)] outline-none sm:inset-8">
+            <div className="flex flex-wrap items-center gap-3 border-b border-white/8 px-5 py-3">
+              <Dialog.Title className="flex items-center gap-2 text-base font-medium"><BookOpen className="h-4 w-4 text-[#fff05a]" /> Guidelines</Dialog.Title>
+              <Dialog.Description className="text-xs text-white/45">Markdown · every image and prompt follows them</Dialog.Description>
+              <span className="ml-auto text-[11px] text-white/40">
+                {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : ''} · {brief.length.toLocaleString('en-IN')} / {MAX_BRIEF_CHARS.toLocaleString('en-IN')}
+              </span>
+              <button type="button" onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1.5 rounded-full border border-white/12 px-3 py-1.5 text-xs text-white/80 hover:bg-white/8"><Upload className="h-3.5 w-3.5" /> Upload .md</button>
+              <button type="button" disabled={!brief.trim()} onClick={download} className="inline-flex items-center gap-1.5 rounded-full border border-white/12 px-3 py-1.5 text-xs text-white/80 hover:bg-white/8 disabled:opacity-40"><Download className="h-3.5 w-3.5" /> Download</button>
+              <Dialog.Close className="rounded-full p-1.5 text-white/50 hover:bg-white/8 hover:text-white" aria-label="Close"><X className="h-4 w-4" /></Dialog.Close>
+            </div>
+            <div className="grid min-h-0 flex-1 md:grid-cols-2">
+              <textarea
+                value={brief}
+                onChange={(event) => save({ brief: event.target.value })}
+                maxLength={MAX_BRIEF_CHARS}
+                spellCheck
+                placeholder={'# Brand\nWho you are, tone, audience.\n\n## Product\nExact facts: name, colours, what must never change.\n\n## Always\n- One hero product per image\n\n## Never\n- Competitor logos'}
+                className="min-h-0 resize-none border-b border-white/8 bg-transparent p-5 font-mono text-[13px] leading-relaxed text-white outline-none placeholder:text-white/25 md:border-b-0 md:border-r"
+              />
+              <div className={cx('min-h-0 overflow-y-auto p-5', !brief.trim() && 'flex items-center justify-center')}>
+                {brief.trim() ? <Markdown>{brief}</Markdown> : <p className="text-sm text-white/30">The preview shows here.</p>}
+              </div>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+      <LibraryPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        kind="document"
+        title="Load guidelines from your Library"
+        preview={preview}
+        multiple={false}
+        confirmLabel={() => 'Use these guidelines'}
+        onPick={(items, _role, content) => {
+          if (content === null) return;
+          if (brief.trim() && !window.confirm('Replace the current guidelines?')) return;
+          save({ brief: content, briefName: items[0]?.name ?? null }, true);
+          toast.success('Guidelines loaded', TOAST);
+        }}
+      />
+    </>
+  );
+
+  if (compact) {
+    return (
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setEditorOpen(true)}
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl text-left"
+          title={brief.trim() ? 'Edit the guidelines' : 'Write the guidelines'}
+        >
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/[0.06] text-white/60"><BookOpen className="h-4 w-4" /></span>
+          <span className="min-w-0">
+            <span className="block text-sm text-white">Guidelines</span>
+            <span className="block truncate text-[11px] text-white/40">
+              {saveState === 'saving'
+                ? 'Saving…'
+                : brief.trim()
+                  ? `${project.briefName ?? 'Written here'} · ${brief.length.toLocaleString('en-IN')} chars`
+                  : emptyHint ?? 'Brand, product facts, tone'}
+            </span>
+          </span>
+        </button>
+        <button type="button" onClick={() => setEditorOpen(true)} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-white/75 hover:bg-white/8">
+          <Pencil className="h-3 w-3" /> {brief.trim() ? 'Edit' : 'Add'}
+        </button>
+        {more}
+        {dialogs}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
@@ -127,7 +234,7 @@ export function GuidelinesEditor({ emptyHint }: { emptyHint?: string } = {}) {
           </>
         ) : (
           <span className="block py-3 text-xs leading-relaxed text-white/35">
-            {emptyHint ?? "Upload a .md file or write your guidelines: brand, product facts, what to always or never show. They go with every image and into Claude's prompts."}
+            {emptyHint ?? 'Upload a .md file or write your guidelines: brand, product facts, what to always or never show. Every image and prompt follows them.'}
           </span>
         )}
       </button>
@@ -160,54 +267,7 @@ export function GuidelinesEditor({ emptyHint }: { emptyHint?: string } = {}) {
           </PopoverClose>
         </Popover>
       </div>
-      {fileInput}
-
-      <Dialog.Root open={editorOpen} onOpenChange={setEditorOpen}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-[80] bg-black/75 backdrop-blur-sm" />
-          <Dialog.Content className="fixed inset-3 z-[81] flex flex-col rounded-3xl border border-white/12 bg-[#121216] text-white shadow-[0_30px_120px_rgba(0,0,0,0.6)] outline-none sm:inset-8">
-            <div className="flex flex-wrap items-center gap-3 border-b border-white/8 px-5 py-3">
-              <Dialog.Title className="flex items-center gap-2 text-base font-medium"><BookOpen className="h-4 w-4 text-[#fff05a]" /> Guidelines</Dialog.Title>
-              <Dialog.Description className="text-xs text-white/45">Markdown · sent with every image and to Claude when it writes prompts</Dialog.Description>
-              <span className="ml-auto text-[11px] text-white/40">
-                {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : ''} · {brief.length.toLocaleString('en-IN')} / {MAX_BRIEF_CHARS.toLocaleString('en-IN')}
-              </span>
-              <button type="button" onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1.5 rounded-full border border-white/12 px-3 py-1.5 text-xs text-white/80 hover:bg-white/8"><Upload className="h-3.5 w-3.5" /> Upload .md</button>
-              <button type="button" disabled={!brief.trim()} onClick={download} className="inline-flex items-center gap-1.5 rounded-full border border-white/12 px-3 py-1.5 text-xs text-white/80 hover:bg-white/8 disabled:opacity-40"><Download className="h-3.5 w-3.5" /> Download</button>
-              <Dialog.Close className="rounded-full p-1.5 text-white/50 hover:bg-white/8 hover:text-white" aria-label="Close"><X className="h-4 w-4" /></Dialog.Close>
-            </div>
-            <div className="grid min-h-0 flex-1 md:grid-cols-2">
-              <textarea
-                value={brief}
-                onChange={(event) => save({ brief: event.target.value })}
-                maxLength={MAX_BRIEF_CHARS}
-                spellCheck
-                placeholder={'# Brand\nWho you are, tone, audience.\n\n## Product\nExact facts: name, colours, what must never change.\n\n## Always\n- One hero product per image\n\n## Never\n- Competitor logos'}
-                className="min-h-0 resize-none border-b border-white/8 bg-transparent p-5 font-mono text-[13px] leading-relaxed text-white outline-none placeholder:text-white/25 md:border-b-0 md:border-r"
-              />
-              <div className={cx('min-h-0 overflow-y-auto p-5', !brief.trim() && 'flex items-center justify-center')}>
-                {brief.trim() ? <Markdown>{brief}</Markdown> : <p className="text-sm text-white/30">The preview shows here.</p>}
-              </div>
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
-
-      <LibraryPicker
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
-        kind="document"
-        title="Load guidelines from your Library"
-        preview={preview}
-        multiple={false}
-        confirmLabel={() => 'Use these guidelines'}
-        onPick={(items, _role, content) => {
-          if (content === null) return;
-          if (brief.trim() && !window.confirm('Replace the current guidelines?')) return;
-          save({ brief: content, briefName: items[0]?.name ?? null }, true);
-          toast.success('Guidelines loaded', TOAST);
-        }}
-      />
+      {dialogs}
     </div>
   );
 }

@@ -165,7 +165,9 @@ export async function submitFaceSafeVideoJob(options: VideoJobOptions, refusedMo
   const refused = refusedModel ? seedanceSpec(refusedModel).name : 'Seedance 2.x';
   const faceModel = seedanceFaceModel();
   const faceSpec = faceModel ? seedanceSpec(faceModel) : null;
-  if (options.needsAudio && !faceSpec?.audio && isVideoEngineConfigured('veo')) {
+  // Veo renders only 9:16 and 16:9, so a square or 3:4 clip stays on Seedance (silent).
+  const veoShape = !options.aspectRatio || options.aspectRatio === '9:16' || options.aspectRatio === '16:9';
+  if (options.needsAudio && !faceSpec?.audio && veoShape && isVideoEngineConfigured('veo')) {
     const job = await submitVideoJob({ ...options, engine: 'veo', model: undefined, seed: undefined, fromDraftTaskId: undefined });
     return { ...job, notice: `${refused} does not accept a frame with a real person's face, and this clip has a spoken line, so it was rendered with Veo.${job.notice ? ` ${job.notice}` : ''}` };
   }

@@ -1,6 +1,7 @@
 'use client';
 
 import { getAuthenticatedHeaders } from '@/lib/supabase/auth';
+import { readNdjson } from '@/lib/ndjson';
 import type { FinalQuality } from '@/lib/videoModels';
 import { readVideoInfo, type VideoHistoryPage, type VideoInfo } from './shared';
 
@@ -65,11 +66,56 @@ export const videoApi = {
     (await call<{ product?: ProductCapture }>('/api/product-images', { method: 'POST', body: JSON.stringify({ url }), timeoutMs: 45_000 })).product ?? null,
 
   /** Approves a reviewed video: its video credits are charged now and the render starts. */
-  approve: async (approvalId: string, edits: { prompt: string; negativePrompt?: string; frames: string[] }) =>
+  approve: async (approvalId: string, edits: { prompt: string; negativePrompt?: string; frames: string[]; durationSeconds?: number }) =>
     started(await call<Record<string, unknown>>('/api/video/render', { method: 'POST', body: JSON.stringify({ approvalId, ...edits }) })),
 
   cancel: (approvalId: string) =>
     call<{ cancelled: boolean }>('/api/video/render', { method: 'POST', body: JSON.stringify({ approvalId, cancel: true }) }),
+
+  /** A video that didn't render comes back for approval as a new one (no music after a music-check stop). */
+  again: (videoId: string) =>
+    call<{ reviewId: string; review: unknown }>('/api/video/again', { method: 'POST', body: JSON.stringify({ videoId }) }),
+
+  /** Rewrites the prompt from a short instruction (nothing renders). */
+  /**
+   * Rewrites the prompt around a short idea, at the video's length (or another one the idea
+   * asks for) and with the project's guidelines; `onText` gets the new prompt while it is written.
+   */
+  rewritePrompt: async (
+    request: { prompt: string; instruction: string; images: number; seconds: number; model: string; projectId?: string },
+    onText?: (text: string, options: { reset: boolean }) => void,
+  ) => {
+    const headers = await getAuthenticatedHeaders({ 'Content-Type': 'application/json' });
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 90_000);
+    try {
+      const response = await fetch('/api/video/rewrite-prompt', { method: 'POST', headers, body: JSON.stringify(request), signal: controller.signal });
+      if (!response.ok || !response.body) {
+        const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+        throw new VideoApiError(response.status, typeof body.error === 'string' ? body.error : `Request failed (${response.status})`);
+      }
+      let result: { prompt: string; summary: string; seconds: number; credits: number } | null = null;
+      await readNdjson(response.body, (event) => {
+        if (typeof event.error === 'string') throw new VideoApiError(Number(event.status) || 500, event.error);
+        if (event.done === true && typeof event.prompt === 'string') {
+          result = { prompt: event.prompt, summary: typeof event.summary === 'string' ? event.summary : '', seconds: Number(event.seconds) || request.seconds, credits: Number(event.credits) || 0 };
+        } else if (typeof event.t === 'string') {
+          onText?.(event.t, { reset: event.reset === true });
+        }
+      });
+      if (!result) throw new VideoApiError(502, 'The rewrite stopped before it finished. Try again.');
+      return result as { prompt: string; summary: string; seconds: number; credits: number };
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') throw new VideoApiError(408, 'That took too long. Try again.');
+      throw error;
+    } finally {
+      window.clearTimeout(timer);
+    }
+  },
+
+  /** A new draft of a take with the user's changes (prompt and images), as another take of the same video. */
+  redraft: async (operationId: string, edits: { prompt: string; negativePrompt?: string; frames: string[]; durationSeconds?: number }) =>
+    started(await call<Record<string, unknown>>('/api/video/redraft', { method: 'POST', body: JSON.stringify({ operationId, ...edits }) })),
 
   /** Re-renders a take (usually a draft) at a higher quality; only the new render is charged. */
   upgrade: async (operationId: string, quality: FinalQuality) =>

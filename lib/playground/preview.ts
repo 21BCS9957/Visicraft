@@ -144,15 +144,63 @@ export async function simulateGenerate(id: string): Promise<{ status: number; bo
 }
 
 /** Dev preview Library: a few images and one guideline document. */
-export function previewLibrary(kind: 'image' | 'document'): import('./types').LibraryItem[] {
+const PREVIEW_ANALYSIS: import('./types').LibraryVideoAnalysis = {
+  format: 'Creator UGC review',
+  hook: 'A close-up of the product in hand before a word is said',
+  style: 'ugc',
+  audio: 'Voice-over in Hinglish, light room tone, no music',
+  brief: 'Handheld phone footage at arm\'s length. The product fills the frame in the first second, then the creator talks to camera while using it; quick cuts every 2-3 seconds and a calm hero shot at the end.',
+  sequence: [
+    { t: '0-2s', shot: 'Extreme close-up of the product in hand, label to camera', camera: 'handheld push-in', purpose: 'hook' },
+    { t: '2-5s', shot: 'Creator holds it up beside her face and starts talking', camera: 'handheld', purpose: 'problem' },
+    { t: '5-9s', shot: 'Using the product at a bathroom counter', camera: 'cut, static', text: 'Day 1', purpose: 'proof' },
+    { t: '9-12s', shot: 'The product on the counter, soft daylight', camera: 'slow push-in', purpose: 'CTA' },
+  ],
+  analyzedAt: new Date().toISOString(),
+};
+
+/** Sample folders for the Library preview (?previewPlayground=1). */
+export function previewLibraryFolders(kind: import('./types').LibraryKind): import('./types').LibraryFolder[] {
+  const now = new Date().toISOString();
+  if (kind === 'video') {
+    return [
+      { id: 'folder-video-1', kind, name: 'Reference videos', count: 2, createdAt: now },
+      { id: 'folder-video-2', kind, name: 'Diwali 2026', count: 1, createdAt: now },
+    ];
+  }
+  if (kind === 'image') return [{ id: 'folder-image-1', kind, name: 'Brew Sage packshots', count: 2, createdAt: now }];
+  return [];
+}
+
+export function previewLibrary(kind: import('./types').LibraryKind): import('./types').LibraryItem[] {
   const now = Date.now();
+  const empty = { folderId: null, posterUrl: null, durationSeconds: null, analysis: null };
   if (kind === 'document') {
     const content = '# Brew Sage brand guidelines\n\n## Voice\nWarm, calm, premium. Never loud.\n\n## Photography\n- One hero product per image\n- Warm diya light for festive work\n- Keep the logo and the CAFFEINE FREE ribbon exact';
-    return [{ id: 'lib-doc-1', kind: 'document', name: 'brew-sage-guidelines.md', url: null, preview: content.slice(0, 400), length: content.length, width: null, height: null, mimeType: 'text/markdown', sizeBytes: content.length, source: 'upload', createdAt: new Date(now - 86_400_000).toISOString() }];
+    return [{ id: 'lib-doc-1', kind: 'document', name: 'brew-sage-guidelines.md', url: null, preview: content.slice(0, 400), length: content.length, width: null, height: null, mimeType: 'text/markdown', sizeBytes: content.length, source: 'upload', createdAt: new Date(now - 86_400_000).toISOString(), ...empty }];
+  }
+  if (kind === 'video') {
+    return [
+      { name: 'Serum UGC review', folderId: 'folder-video-1', analysis: PREVIEW_ANALYSIS, duration: 12.4, clip: '/showcase-videos/creator-ads/01.mp4' },
+      { name: 'Unboxing in daylight', folderId: 'folder-video-1', analysis: null, duration: 9.8, clip: '/showcase-videos/creator-ads/02.mp4' },
+      { name: 'Festive film', folderId: 'folder-video-2', analysis: null, duration: 15, clip: '/showcase-videos/creator-ads/03.mp4' },
+    ].map((sample, index) => ({
+      id: `lib-video-${index}`, kind: 'video' as const, name: sample.name, url: sample.clip,
+      preview: null, length: null, width: 1080, height: 1920, mimeType: 'video/mp4', sizeBytes: 8_400_000, source: 'upload' as const,
+      createdAt: new Date(now - index * 3_600_000).toISOString(),
+      folderId: sample.folderId, posterUrl: null, durationSeconds: sample.duration, analysis: sample.analysis,
+    }));
   }
   return SAMPLES.map((url, index) => ({
     id: `lib-img-${index}`, kind: 'image' as const, name: ['Box front', 'Moody Diwali style', 'Box side'][index] ?? 'Image', url,
     preview: null, length: null, width: 1280, height: 720, mimeType: 'image/png', sizeBytes: 250_000, source: 'upload' as const,
     createdAt: new Date(now - index * 3_600_000).toISOString(),
+    ...empty,
+    folderId: index < 2 ? 'folder-image-1' : null,
   }));
+}
+
+/** What Gemini "sees" in a preview video (no API call). */
+export function previewVideoAnalysis(): import('./types').LibraryVideoAnalysis {
+  return { ...PREVIEW_ANALYSIS, analyzedAt: new Date().toISOString() };
 }

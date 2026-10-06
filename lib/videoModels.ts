@@ -140,19 +140,38 @@ export function seedanceSpec(id: string): SeedanceModelSpec {
   return { ...base, id, name: id };
 }
 
-/** Output size of a vertical 9:16 clip by family and resolution (16:9 is the same, turned). */
-const SIZE_9_16: Record<SeedanceModelSpec['family'], Record<string, [number, number]>> = {
-  '1.0': { '480p': [480, 864], '720p': [704, 1248], '1080p': [1088, 1920] },
-  '2.0': { '480p': [496, 864], '720p': [720, 1280], '1080p': [1080, 1920], '4k': [2160, 3840] },
-  '2.5': { '480p': [480, 854], '720p': [720, 1280], '1080p': [1080, 1920] },
+/**
+ * Output size (width x height) of the landscape ratios by family and resolution, from the
+ * ModelArk API reference (September 2026); the portrait ones are the same, turned (9:16 is
+ * 16:9 turned, 3:4 is 4:3).
+ */
+const LANDSCAPE_SIZES: Record<SeedanceModelSpec['family'], Record<string, Record<'16:9' | '4:3' | '1:1' | '21:9', [number, number]>>> = {
+  '1.0': {
+    '480p': { '16:9': [864, 480], '4:3': [736, 544], '1:1': [640, 640], '21:9': [960, 416] },
+    '720p': { '16:9': [1248, 704], '4:3': [1120, 832], '1:1': [960, 960], '21:9': [1504, 640] },
+    '1080p': { '16:9': [1920, 1088], '4:3': [1664, 1248], '1:1': [1440, 1440], '21:9': [2176, 928] },
+  },
+  '2.0': {
+    '480p': { '16:9': [864, 496], '4:3': [752, 560], '1:1': [640, 640], '21:9': [992, 432] },
+    '720p': { '16:9': [1280, 720], '4:3': [1112, 834], '1:1': [960, 960], '21:9': [1470, 630] },
+    '1080p': { '16:9': [1920, 1080], '4:3': [1664, 1248], '1:1': [1440, 1440], '21:9': [2206, 946] },
+    '4k': { '16:9': [3840, 2160], '4:3': [3326, 2494], '1:1': [2880, 2880], '21:9': [4398, 1886] },
+  },
+  '2.5': {
+    '480p': { '16:9': [854, 480], '4:3': [752, 560], '1:1': [640, 640], '21:9': [992, 432] },
+    '720p': { '16:9': [1280, 720], '4:3': [1112, 834], '1:1': [960, 960], '21:9': [1470, 630] },
+    '1080p': { '16:9': [1920, 1080], '4:3': [1664, 1248], '1:1': [1440, 1440], '21:9': [2206, 946] },
+  },
 };
+const TURNED: Record<string, '16:9' | '4:3'> = { '9:16': '16:9', '3:4': '4:3' };
 
 export function seedanceFrameSize(spec: SeedanceModelSpec, resolution: string, aspectRatio: string): { width: number; height: number } | null {
-  const size = SIZE_9_16[spec.family][resolution];
+  const sizes = LANDSCAPE_SIZES[spec.family][resolution];
+  if (!sizes) return null;
+  const turned = TURNED[aspectRatio];
+  const size = turned ? sizes[turned] : sizes[aspectRatio as keyof typeof sizes];
   if (!size) return null;
-  if (aspectRatio === '9:16') return { width: size[0], height: size[1] };
-  if (aspectRatio === '16:9') return { width: size[1], height: size[0] };
-  return null;
+  return turned ? { width: size[1], height: size[0] } : { width: size[0], height: size[1] };
 }
 
 /** List price per second: tokens = width x height x 24 fps / 1024 per second of output. */
@@ -162,6 +181,49 @@ export function seedanceUsdPerSecond(id: string, resolution: string, aspectRatio
   const price = spec.usdPerMillionTokens[resolution] ?? Object.values(spec.usdPerMillionTokens).at(-1) ?? 0;
   if (!size) return 0;
   return ((size.width * size.height * 24) / 1024 / 1_000_000) * price;
+}
+
+/**
+ * The shapes a video can be made in. Seedance renders all of them (plus 4:3 and 21:9); Veo
+ * only 9:16 and 16:9; neither renders 4:5, so 3:4 is the feed's portrait shape.
+ */
+export type VideoAspect = '9:16' | '16:9' | '1:1' | '3:4';
+export const DEFAULT_VIDEO_ASPECT: VideoAspect = '9:16';
+
+export const VIDEO_ASPECTS: Array<{
+  id: VideoAspect;
+  label: string;
+  /** Where it runs, for the picker. */
+  use: string;
+  /** The word the prompts use ("10-second horizontal …"). */
+  orientation: 'vertical' | 'horizontal' | 'square' | 'portrait';
+  /** Where the ad runs, for the prompt writer. */
+  placement: string;
+}> = [
+  { id: '9:16', label: 'Reels', use: 'Reels, Stories, Shorts', orientation: 'vertical', placement: 'Meta Reels and Stories' },
+  { id: '16:9', label: 'Landscape', use: 'YouTube, websites', orientation: 'horizontal', placement: 'YouTube, websites and in-stream video' },
+  { id: '1:1', label: 'Square', use: 'Feed', orientation: 'square', placement: 'the Facebook and Instagram feed' },
+  { id: '3:4', label: 'Portrait', use: 'Feed (nearest to 4:5)', orientation: 'portrait', placement: 'the Facebook and Instagram feed' },
+];
+
+export function isVideoAspect(value: unknown): value is VideoAspect {
+  return typeof value === 'string' && VIDEO_ASPECTS.some((aspect) => aspect.id === value);
+}
+
+/** A shape's details; anything unknown is 9:16. */
+export function videoAspectInfo(ratio?: string): (typeof VIDEO_ASPECTS)[number] {
+  return VIDEO_ASPECTS.find((aspect) => aspect.id === ratio) ?? VIDEO_ASPECTS[0];
+}
+
+/** "16 / 9", for a CSS aspect-ratio. */
+export function cssAspect(ratio?: string): string {
+  return videoAspectInfo(ratio).id.replace(':', ' / ');
+}
+
+/** True for shapes wider than tall or square, which play full width. */
+export function isWideAspect(ratio?: string): boolean {
+  const id = videoAspectInfo(ratio).id;
+  return id === '16:9' || id === '1:1';
 }
 
 /** A clip's quality: a cheap draft to test with, or a final resolution. */
@@ -178,6 +240,8 @@ export interface VideoModelOptions {
   defaultDuration: number;
   /** Final qualities the model renders. */
   qualities: FinalQuality[];
+  /** Shapes the model renders. */
+  aspectRatios: VideoAspect[];
   /**
    * How a draft is made: its resolution, and whether the final reuses the draft's own take
    * (Seedance 2.5 draft mode) or re-renders the same frame and prompt.
@@ -191,7 +255,7 @@ export function videoModelOptions(model: string): VideoModelOptions {
   if (videoEngineOf(model) !== 'seedance') {
     // Veo 3.1 renders 4, 6 or 8 seconds; its drafts use the Fast tier at 720p. Standard Veo
     // charges the same for 720p as for 1080p, so 720p is not offered as a final quality.
-    return { engine: 'veo', durations: [4, 6, 8], defaultDuration: 8, qualities: ['1080p', '4k'], draft: { resolution: '720p', native: false } };
+    return { engine: 'veo', durations: [4, 6, 8], defaultDuration: 8, qualities: ['1080p', '4k'], aspectRatios: ['9:16', '16:9'], draft: { resolution: '720p', native: false } };
   }
   const spec = seedanceSpec(model);
   return {
@@ -199,8 +263,15 @@ export function videoModelOptions(model: string): VideoModelOptions {
     durations: SEEDANCE_DURATIONS.filter((s) => s >= spec.minSeconds && s <= spec.maxSeconds),
     defaultDuration: 8,
     qualities: spec.resolutions.filter((r): r is FinalQuality => (FINAL_ORDER as string[]).includes(r)),
+    aspectRatios: VIDEO_ASPECTS.map((aspect) => aspect.id),
     draft: { resolution: '480p', native: spec.family === '2.5' },
   };
+}
+
+/** A shape the model renders: the one asked for, else 9:16. */
+export function snapVideoAspect(model: string, ratio?: string): VideoAspect {
+  const { aspectRatios } = videoModelOptions(model);
+  return isVideoAspect(ratio) && aspectRatios.includes(ratio) ? ratio : DEFAULT_VIDEO_ASPECT;
 }
 
 /** A length the model renders, nearest to the one asked for. */

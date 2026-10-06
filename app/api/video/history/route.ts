@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { apiErrorResponse, withUser } from '@/lib/server/playground/http';
-import { readVideoReview, type StudioVideo, type VideoHistoryPage, type VideoTake } from '@/lib/video/shared';
+import { isMusicFailure, readAspect, readVideoReview, type StudioVideo, type VideoHistoryPage, type VideoTake } from '@/lib/video/shared';
 import type { VideoQuality } from '@/lib/videoModels';
 
 /**
@@ -38,6 +38,15 @@ function operationIdsOf(meta: Record<string, unknown>): string[] {
   return single && !list.includes(single) ? [...list, single] : list;
 }
 
+/** Why a take failed, in plain words (a music-check stop is explained, whatever its wording). */
+function failureText(reason: string | null, credits: number): string | null {
+  if (!reason) return null;
+  if (isMusicFailure(reason)) {
+    return `Seedance’s music check stopped this video: the music it generated sounded too close to an existing song. The video itself was fine. ${credits ? `Your ${credits} video credits were refunded. ` : ''}Tap “Try again”: the sound comes out different every time.`;
+  }
+  return reason;
+}
+
 /** The take a usage row rendered, if it started one. */
 function takeOf(row: Row, meta: Record<string, unknown>, review: Record<string, unknown> | null): VideoTake | null {
   const ids = operationIdsOf(meta);
@@ -61,10 +70,17 @@ function takeOf(row: Row, meta: Record<string, unknown>, review: Record<string, 
     model: text(meta, 'videoModel') ?? row.model ?? (typeof review?.model === 'string' ? review.model : 'veo'),
     quality: (text(meta, 'quality') ?? (typeof review?.quality === 'string' ? review.quality : '1080p')) as VideoQuality,
     durationSeconds: Number(meta.durationSeconds) || Number(review?.durationSeconds) || 8,
+    aspectRatio: readAspect(text(meta, 'aspectRatio') ?? review?.aspectRatio),
     nativeDraft: meta.nativeDraft === true,
     credits: Number(row.credit_cost) || 0,
-    error: text(meta, 'refundReason'),
+    error: failureText(text(meta, 'refundReason'), Number(row.credit_cost) || 0),
     createdAt: startedAt,
+    prompt: text(meta, 'prompt'),
+    frames: Array.isArray(meta.referenceImageUrls) && meta.referenceImageUrls.length
+      ? (meta.referenceImageUrls as unknown[]).filter((url): url is string => typeof url === 'string')
+      : [text(meta, 'heroUrl')].filter((url): url is string => Boolean(url)),
+    edited: meta.redraft === true,
+    from: text(meta, 'upgradedFrom'),
   };
 }
 
@@ -87,10 +103,19 @@ function videoOf(row: Row): StudioVideo {
       model: text(meta, 'requestedVideoModel') ?? text(meta, 'videoModel') ?? (typeof review?.model === 'string' ? review.model : row.model ?? 'veo-3.1-generate-001'),
       quality: (text(meta, 'quality') ?? (typeof review?.quality === 'string' ? review.quality : '1080p')) as VideoQuality,
       durationSeconds: Number(meta.durationSeconds) || Number(review?.durationSeconds) || 8,
+      aspectRatio: readAspect(text(meta, 'aspectRatio') ?? review?.aspectRatio),
       style: text(meta, 'videoStyle') ?? 'any',
     },
     takes: take ? [take] : [],
+    retryable: meta.mode === 'video_review' && !pending && Boolean(review) && (meta.refunded === true || meta.cancelled === true),
+    plan: planOf(row, review),
   };
+}
+
+/** How the video was planned (reference images or a first frame), for editing it into a new draft. */
+function planOf(row: Row, review: Record<string, unknown> | null): StudioVideo['plan'] {
+  const read = review ? readVideoReview(row.id, review) : null;
+  return read ? { mode: read.mode, frames: read.frames } : null;
 }
 
 export async function GET(request: NextRequest) {

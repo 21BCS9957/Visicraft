@@ -23,7 +23,7 @@ const DirectRequest = z.object({
 
 /**
  * Home without a product URL: the prompt (and any uploaded images, used as product
- * references) straight to Nano Banana Pro, 1-4 images, no scraping or research.
+ * references) straight to Nano Banana Pro, 1-4 images, with no ad planning.
  * Charged per image up front; images that fail are refunded.
  */
 export async function POST(request: NextRequest) {

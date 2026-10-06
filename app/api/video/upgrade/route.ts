@@ -28,7 +28,7 @@ export const maxDuration = 300;
 const FINAL: FinalQuality[] = ['720p', '1080p', '4k'];
 
 /** What the new clip carries over from the source, so it can be retried, refunded or upgraded again. */
-const CARRIED = ['heroUrl', 'referenceImageUrls', 'promptIsFinal', 'prompt', 'negativePrompt', 'aspectRatio', 'cameraFixed', 'needsAudio', 'realFace', 'lastFramePinned', 'sensitive', 'videoStyle', 'madeStyle', 'exactGarment', 'modelledOn', 'metaAdResearch'];
+const CARRIED = ['heroUrl', 'referenceImageUrls', 'promptIsFinal', 'prompt', 'negativePrompt', 'aspectRatio', 'cameraFixed', 'needsAudio', 'realFace', 'lastFramePinned', 'sensitive', 'videoStyle', 'madeStyle', 'exactGarment', 'modelledOn', 'referenceVideoIds'];
 
 export async function POST(request: NextRequest) {
   let charged: { userId: string; credits: number } | null = null;
@@ -70,8 +70,9 @@ export async function POST(request: NextRequest) {
     }
 
     const durationSeconds = Number(meta.durationSeconds) || 8;
+    const aspectRatio = text('aspectRatio') ?? '9:16';
     // Priced by the model the upgrade renders with (a Veo draft's upgrade runs on the full Veo).
-    const credits = videoCredits(upgradeModelFor(model), quality, durationSeconds);
+    const credits = videoCredits(upgradeModelFor(model), quality, durationSeconds, aspectRatio);
     if (!(await deductCreditsForUser(user.id, credits))) {
       return NextResponse.json({ error: `Insufficient credits. Need ${credits} credits.` }, { status: 402 });
     }
@@ -85,7 +86,7 @@ export async function POST(request: NextRequest) {
       lastFrameUrl: meta.lastFramePinned === true ? heroUrl : undefined,
       prompt,
       negativePrompt: text('negativePrompt'),
-      aspectRatio: text('aspectRatio') ?? '9:16',
+      aspectRatio,
       duration: durationSeconds,
       quality,
       cameraFixed: meta.cameraFixed === true,
@@ -102,7 +103,7 @@ export async function POST(request: NextRequest) {
 
     // Rendered for less than was charged (a fallback model): refund the difference.
     let creditsKept = credits;
-    const actualCredits = videoCredits(job.model, job.quality, job.durationSeconds);
+    const actualCredits = videoCredits(job.model, job.quality, job.durationSeconds, aspectRatio);
     if (actualCredits < credits) {
       await refundCreditsForUser(user.id, credits - actualCredits);
       creditsKept = actualCredits;
@@ -115,7 +116,7 @@ export async function POST(request: NextRequest) {
       model: job.model,
       feature: 'video_generation',
       videoSeconds: job.durationSeconds,
-      estimatedCostUsd: Number(videoCostUsd(job.model, job.quality, job.durationSeconds).toFixed(4)),
+      estimatedCostUsd: Number(videoCostUsd(job.model, job.quality, job.durationSeconds, aspectRatio).toFixed(4)),
       creditCost: creditsKept,
       metadata: {
         ...carried,

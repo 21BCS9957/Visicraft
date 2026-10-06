@@ -5,14 +5,18 @@ import { parseVideoStyle } from '@/lib/videoStyles';
 import {
   DEFAULT_VIDEO_QUALITY,
   normalizeVideoQuality,
+  snapVideoAspect,
   snapVideoDuration,
+  VIDEO_ASPECTS,
   videoCredits,
   videoEngineOf,
   videoModelOptions,
   videoQualityLabel,
+  type VideoAspect,
   type VideoQuality,
 } from '@/lib/videoModels';
-import { DEFAULT_VIDEO_MODEL, VIDEO_MODELS, videoModelName } from '@/lib/video/shared';
+import { DEFAULT_VIDEO_MODEL, VIDEO_MODELS } from '@/lib/video/shared';
+import { MAX_REFERENCE_VIDEOS } from '@/lib/playground/libraryVideo';
 import type { VideoProjectSettings } from '@/lib/playground/types';
 import { cx, Popover, PopoverClose } from '@/components/playground/ui';
 import type { VideoChoices } from './NewVideoPanel';
@@ -30,8 +34,9 @@ export function choicesFrom(saved?: Partial<VideoProjectSettings> | null): Video
     model,
     duration: snapVideoDuration(model, Number(saved?.duration) || 8),
     quality: normalizeVideoQuality(model, saved?.quality ?? DEFAULT_VIDEO_QUALITY),
+    aspectRatio: snapVideoAspect(model, saved?.aspectRatio),
     style: parseVideoStyle(saved?.style) ?? 'any',
-    research: typeof saved?.research === 'boolean' ? saved.research : null,
+    referenceVideoIds: Array.isArray(saved?.referenceVideoIds) ? saved.referenceVideoIds.filter((id): id is string => typeof id === 'string').slice(0, MAX_REFERENCE_VIDEOS) : [],
     notes: typeof saved?.notes === 'string' ? saved.notes : '',
   };
 }
@@ -81,14 +86,69 @@ export function EnginePicker({ model, onModel, disabled }: { model: string; onMo
   );
 }
 
+/** A small outline of a shape, as the shape chips show it. */
+export function ShapeIcon({ ratio, className }: { ratio: VideoAspect; className?: string }) {
+  const [w, h] = ratio.split(':').map(Number);
+  const scale = 14 / Math.max(w, h);
+  return <span aria-hidden className={cx('inline-block shrink-0 rounded-[2px] border border-current', className)} style={{ width: Math.round(w * scale), height: Math.round(h * scale) }} />;
+}
+
+/**
+ * The video's shape, limited to what the engine renders (Veo: 9:16 and 16:9). The frames and
+ * the prompt are made for it, so it is picked before planning.
+ */
+export function ShapePicker({ model, value, onChange, disabled }: {
+  model: string;
+  value: VideoAspect;
+  onChange: (ratio: VideoAspect) => void;
+  disabled?: boolean;
+}) {
+  const allowed = videoModelOptions(model).aspectRatios;
+  const shapes = VIDEO_ASPECTS.filter((shape) => allowed.includes(shape.id));
+  return (
+    <div>
+      <p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.16em] text-white/40">Shape</p>
+      <div role="radiogroup" aria-label="Video shape" className="grid grid-cols-2 gap-1.5">
+        {shapes.map((shape) => {
+          const selected = shape.id === value;
+          return (
+            <button
+              key={shape.id}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              disabled={disabled}
+              onClick={() => onChange(shape.id)}
+              className={cx(
+                'flex items-center gap-2 rounded-xl border !px-2.5 !py-1.5 text-left !text-xs transition-colors disabled:opacity-50',
+                selected ? 'border-[#fff05a]/50 bg-[#fff05a]/10 text-[#fff05a]' : 'border-white/10 bg-black/25 text-white/70 hover:border-white/25 hover:text-white'
+              )}
+            >
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center"><ShapeIcon ratio={shape.id} /></span>
+              <span className="min-w-0">
+                <span className="block">{shape.id} · {shape.label}</span>
+                <span className="block truncate text-[10px] text-white/45">{shape.use}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {allowed.length < VIDEO_ASPECTS.length && (
+        <p className="mt-1.5 text-[11px] leading-snug text-white/40">Square and 3:4 need Seedance.</p>
+      )}
+    </div>
+  );
+}
+
 /**
  * Length and quality, limited to what the engine renders, each quality with its price. A draft
  * is a cheap test render that can be upgraded to full quality later.
  */
-export function LengthQualityPicker({ model, duration, quality, onDuration, onQuality, disabled }: {
+export function LengthQualityPicker({ model, duration, quality, aspectRatio, onDuration, onQuality, disabled }: {
   model: string;
   duration: number;
   quality: VideoQuality;
+  aspectRatio?: VideoAspect;
   onDuration: (seconds: number) => void;
   onQuality: (quality: VideoQuality) => void;
   disabled?: boolean;
@@ -101,8 +161,8 @@ export function LengthQualityPicker({ model, duration, quality, onDuration, onQu
   );
   const hint = quality === 'draft'
     ? options.draft.native
-      ? `A quick ${options.draft.resolution} test. If you like it, upgrade it: ${videoModelName(model)} keeps this exact take in 1080p.`
-      : `A quick ${options.draft.resolution} test${options.engine === 'veo' ? ' on Veo Fast' : ''}. If you like it, upgrade it: the frame and prompt are reused, so you only pay for the final render.`
+      ? `A quick ${options.draft.resolution} test. Like it? Upgrade the same take to 1080p.`
+      : `A quick ${options.draft.resolution} test. Like it? Upgrade it and pay only for the final render.`
     : options.engine === 'veo' && duration !== 8
       ? 'Veo holds a garment perfectly still only at 8 s.'
       : quality === '4k'
@@ -126,7 +186,7 @@ export function LengthQualityPicker({ model, duration, quality, onDuration, onQu
           {qualities.map((option) => (
             <button key={option} type="button" disabled={disabled} onClick={() => onQuality(option)} className={cx(chip(option === quality), 'text-left')}>
               <span className="block">{option === 'draft' ? `Draft · ${options.draft.resolution}` : videoQualityLabel(option)}</span>
-              <span className="block text-[10px] text-white/45">{videoCredits(model, option, duration)} credits</span>
+              <span className="block text-[10px] text-white/45">{videoCredits(model, option, duration, aspectRatio)} credits</span>
             </button>
           ))}
         </div>

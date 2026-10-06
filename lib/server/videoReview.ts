@@ -12,6 +12,20 @@ import type { VideoEngine, VideoQuality } from '@/lib/videoModels';
 export interface VideoReviewFrame {
   url: string;
   label: string;
+  /**
+   * What it is, for the approval card: one of the user's photos, a close-up cut from one, a
+   * scene image made for a shot, the hero (first or opening) frame, or the mannequin edit.
+   */
+  kind?: 'photo' | 'crop' | 'scene' | 'frame' | 'mannequin';
+}
+
+/** The plan in plain words, for the approval card (the prompt itself may be edited). */
+export interface VideoReviewOutline {
+  hook?: string;
+  cast?: string;
+  setting?: string;
+  shots: Array<{ t: string; action: string; camera?: string }>;
+  script?: string;
 }
 
 export interface VideoReview {
@@ -36,6 +50,18 @@ export interface VideoReview {
   needsAudio: boolean;
   /** Who wrote the prompt, shown on the approval card ("Written by Claude Opus 5.5 from …"). */
   writtenBy?: string;
+  /** The reference videos the shots were copied from; never sent to the video model. */
+  referenceVideos?: VideoReviewReference[];
+  outline?: VideoReviewOutline;
+}
+
+export interface VideoReviewReference {
+  id: string;
+  name: string;
+  posterUrl: string | null;
+  /** The video itself, so the card can play it. */
+  url?: string;
+  shots?: number;
 }
 
 export async function saveVideoReview(user: User, review: VideoReview, extra: Record<string, unknown>): Promise<string> {

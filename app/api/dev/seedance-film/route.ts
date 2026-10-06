@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { buildSeedanceReferences, type ReferenceImage } from '@/lib/server/referenceImages';
 import { compileSeedanceFilm, writeSeedanceFilm } from '@/lib/server/seedanceFilm';
 import type { ShopifyProductContext } from '@/lib/prompts/shopifyCreative';
-import type { AdDesign } from '@/lib/server/metaAdResearch';
+import type { AdDesign } from '@/lib/server/referenceVideos';
+import type { ReferenceFrame } from '@/lib/server/videoWriter';
 import type { VideoStyle } from '@/lib/videoStyles';
 
 export const maxDuration = 300;
@@ -10,8 +11,9 @@ export const maxDuration = 300;
 /**
  * Development-only: the Seedance 2.x reference film the pipeline would propose for these
  * product photos (people-free references, then Claude Opus 5.5's shot list and the exact
- * prompt), without rendering anything. Pass winningDesigns (as research returns them) to see
- * Claude turn a winner's watched sequence into the film.
+ * prompt), without rendering anything. Pass referenceDesigns (as Gemini watched the reference
+ * videos) and referenceFrames to see Claude turn a reference's sequence into the film, and
+ * sceneImages to let it ask for scene images (they are only listed here, not made).
  */
 export async function POST(request: NextRequest) {
   if (process.env.NODE_ENV !== 'development') {
@@ -22,8 +24,12 @@ export async function POST(request: NextRequest) {
     productContext?: ShopifyProductContext;
     style?: VideoStyle;
     durationSeconds?: number;
+    /** The video's shape (9:16 unless given). */
+    aspectRatio?: string;
     apparel?: boolean;
-    winningDesigns?: AdDesign[];
+    referenceDesigns?: AdDesign[];
+    referenceFrames?: ReferenceFrame[];
+    sceneImages?: boolean;
     adPatterns?: string;
     guidelines?: string;
     userDirection?: string;
@@ -43,9 +49,12 @@ export async function POST(request: NextRequest) {
   const written = await writeSeedanceFilm({
     context: body.productContext,
     durationSeconds,
+    aspectRatio: body.aspectRatio,
     style: body.style ?? 'cinematic',
     productKind: body.apparel ? 'apparel' : 'object',
-    winningDesigns: body.winningDesigns,
+    referenceDesigns: body.referenceDesigns,
+    referenceFrames: body.referenceFrames,
+    allowSceneImages: body.sceneImages === true,
     adPatterns: body.adPatterns,
     guidelines: body.guidelines,
     userDirection: body.userDirection,
@@ -60,6 +69,6 @@ export async function POST(request: NextRequest) {
     writer: written.writer,
     usage: written.usage,
     film: written.film,
-    prompt: compileSeedanceFilm(written.film, { durationSeconds, opening: false, family: '2.5', audio: true, mannequin: body.onMannequin, sensitive: body.sensitive }),
+    prompt: compileSeedanceFilm(written.film, { durationSeconds, aspectRatio: body.aspectRatio, opening: false, family: '2.5', audio: true, mannequin: body.onMannequin, sensitive: body.sensitive }),
   });
 }

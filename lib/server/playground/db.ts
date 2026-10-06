@@ -3,7 +3,10 @@ import 'server-only';
 import { createServiceClient } from '@/lib/supabase/server';
 import { playgroundModel } from '@/lib/playground/models';
 import type {
+  LibraryFolder,
   LibraryItem,
+  LibraryKind,
+  LibraryVideoAnalysis,
   PlaygroundBundle,
   PlaygroundItem,
   PlaygroundProject,
@@ -120,13 +123,61 @@ export function toItem(row: Row): PlaygroundItem {
   };
 }
 
-export const LIBRARY_COLUMNS = 'id, kind, name, url, width, height, mime_type, size_bytes, source, created_at';
+/** Columns from before Library videos and folders (migration 202610060001). */
+export const LEGACY_LIBRARY_COLUMNS = 'id, kind, name, url, width, height, mime_type, size_bytes, source, created_at';
+export const LIBRARY_COLUMNS = `${LEGACY_LIBRARY_COLUMNS}, folder_id, poster_url, duration_seconds, analysis`;
+
+export const LIBRARY_KINDS: LibraryKind[] = ['image', 'document', 'video'];
+
+export function libraryKind(value: unknown): LibraryKind {
+  return LIBRARY_KINDS.includes(value as LibraryKind) ? (value as LibraryKind) : 'image';
+}
+
+/** Library videos and folders (migration 202610060001) aren't set up yet. */
+export function isMissingLibraryVideoSetup(error: { code?: string; message?: string } | null | undefined): boolean {
+  if (!error) return false;
+  const message = error.message ?? '';
+  return (['42703', 'PGRST204', 'PGRST205', '42P01'].includes(error.code ?? '') || /does not exist|could not find/i.test(message))
+    && /folder_id|poster_url|duration_seconds|frames|analysis|playground_library_folders/.test(message);
+}
+
+export const LIBRARY_VIDEO_SETUP_MESSAGE =
+  'Library videos and folders need one more database step. Run supabase/migrations/202610060001_library_videos_folders.sql in the Supabase SQL Editor.';
+
+/** What the Library shows of a video's analysis: its shots and how it is built. */
+function toLibraryAnalysis(value: unknown): LibraryVideoAnalysis | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Row;
+  const design = (record.design && typeof record.design === 'object' ? record.design : {}) as Row;
+  const sequence = Array.isArray(design.sequence)
+    ? (design.sequence as Row[])
+      .filter((beat) => beat && typeof beat.shot === 'string')
+      .map((beat) => ({
+        t: str(beat.t) || '?',
+        shot: str(beat.shot),
+        ...(typeof beat.camera === 'string' && beat.camera ? { camera: beat.camera } : {}),
+        ...(typeof beat.text === 'string' && beat.text ? { text: beat.text } : {}),
+        ...(typeof beat.purpose === 'string' && beat.purpose ? { purpose: beat.purpose } : {}),
+      }))
+    : [];
+  if (!sequence.length) return null;
+  return {
+    format: str(design.format),
+    hook: str(design.hook),
+    style: strOrNull(design.style),
+    audio: strOrNull(design.audio),
+    brief: str(record.brief),
+    sequence,
+    analyzedAt: str(record.analyzedAt),
+  };
+}
 
 export function toLibraryItem(row: Row, content?: string | null): LibraryItem {
   const text = typeof content === 'string' ? content : typeof row.content === 'string' ? row.content : null;
+  const duration = numOrNull(row.duration_seconds);
   return {
     id: str(row.id),
-    kind: row.kind === 'document' ? 'document' : 'image',
+    kind: libraryKind(row.kind),
     name: str(row.name),
     url: strOrNull(row.url),
     preview: text === null ? strOrNull(row.preview) : text.slice(0, 400),
@@ -137,7 +188,36 @@ export function toLibraryItem(row: Row, content?: string | null): LibraryItem {
     sizeBytes: numOrNull(row.size_bytes),
     source: (['upload', 'generated', 'project'].includes(str(row.source)) ? row.source : 'upload') as LibraryItem['source'],
     createdAt: str(row.created_at),
+    folderId: strOrNull(row.folder_id),
+    posterUrl: strOrNull(row.poster_url),
+    durationSeconds: duration !== null && Number.isFinite(duration) && duration > 0 ? duration : null,
+    analysis: toLibraryAnalysis(row.analysis),
   };
+}
+
+/** A folder name as typed, cleaned; throws when it is empty. */
+export function folderName(value: unknown): string {
+  const name = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+  if (!name) throw new ApiError(400, 'Give the folder a name.', 'bad_request');
+  return name;
+}
+
+export function toLibraryFolder(row: Row, count = 0): LibraryFolder {
+  return { id: str(row.id), kind: libraryKind(row.kind), name: str(row.name), count, createdAt: str(row.created_at) };
+}
+
+/** A folder of this user in this Library tab; throws when it isn't theirs. */
+export async function requireLibraryFolder(db: Db, userId: string, folderId: string, kind: LibraryKind): Promise<void> {
+  const { data, error } = await db
+    .from('playground_library_folders')
+    .select('id, kind')
+    .eq('id', folderId)
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (isMissingLibraryVideoSetup(error)) throw new ApiError(409, LIBRARY_VIDEO_SETUP_MESSAGE, 'setup');
+  assertDb(error, 'check the folder');
+  if (!data) throw new ApiError(404, 'That folder was not found.', 'not_found');
+  if ((data as Row).kind !== kind) throw new ApiError(400, 'That folder belongs to another Library tab.', 'bad_request');
 }
 
 export async function getOwnedProject(db: Db, projectId: string, userId: string): Promise<Row> {
@@ -280,6 +360,12 @@ export function isOwnStorageUrl(url: string): boolean {
   return Boolean(object && ['source-images', 'generated-thumbnails'].includes(object.bucket));
 }
 
+/** Videos in our own buckets: uploads, and videos the Video Studio rendered. */
+export function isOwnVideoUrl(url: string): boolean {
+  const object = storageObject(url);
+  return Boolean(object && ['source-video', 'generated-videos'].includes(object.bucket));
+}
+
 /** Deletes stored files (best effort); files still used as a reference are kept. */
 export async function removeStoredFiles(db: Db, urls: Array<string | null | undefined>, keep: Set<string> = new Set()): Promise<void> {
   const byBucket = new Map<string, string[]>();
@@ -295,4 +381,16 @@ export async function removeStoredFiles(db: Db, urls: Array<string | null | unde
       if (error) console.warn(`Playground: could not remove files from ${bucket}:`, error.message);
     }
   }));
+}
+
+/** A project of this user with its guidelines (its Markdown brief); null when it isn't theirs or doesn't exist. */
+export async function loadVideoProject(userId: string, projectId: unknown): Promise<{ id: string; guidelines: string } | null> {
+  if (typeof projectId !== 'string' || !/^[0-9a-f-]{36}$/i.test(projectId)) return null;
+  const { data } = await createServiceClient()
+    .from('playground_projects')
+    .select('id, brief')
+    .eq('id', projectId)
+    .eq('user_id', userId)
+    .maybeSingle();
+  return data ? { id: String(data.id), guidelines: typeof data.brief === 'string' ? data.brief : '' } : null;
 }

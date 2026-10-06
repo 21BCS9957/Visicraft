@@ -10,9 +10,9 @@ import { uploadBufferToBucket } from '@/lib/server/supabaseStorage';
  * empty strips (and, optionally, a new background). Person and garment keep their pixels.
  */
 
-export type FrameFormat = '9:16' | '4:5' | '1:1' | '16:9';
+export type FrameFormat = '9:16' | '3:4' | '4:5' | '1:1' | '16:9';
 
-const RATIOS: Record<FrameFormat, number> = { '9:16': 9 / 16, '4:5': 4 / 5, '1:1': 1, '16:9': 16 / 9 };
+const RATIOS: Record<FrameFormat, number> = { '9:16': 9 / 16, '3:4': 3 / 4, '4:5': 4 / 5, '1:1': 1, '16:9': 16 / 9 };
 
 /** Share of added height that goes above the photo: a little headroom, the rest continues the garment. */
 const HEADROOM_SHARE = 0.35;
@@ -23,13 +23,15 @@ async function regionColour(image: Buffer, region: { left: number; top: number; 
   return { r: data[0], g: data[1], b: data[2] };
 }
 
+/** Formats an edit that keeps the photo's own shape may snap to (3:4 is only a target format). */
+const NATIVE_FORMATS: FrameFormat[] = ['9:16', '4:5', '1:1', '16:9'];
+
 /** The frame format closest to a photo's own shape, for an edit that should not reframe it. */
 export async function closestFormat(photoUrl: string): Promise<FrameFormat> {
   const dataUrl = await imageToBase64(photoUrl);
   const meta = await sharp(Buffer.from(dataUrl.split(',')[1] ?? '', 'base64')).metadata();
   const ratio = (meta.width ?? 0) / (meta.height || 1);
-  return (Object.entries(RATIOS) as Array<[FrameFormat, number]>)
-    .reduce((best, entry) => (Math.abs(entry[1] - ratio) < Math.abs(best[1] - ratio) ? entry : best))[0];
+  return NATIVE_FORMATS.reduce((best, format) => (Math.abs(RATIOS[format] - ratio) < Math.abs(RATIOS[best] - ratio) ? format : best));
 }
 
 /**

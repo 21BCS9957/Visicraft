@@ -5,7 +5,8 @@ import { uploadBufferToBucket } from '@/lib/server/supabaseStorage';
 /**
  * Image models sometimes compose a frame in the shape of a reference photo (a 2:3 store
  * photo inside a 9:16 canvas) and fill the rest with a blurred, stretched copy of the
- * picture. Such a padded band is detected at the top or bottom edge and cut off, with the
+ * picture. Such a padded band is detected at the top or bottom edge (or, in a frame wider
+ * than the photo, such as 16:9 or 1:1, at the left or right) and cut off, with the other
  * sides trimmed so the frame keeps its aspect ratio.
  */
 
@@ -19,7 +20,13 @@ export interface PaddedBands {
   /** Share of the height taken by a padded band at each edge (0 = none). */
   top: number;
   bottom: number;
+  /** Share of the width at the sides, checked only in frames that aren't tall (0 = none). */
+  left?: number;
+  right?: number;
 }
+
+/** Frames at least this wide for their height (3:4, 1:1, 16:9) are also checked at the sides. */
+const SIDE_CHECK_MIN_RATIO = 0.7;
 
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
@@ -107,23 +114,34 @@ async function loadImage(url: string): Promise<Buffer> {
  */
 export async function trimPaddedBands(url: string): Promise<{ url: string; bands: PaddedBands; trimmed: boolean; tooLarge: boolean }> {
   const buffer = await loadImage(url);
-  const bands = await findPaddedBands(buffer);
-  if (bands.top === 0 && bands.bottom === 0) return { url, bands, trimmed: false, tooLarge: false };
-  // A little beyond the detected band, so no blurred rows survive the seam.
-  const cut = { top: bands.top ? bands.top + 0.01 : 0, bottom: bands.bottom ? bands.bottom + 0.01 : 0 };
-  if (cut.top + cut.bottom > MAX_TRIM) return { url, bands, trimmed: false, tooLarge: true };
-
   const meta = await sharp(buffer).metadata();
   const width = meta.width ?? 0;
   const height = meta.height ?? 0;
+  const found = await findPaddedBands(buffer);
+  // The sides, by the same check on the frame turned a quarter (its left edge on top).
+  const sides = width && height && width / height >= SIDE_CHECK_MIN_RATIO
+    ? await findPaddedBands(await sharp(buffer).rotate(90).toBuffer())
+    : { top: 0, bottom: 0 };
+  const bands: PaddedBands = { ...found, left: sides.top, right: sides.bottom };
+  if (!bands.top && !bands.bottom && !bands.left && !bands.right) return { url, bands, trimmed: false, tooLarge: false };
+  // A little beyond the detected band, so no blurred rows survive the seam.
+  const beyond = (share = 0) => (share ? share + 0.01 : 0);
+  const cut = { top: beyond(bands.top), bottom: beyond(bands.bottom), left: beyond(bands.left), right: beyond(bands.right) };
+  if (cut.top + cut.bottom > MAX_TRIM || cut.left + cut.right > MAX_TRIM) return { url, bands, trimmed: false, tooLarge: true };
   if (!width || !height) return { url, bands, trimmed: false, tooLarge: false };
-  const top = Math.round(height * cut.top);
-  const keptHeight = height - top - Math.round(height * cut.bottom);
-  // Trim the sides equally so the frame keeps its aspect ratio, then restore the size.
-  const keptWidth = Math.round((keptHeight * width) / height);
-  const left = Math.max(0, Math.round((width - keptWidth) / 2));
+
+  // What is left after the cuts, then trimmed on the other axis so the frame keeps its aspect ratio.
+  const left0 = Math.round(width * cut.left);
+  const top0 = Math.round(height * cut.top);
+  const freeWidth = width - left0 - Math.round(width * cut.right);
+  const freeHeight = height - top0 - Math.round(height * cut.bottom);
+  const tooWide = freeWidth / freeHeight > width / height;
+  const keptWidth = tooWide ? Math.round((freeHeight * width) / height) : freeWidth;
+  const keptHeight = tooWide ? freeHeight : Math.round((freeWidth * height) / width);
+  const left = left0 + Math.max(0, Math.round((freeWidth - keptWidth) / 2));
+  const top = top0 + Math.max(0, Math.round((freeHeight - keptHeight) / 2));
   const fixed = await sharp(buffer)
-    .extract({ left, top, width: Math.min(keptWidth, width - left), height: keptHeight })
+    .extract({ left, top, width: Math.min(keptWidth, width - left), height: Math.min(keptHeight, height - top) })
     .resize(width, height, { fit: 'fill' })
     .jpeg({ quality: 92 })
     .toBuffer();

@@ -29,6 +29,8 @@ function VideoCard({ video, selected, preview, onOpen, onReuse }: {
   const badge = BADGES[status];
   const playable = status === 'ready' && take?.url;
   const rendering = video.takes.find((item) => item.status === 'rendering');
+  // The cards are 9:16; a wider video is shown whole inside its card.
+  const shape = take?.aspectRatio ?? video.settings.aspectRatio;
   return (
     <article className={cx('group relative', selected && 'rounded-[20px] ring-2 ring-[#fff05a]/60 ring-offset-2 ring-offset-[#08080a]')}>
       <button type="button" onClick={onOpen} className="relative block aspect-[9/16] w-full overflow-hidden rounded-[18px] border border-white/10 bg-[#141418] !p-0 text-left">
@@ -42,7 +44,7 @@ function VideoCard({ video, selected, preview, onOpen, onReuse }: {
             preload="metadata"
             onMouseEnter={(event) => { event.currentTarget.play().catch(() => undefined); }}
             onMouseLeave={(event) => { event.currentTarget.pause(); }}
-            className="h-full w-full object-cover"
+            className={cx('h-full w-full', shape === '9:16' ? 'object-cover' : 'object-contain')}
           />
         ) : video.poster ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -56,14 +58,14 @@ function VideoCard({ video, selected, preview, onOpen, onReuse }: {
         </span>
         {take && (
           <span className="absolute bottom-2 left-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] text-white/80 backdrop-blur-md">
-            {take.durationSeconds}s · {takeLabel(take)}
+            {take.durationSeconds}s · {takeLabel(take)}{shape !== '9:16' ? ` · ${shape}` : ''}
           </span>
         )}
       </button>
       <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
         {playable && take?.url && (
           <a
-            href={preview ? take.url : downloadUrl(take.url, `visicraft-video-${take.quality}.mp4`)}
+            href={preview ? take.url : downloadUrl(take.url, `visicraft-video-${take.quality}${shape === '9:16' ? '' : `-${shape.replace(':', 'x')}`}.mp4`)}
             download
             aria-label="Download"
             title="Download"

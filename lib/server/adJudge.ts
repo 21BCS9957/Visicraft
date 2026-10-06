@@ -34,7 +34,7 @@ export async function judgeAdCreative(options: {
   angle: AdAngle;
   withText: boolean;
   productKind?: 'packaged' | 'apparel' | 'object';
-  /** The winning ad this creative mirrors: scored for how closely layout, light and type follow it. */
+  /** The reference ad this creative follows: scored for how closely layout, light and type follow it. */
   referenceImageUrl?: string;
   /** Set when the image is the first frame of a video in this style. */
   videoStyle?: string;
@@ -75,7 +75,7 @@ Score 0-10 on each:
 - productHero: ${options.productKind === 'apparel' ? 'is the garment clearly the hero, fully visible on the model, its fit and details readable, tastefully shot?' : 'is the package clearly the hero, large, sharp, unobstructed, believable in the scene (contact shadow, matching light)?'}
 - nativeFeel: does it look like a real ad from a real brand in India rather than generic stock or obvious AI?
 - craft: photographic quality; no artifacts (deformed hands/faces, warped props, floating objects, extra limbs, gibberish text, seams around the product).
-${hasReference ? `- referenceMatch: image 2 is the winning ad this creative was meant to follow. How closely does image 1 follow its composition and framing, camera angle, lighting and colour grade of the scene, and text treatment (font style, size, case, placement)? The product (including its colours), the person, the words and the brand are meant to differ; judge only the layout and style.
+${hasReference ? `- referenceMatch: image 2 is the reference ad this creative was meant to follow. How closely does image 1 follow its composition and framing, camera angle, lighting and colour grade of the scene, and text treatment (font style, size, case, placement)? The product (including its colours), the person, the words and the brand are meant to differ; judge only the layout and style.
 ` : ''}
 Set "critical" to a list of any deal-breakers (e.g. "deformed hand", "headline unreadable", "product cut off", "gibberish text", "product too small", "padded band": part of the frame filled with a blurred, stretched or duplicated strip along an edge); otherwise an empty list. Any overlaid ad copy, caption, button or logo beyond the expected copy${hasReference ? ' (for example a line or logo copied from image 2)' : ''} is a deal-breaker: add "unexpected text: <the words>". Print on the product itself and incidental scene text, such as a distant sign, do not count.
 "fixes": 2-4 concrete, specific instructions an image model can apply to fix the weakest points (composition, light, scale, text placement), max 60 words. Never ask to change the product's own colours, fabric, pattern or design, or to grade them toward another look: the product must stay true to its photos. Never ask for a logo, brand name or URL to be added${hasReference ? ', or for anything that identifies image 2\'s brand or model' : ''}.
@@ -85,7 +85,7 @@ Return JSON only: {"thumbStop":0,"clarity":0,"productHero":0,"nativeFeel":0,"cra
       { text: 'IMAGE 1 - THE CREATIVE TO JUDGE:' },
       { inlineData: { mimeType: images[0].mimeType, data: images[0].data } },
       ...(hasReference
-        ? [{ text: 'IMAGE 2 - THE WINNING AD IT SHOULD FOLLOW:' }, { inlineData: { mimeType: images[1].mimeType, data: images[1].data } }]
+        ? [{ text: 'IMAGE 2 - THE REFERENCE AD IT SHOULD FOLLOW:' }, { inlineData: { mimeType: images[1].mimeType, data: images[1].data } }]
         : []),
     ],
     { temperature: 0 },
@@ -106,7 +106,7 @@ Return JSON only: {"thumbStop":0,"clarity":0,"productHero":0,"nativeFeel":0,"cra
     craft: num(parsed.craft),
     ...(hasReference ? { referenceMatch: num(parsed.referenceMatch) } : {}),
   };
-  // Weighted toward what actually drives paid performance; following the proven winner counts too.
+  // Weighted toward what actually drives paid performance; following the reference counts too.
   const score = Math.round((hasReference
     ? scores.thumbStop * 0.25 + scores.clarity * 0.2 + scores.productHero * 0.15 + scores.nativeFeel * 0.1 + scores.craft * 0.1 + (scores.referenceMatch ?? 0) * 0.2
     : scores.thumbStop * 0.3 + scores.clarity * 0.25 + scores.productHero * 0.2 + scores.nativeFeel * 0.1 + scores.craft * 0.15
