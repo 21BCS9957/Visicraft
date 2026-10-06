@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import { DEFAULT_PLAYGROUND_MODEL, DEFAULT_QUALITY, isPlaygroundModel, nearestSize, playgroundModel, type ImageQuality } from './models';
+import { DEFAULT_PLAYGROUND_MODEL, DEFAULT_QUALITY, isPlaygroundModel, nearestSize, playgroundModel, type ImageProvider, type ImageQuality } from './models';
 import type { PlaygroundBundle, PlaygroundItem, PlaygroundProject, PlaygroundReference, PlaygroundRun, PlaygroundSettings } from './types';
 
 export const DEFAULT_SETTINGS: PlaygroundSettings = {
@@ -37,8 +37,10 @@ export interface RunnerState {
   /** Item ids whose request dropped; their state is being checked with the server. */
   checking: string[];
   concurrency: number;
-  /** Why the runner stopped (billing, credits…), or null while it may run. */
+  /** Why the whole runner stopped (the user's Visicraft credits ran out), or null while it may run. */
   paused: string | null;
+  /** A provider whose key, billing or quota failed: only its images wait; other models keep going. */
+  pausedProviders: Partial<Record<ImageProvider, string>>;
   /** Gemini asked us to slow down until this time (epoch ms). */
   backoffUntil: number;
 }
@@ -84,6 +86,7 @@ export const INITIAL_RUNNER: RunnerState = {
   checking: [],
   concurrency: 3,
   paused: null,
+  pausedProviders: {},
   backoffUntil: 0,
 };
 

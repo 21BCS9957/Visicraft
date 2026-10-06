@@ -1,5 +1,6 @@
 'use client';
 
+import { playgroundModel } from './models';
 import { usePlaygroundStore } from './store';
 import type { GenerateResponse, PlaygroundBundle, PlaygroundItem, PlaygroundProjectSummary, PlaygroundRun } from './types';
 
@@ -112,7 +113,20 @@ let previewCounter = 0;
 /** A fake image generation: done after a few seconds, now and then a failure. */
 export async function simulateGenerate(id: string): Promise<{ status: number; body: GenerateResponse }> {
   await new Promise((resolve) => setTimeout(resolve, 1_500 + Math.random() * 3_000));
-  const item = usePlaygroundStore.getState().items[id];
+  const state = usePlaygroundStore.getState();
+  const item = state.items[id];
+  // ?previewOpenAiPaused: OpenAI images answer as they do when the OpenAI key has no credit left.
+  const run = state.runs.find((known) => known.id === item.runId);
+  if (new URLSearchParams(window.location.search).has('previewOpenAiPaused') && playgroundModel(run?.model).provider === 'openai') {
+    return {
+      status: 503,
+      body: {
+        outcome: 'paused',
+        item: { ...item, status: 'queued', startedAt: null },
+        message: 'OpenAI says this API key has no credit left. Add credit in the OpenAI dashboard (Settings → Billing), then resume.',
+      },
+    };
+  }
   const n = previewCounter++;
   const failed = n % 9 === 5;
   const done: PlaygroundItem = {

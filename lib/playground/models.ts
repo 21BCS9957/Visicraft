@@ -67,18 +67,20 @@ export const QUALITY_LABELS: Record<ImageQuality, string> = { high: 'High', xhig
 export const DEFAULT_QUALITY: ImageQuality = 'high';
 
 /**
- * GPT Image 2.5 bills tokens ($30 per million output). Estimates per image until measured with
- * our key: 1024×1024 High $0.053, Extra-high $0.094, Max $0.21; 2K has about 4× the pixels.
- * Credits are at Nano Banana's rate, about 373 per dollar, rounded up to 5.
+ * GPT Image 2.5 bills tokens ($30 per million output; Sunburst and Flare cost the same).
+ * Measured with our key (5 Oct 2026): 1K High 1,756 output tokens ($0.053), 1K Max 7,024
+ * ($0.211), 2K High at 4:5 2,938 ($0.088). 1K Extra-high is OpenAI's published 3,123 tokens; 2K
+ * Extra-high and Max scale 1K by the measured 2K/1K High ratio (1.67). Credits are at Nano
+ * Banana's rate, about 373 per dollar, rounded up to 5.
  */
 const OPENAI_SIZES: PlaygroundSizeOption[] = [
   {
     id: '1K', label: '1K', usd: 0.053, credits: 20,
-    byQuality: { high: { usd: 0.053, credits: 20 }, xhigh: { usd: 0.094, credits: 40 }, max: { usd: 0.211, credits: 80 } },
+    byQuality: { high: { usd: 0.053, credits: 20 }, xhigh: { usd: 0.094, credits: 35 }, max: { usd: 0.211, credits: 80 } },
   },
   {
-    id: '2K', label: '2K', usd: 0.211, credits: 80,
-    byQuality: { high: { usd: 0.211, credits: 80 }, xhigh: { usd: 0.375, credits: 140 }, max: { usd: 0.843, credits: 315 } },
+    id: '2K', label: '2K', usd: 0.088, credits: 35,
+    byQuality: { high: { usd: 0.088, credits: 35 }, xhigh: { usd: 0.157, credits: 60 }, max: { usd: 0.353, credits: 135 } },
   },
   // Not offered: never priced or charged (sizeOption skips disabled sizes).
   { id: '4K', label: '4K', usd: 0, credits: 0, disabled: FOUR_K_OFF },
@@ -143,8 +145,8 @@ export const PLAYGROUND_MODELS: PlaygroundModelSpec[] = [
     ratios: STANDARD_RATIOS,
     // Our starting guidance; OpenAI takes up to 16 images in all.
     referenceGuide: { product: 8, person: 5, style: 3 },
-    // About 1,600 image-input tokens at $8 per million; measured later.
-    usdPerReference: 0.013,
+    // Measured: about 1,520 image-input tokens per reference at $8 per million.
+    usdPerReference: 0.012,
     creditsPerReference: 5,
     thinking: false,
     qualities: ['high', 'xhigh', 'max'],
@@ -157,7 +159,7 @@ export const PLAYGROUND_MODELS: PlaygroundModelSpec[] = [
     sizes: OPENAI_SIZES,
     ratios: STANDARD_RATIOS,
     referenceGuide: { product: 8, person: 5, style: 3 },
-    usdPerReference: 0.013,
+    usdPerReference: 0.012,
     creditsPerReference: 5,
     thinking: false,
     qualities: ['high', 'xhigh', 'max'],
@@ -310,17 +312,17 @@ export function referenceWarnings(modelId: string, counts: Record<ReferenceRole,
   return warnings;
 }
 
-/** Rough OpenAI seconds per 1K image by quality (Flare is about twice as fast); 2K takes longer. */
+/** OpenAI seconds per 1K image by quality (measured: Sunburst High 42 s, Max 103 s; Flare High 28 s); 2K a little longer. */
 const OPENAI_SECONDS: Partial<Record<PlaygroundModelId, Record<ImageQuality, number>>> = {
-  'gpt-image-2.5-sunburst': { high: 40, xhigh: 60, max: 100 },
-  'gpt-image-2.5-flare': { high: 20, xhigh: 35, max: 60 },
+  'gpt-image-2.5-sunburst': { high: 42, xhigh: 65, max: 105 },
+  'gpt-image-2.5-flare': { high: 28, xhigh: 45, max: 75 },
 };
 
 /** A rough time estimate for a run, 3 images at a time. */
 export function runMinutes(modelId: string, size: string, images: number, quality?: string | null): number {
   const openAi = OPENAI_SECONDS[modelId as PlaygroundModelId];
   const secondsPerImage = openAi
-    ? openAi[modelQuality(playgroundModel(modelId), quality) ?? DEFAULT_QUALITY] * (size === '2K' ? 1.5 : 1)
+    ? openAi[modelQuality(playgroundModel(modelId), quality) ?? DEFAULT_QUALITY] * (size === '2K' ? 1.2 : 1)
     : modelId === 'gemini-3-pro-image'
       ? (size === '4K' ? 60 : 35)
       : modelId === 'gemini-3.1-flash-image'

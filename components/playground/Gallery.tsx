@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import { Download, ImageIcon, Loader2, Pause, Play, RotateCcw, Sparkles, Square, TextQuote, Upload } from 'lucide-react';
 import toast from '@/lib/toast';
 import { playgroundApi } from '@/lib/playground/api';
-import { playgroundModel, QUALITY_LABELS, sizeOption } from '@/lib/playground/models';
-import { cancelRun, cancelWaiting, resume, resumeWaiting, retryItem } from '@/lib/playground/runner';
+import { playgroundModel, QUALITY_LABELS, sizeOption, type ImageProvider } from '@/lib/playground/models';
+import { cancelProviderWaiting, cancelRun, cancelWaiting, resume, resumeProvider, resumeWaiting, retryItem } from '@/lib/playground/runner';
 import { runItems, usePlaygroundStore } from '@/lib/playground/store';
 import type { PlaygroundItem, PlaygroundRun } from '@/lib/playground/types';
 import { downloadZip, imageFileName } from '@/lib/playground/zip';
@@ -196,6 +196,20 @@ export function Gallery({ density, bottomPadding }: { density: number; bottomPad
           </button>
         </div>
       )}
+      {!runner.paused && (Object.entries(runner.pausedProviders) as Array<[ImageProvider, string]>).map(([provider, message]) => (
+        <div key={provider} className="flex flex-wrap items-center gap-3 rounded-2xl border border-[#fff05a]/25 bg-[#fff05a]/[0.07] px-4 py-3 text-sm text-white">
+          <Pause className="h-4 w-4 text-[#fff05a]" />
+          <span className="min-w-[14rem] flex-1">
+            {message} <span className="text-white/55">Only {provider === 'openai' ? 'OpenAI' : 'Gemini'} images wait; other models keep running.</span>
+          </span>
+          <button type="button" onClick={() => resumeProvider(provider)} className="inline-flex items-center gap-1.5 rounded-full bg-[#fff05a] px-3 py-1.5 text-xs font-medium text-black hover:bg-white">
+            <Play className="h-3 w-3" /> Resume
+          </button>
+          <button type="button" onClick={() => cancelProviderWaiting(provider).catch((error) => toast.error(error.message, TOAST))} className="rounded-full px-3 py-1.5 text-xs text-white/70 hover:bg-white/8">
+            Cancel them
+          </button>
+        </div>
+      ))}
       {!runner.paused && waiting.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white">
           <Pause className="h-4 w-4 text-white/60" />

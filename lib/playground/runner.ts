@@ -1,6 +1,7 @@
 'use client';
 
 import { playgroundApi } from './api';
+import { playgroundModel, type ImageProvider } from './models';
 import { simulateGenerate } from './preview';
 import { runItems, usePlaygroundStore } from './store';
 import type { GenerateResponse, PlaygroundItem } from './types';
@@ -8,8 +9,9 @@ import type { GenerateResponse, PlaygroundItem } from './types';
 /**
  * Sends a run's images to the server one by one, in order, a few at a time. Every request
  * makes exactly one image; the server charges and refunds. This module only decides what to
- * send next and reacts to the answer (busy Gemini → slow down, billing/credits → pause,
- * dropped connection → ask the server what happened).
+ * send next and reacts to the answer (busy provider → slow down; a provider's key or billing
+ * → pause that provider's images only; the user's credits → pause everything; dropped
+ * connection → ask the server what happened).
  */
 
 const MAX_CONCURRENCY = 3;
@@ -32,6 +34,14 @@ export function setRunnerListener(next: RunnerListener) {
 }
 
 const store = () => usePlaygroundStore.getState();
+
+/** Which provider makes this image (its run's model). */
+function providerOf(id: string): ImageProvider {
+  const state = store();
+  const runId = state.items[id]?.runId;
+  const run = runId ? state.runs.find((known) => known.id === runId) : undefined;
+  return playgroundModel(run?.model).provider;
+}
 
 function creditsChanged() {
   if (creditsTimer) return;
@@ -74,7 +84,8 @@ export function pump() {
   for (const id of runner.queue) {
     const item = state.items[id];
     if (!item || (item.status !== 'queued' && item.status !== 'failed')) continue;
-    if (next.length < free) next.push(id);
+    // A paused provider's images keep their place; the other models' images go ahead.
+    if (next.length < free && !runner.pausedProviders[providerOf(id)]) next.push(id);
     else rest.push(id);
   }
   const startedAt = new Date().toISOString();
@@ -108,7 +119,8 @@ async function send(id: string) {
       creditsChanged();
       // Out of credits: the server never started it, so undo the optimistic "generating".
       if (!body.item) store().upsertItems([{ ...store().items[id], status: 'queued', startedAt: null }]);
-      pause(body.message ?? 'The run is paused.', id);
+      if (body.outcome === 'paused') pauseProvider(providerOf(id), body.message ?? 'These images are paused.', id);
+      else pause(body.message ?? 'The run is paused.', id);
     } else if (body.outcome === 'not_claimable' && body.item?.status === 'generating') {
       check(id);
     }
@@ -116,7 +128,8 @@ async function send(id: string) {
     check(id);
   } finally {
     store().setRunner((runner) => ({ inFlight: runner.inFlight.filter((flying) => flying !== id) }));
-    if (outcome !== 'paused' && outcome !== 'insufficient_credits') pump();
+    // Only the user's own credits stop everything; a paused provider still lets the others run.
+    if (outcome !== 'insufficient_credits') pump();
   }
 }
 
@@ -154,9 +167,39 @@ function pause(message: string, id?: string) {
   listener.onPaused?.(message);
 }
 
+function pauseProvider(provider: ImageProvider, message: string, id?: string) {
+  const already = store().runner.pausedProviders[provider] === message;
+  store().setRunner((runner) => ({
+    pausedProviders: { ...runner.pausedProviders, [provider]: message },
+    queue: id ? [id, ...runner.queue.filter((queued) => queued !== id)] : runner.queue,
+  }));
+  if (!already) listener.onPaused?.(message);
+}
+
 export function resume() {
-  store().setRunner({ paused: null, backoffUntil: 0 });
+  store().setRunner({ paused: null, pausedProviders: {}, backoffUntil: 0 });
   pump();
+}
+
+/** Tries a paused provider's images again (after its key or billing is fixed). */
+export function resumeProvider(provider: ImageProvider) {
+  store().setRunner((runner) => {
+    const pausedProviders = { ...runner.pausedProviders };
+    delete pausedProviders[provider];
+    return { pausedProviders, backoffUntil: 0 };
+  });
+  pump();
+}
+
+/** Cancels the paused provider's images that haven't started; the other models' images go on. */
+export async function cancelProviderWaiting(provider: ImageProvider) {
+  const state = store();
+  const runIds = state.runs
+    .filter((run) => playgroundModel(run.model).provider === provider)
+    .filter((run) => runItems(state.items, run.id).some((item) => item.status === 'queued'))
+    .map((run) => run.id);
+  for (const runId of runIds) await cancelRun(runId);
+  resumeProvider(provider);
 }
 
 /** Every queued image of the project that nothing is sending yet, oldest run first. */
@@ -171,7 +214,7 @@ export function waitingItems(): PlaygroundItem[] {
 
 /** Picks up images left waiting (after a reload or a pause). */
 export function resumeWaiting() {
-  store().setRunner({ paused: null, backoffUntil: 0 });
+  store().setRunner({ paused: null, pausedProviders: {}, backoffUntil: 0 });
   enqueue(waitingItems().map((item) => item.id));
 }
 
@@ -193,7 +236,7 @@ export async function cancelWaiting() {
   for (const runId of new Set([...runIds, ...[...queuedRuns].filter((id): id is string => Boolean(id))])) {
     await cancelRun(runId);
   }
-  store().setRunner({ paused: null });
+  store().setRunner({ paused: null, pausedProviders: {} });
 }
 
 export async function retryItem(item: PlaygroundItem) {
