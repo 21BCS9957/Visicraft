@@ -8,6 +8,7 @@ import {
   LIBRARY_COLUMNS,
   LIBRARY_VIDEO_SETUP_MESSAGE,
   libraryKind,
+  listLibrary,
   playgroundDb,
   requireLibraryFolder,
   toLibraryItem,
@@ -16,7 +17,6 @@ import { MAX_BRIEF_CHARS } from '@/lib/playground/prompts';
 import { MAX_LIBRARY_VIDEO_SECONDS, VIDEO_FRAME_COUNT } from '@/lib/playground/libraryVideo';
 import type { LibraryKind } from '@/lib/playground/types';
 
-const PAGE = 60;
 const MAX_ITEMS = 2000;
 const SOURCES = ['upload', 'generated', 'project'] as const;
 type Source = (typeof SOURCES)[number];
@@ -34,36 +34,12 @@ export async function GET(request: NextRequest) {
   try {
     const user = await withUser(request);
     const params = request.nextUrl.searchParams;
-    const kind = libraryKind(params.get('kind'));
-    const folder = params.get('folder');
-    const list = (columns: string, filed: boolean) => {
-      let query = playgroundDb()
-        .from('playground_library')
-        .select(kind === 'document' ? `${columns}, content` : columns)
-        .eq('user_id', user.id)
-        .eq('kind', kind)
-        .order('created_at', { ascending: false })
-        .limit(PAGE + 1);
-      const before = params.get('before');
-      if (before) query = query.lt('created_at', before);
-      const search = params.get('q')?.trim();
-      if (search) query = query.ilike('name', `%${search.replace(/[%_]/g, '')}%`);
-      if (filed && folder === 'none') query = query.is('folder_id', null);
-      else if (filed && isUuid(folder)) query = query.eq('folder_id', folder);
-      return query;
-    };
-    let { data, error } = await list(LIBRARY_COLUMNS, true);
-    let setupMessage: string | null = null;
-    if (isMissingLibraryVideoSetup(error)) {
-      // Before migration 202610060001: images and documents still list; videos and folders wait for it.
-      setupMessage = LIBRARY_VIDEO_SETUP_MESSAGE;
-      if (kind === 'video') return NextResponse.json({ items: [], nextBefore: null, setupMessage });
-      ({ data, error } = await list(LEGACY_LIBRARY_COLUMNS, false));
-    }
-    assertDb(error, 'load your library');
-    const rows = (data ?? []) as unknown as Row[];
-    const items = rows.slice(0, PAGE).map((row) => toLibraryItem(row));
-    return NextResponse.json({ items, nextBefore: rows.length > PAGE ? items[items.length - 1]?.createdAt ?? null : null, setupMessage });
+    return NextResponse.json(await listLibrary(playgroundDb(), user.id, {
+      kind: libraryKind(params.get('kind')),
+      folder: params.get('folder'),
+      before: params.get('before'),
+      q: params.get('q'),
+    }));
   } catch (error) {
     return apiErrorResponse(error, 'Could not load your library');
   }

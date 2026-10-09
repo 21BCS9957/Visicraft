@@ -48,14 +48,16 @@ function Progress({ value }: { value: number }) {
  * A video after approval: the player (or the render's progress, or what went wrong), its
  * takes (a draft and the upgrades made from it), download, and upgrades to a higher quality.
  */
-export function VideoPlayerCard({ video, preview, busy, credits, onUpgrade, onReuse, onTryAgain, onRedraft }: {
+export function VideoPlayerCard({ video, preview, busy, credits, onUpgrade, onReuse, onTryAgain, onRedraft, readOnly = false }: {
   video: StudioVideo;
   preview: boolean;
   /** An upgrade (or a new try) is being started. */
   busy: boolean;
   credits: number | null;
-  onUpgrade: (take: VideoTake, quality: FinalQuality) => void;
-  onReuse: () => void;
+  onUpgrade?: (take: VideoTake, quality: FinalQuality) => void;
+  onReuse?: () => void;
+  /** Someone else's video (the admin's team view): watch, switch takes and download only. */
+  readOnly?: boolean;
   /** Brings the approved plan back for approval (a video that didn't render). */
   onTryAgain?: () => void;
   /** Opens this take's images and prompt for small changes, to make a new draft of it. */
@@ -182,14 +184,17 @@ export function VideoPlayerCard({ video, preview, busy, credits, onUpgrade, onRe
             >
               <Download className="h-4 w-4" /> Download {takeName(video, take)}
             </a>
-            {onRedraft && take.prompt && (
+            {!readOnly && onRedraft && take.prompt && (
               <button type="button" onClick={() => onRedraft(take)} disabled={busy} className="inline-flex h-10 items-center gap-2 rounded-full border border-[#fff05a]/40 bg-[#fff05a]/10 px-4 text-sm text-[#fff05a] hover:bg-[#fff05a]/20 disabled:opacity-50">
                 <Pencil className="h-4 w-4" /> Edit &amp; make a new draft
               </button>
             )}
-            <button type="button" onClick={onReuse} className="inline-flex h-10 items-center gap-2 rounded-full border border-white/15 px-4 text-sm text-white/80 hover:bg-white/8 hover:text-white">
-              <RefreshCw className="h-4 w-4" /> Use these settings again
-            </button>
+            {!readOnly && onReuse && (
+              <button type="button" onClick={onReuse} className="inline-flex h-10 items-center gap-2 rounded-full border border-white/15 px-4 text-sm text-white/80 hover:bg-white/8 hover:text-white">
+                <RefreshCw className="h-4 w-4" /> Use these settings again
+              </button>
+            )}
+            {!readOnly && (
             <button
               type="button"
               onClick={() => void saveToLibrary(take)}
@@ -199,9 +204,10 @@ export function VideoPlayerCard({ video, preview, busy, credits, onUpgrade, onRe
               {saving === take.key ? <Loader2 className="h-4 w-4 animate-spin" /> : saved.includes(take.key) ? <Check className="h-4 w-4" /> : <FolderHeart className="h-4 w-4" />}
               {saved.includes(take.key) ? 'Saved to Library' : 'Save to Library'}
             </button>
+            )}
           </div>
         )}
-        {(status === 'failed' || status === 'cancelled' || status === 'unsaved') && (
+        {!readOnly && (status === 'failed' || status === 'cancelled' || status === 'unsaved') && (
           <div className="flex flex-wrap gap-2">
             {video.retryable && onTryAgain && (
               <button type="button" onClick={onTryAgain} disabled={busy} className="inline-flex h-10 items-center gap-2 rounded-full bg-[#fff05a] px-4 text-sm font-medium text-black hover:bg-white disabled:opacity-50">
@@ -209,12 +215,14 @@ export function VideoPlayerCard({ video, preview, busy, credits, onUpgrade, onRe
                 {isMusicFailure(video.takes.at(-1)?.error) ? 'Try again without music' : 'Try again'}
               </button>
             )}
-            <button type="button" onClick={onReuse} className="inline-flex h-10 w-fit items-center gap-2 rounded-full border border-white/15 px-4 text-sm text-white/80 hover:bg-white/8 hover:text-white">
-              <RefreshCw className="h-4 w-4" /> Use these settings again
-            </button>
+            {onReuse && (
+              <button type="button" onClick={onReuse} className="inline-flex h-10 w-fit items-center gap-2 rounded-full border border-white/15 px-4 text-sm text-white/80 hover:bg-white/8 hover:text-white">
+                <RefreshCw className="h-4 w-4" /> Use these settings again
+              </button>
+            )}
           </div>
         )}
-        {video.retryable && onTryAgain && (status === 'failed' || status === 'cancelled') && (
+        {!readOnly && video.retryable && onTryAgain && (status === 'failed' || status === 'cancelled') && (
           <p className="-mt-2 text-[11px] leading-relaxed text-white/40">
             Try again brings back the same images and prompt for your approval{isMusicFailure(video.takes.at(-1)?.error) ? ', with the music taken out' : ''}. Nothing is charged until you approve.
           </p>
@@ -227,7 +235,7 @@ export function VideoPlayerCard({ video, preview, busy, credits, onUpgrade, onRe
           </div>
         )}
 
-        {upgrades.length > 0 && newestReady && (
+        {!readOnly && onUpgrade && upgrades.length > 0 && newestReady && (
           <div className="rounded-2xl border border-[#fff05a]/20 bg-[#fff05a]/[0.04] p-3.5">
             <p className="flex items-center gap-1.5 text-sm text-white"><Sparkles className="h-4 w-4 text-[#fff05a]" /> Like it? Upgrade it</p>
             <p className="mt-1 text-[11px] leading-relaxed text-white/50">

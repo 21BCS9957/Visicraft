@@ -1314,6 +1314,7 @@ function streamCreativeSet(options: CreativeSetOptions): Response {
                 notes: plan.notes,
                 lastFramePinned: plan.mode === 'first_frame' && pinLastFrame,
                 cameraFixed: apparel,
+                garment: apparel,
                 // The exact frame is the store photo, so it shows the real model's face.
                 realFace: plan.mode === 'first_frame' && exactHero,
                 needsAudio: plan.needsAudio,

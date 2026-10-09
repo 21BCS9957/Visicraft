@@ -88,16 +88,13 @@ function LoginContent() {
               <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.055),transparent_40%),radial-gradient(circle_at_76%_12%,rgba(255,240,90,0.12),transparent_28%)]" />
               <div className="relative z-10">
                 <div className="mb-8 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+                  <div>
                     <img
-                      src="/new-section/logo.png"
-                      alt="Visicraft"
-                      className="h-11 w-11 object-contain"
+                      src="/brand/gogrowth-logo.png"
+                      alt="GoGrowth"
+                      className="h-9 w-auto object-contain"
                     />
-                    <div>
-                      <p className="text-lg font-light leading-none text-white">Visicraft</p>
-                      <p className="mt-1 text-xs font-light text-white/42">AI creative studio</p>
-                    </div>
+                    <p className="mt-1.5 text-xs font-light text-white/42">AI creative studio</p>
                   </div>
                   <span className="rounded-full border border-[#fff05a]/24 bg-[#fff05a]/10 px-3 py-1 text-xs font-light text-[#fff05a]">
                     Secure

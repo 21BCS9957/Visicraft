@@ -160,7 +160,7 @@ const showcaseCategories = [
   {
     title: 'Brand Systems',
     description: 'Consistent seasonal, marketplace, and performance creative variants.',
-    poster: '/new-section/logo1.png',
+    poster: '/brand/gogrowth-poster.png',
     objectPosition: 'center',
     videos: [
       '/showcase-videos/brand-systems/01.mp4',

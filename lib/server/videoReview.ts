@@ -17,6 +17,8 @@ export interface VideoReviewFrame {
    * scene image made for a shot, the hero (first or opening) frame, or the mannequin edit.
    */
   kind?: 'photo' | 'crop' | 'scene' | 'frame' | 'mannequin';
+  /** A close-up's original photo and where in it it was cut ([x, y, width, height], 0-1). */
+  source?: { url: string; box: [number, number, number, number] };
 }
 
 /** The plan in plain words, for the approval card (the prompt itself may be edited). */
@@ -48,6 +50,8 @@ export interface VideoReview {
   cameraFixed: boolean;
   realFace: boolean;
   needsAudio: boolean;
+  /** The product is a garment (the approval card says "the outfit"). */
+  garment?: boolean;
   /** Who wrote the prompt, shown on the approval card ("Written by Claude Opus 5.5 from …"). */
   writtenBy?: string;
   /** The reference videos the shots were copied from; never sent to the video model. */

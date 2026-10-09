@@ -1,7 +1,7 @@
 import { generateThumbnail } from '@/lib/banana/api';
 import type { ProviderUsage } from '@/lib/server/usage';
 import { uploadDataUrlToBucket } from '@/lib/server/supabaseStorage';
-import { supabase } from '@/lib/supabase/client';
+import { createServiceClient } from '@/lib/supabase/server';
 
 export type ReferencePolicy = 'balanced' | 'product-lock' | 'product-repair' | 'subject-lock' | 'product-plus-style';
 
@@ -125,7 +125,8 @@ export async function runImageGeneration(options: RunImageGenerationOptions): Pr
 
   if (persistToGenerationsTable) {
     try {
-      const { error } = await supabase
+      // Server-side only: the table is not writable with the public key.
+      const { error } = await createServiceClient()
         .from('generations')
         .insert({
           reference_image_url: referenceImages[0] ?? null,

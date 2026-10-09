@@ -24,8 +24,6 @@ export type UpdateNodeDataFn = (nodeId: string, data: Record<string, unknown>) =
 export interface ExecuteWorkflowOptions {
   updateNodeData?: UpdateNodeDataFn;
   credits?: number;
-  deductCredits?: (amount: number) => Promise<boolean>;
-  addCredits?: (amount: number) => Promise<boolean>;
   refreshCredits?: () => Promise<void>;
 }
 
@@ -56,7 +54,8 @@ export async function executeWorkflow(
       );
     }
   }
-  if (options?.deductCredits && options?.credits !== undefined && options.credits < totalCreditCost) {
+  // Credits are charged by the server; this only stops a run that can't be afforded.
+  if (options?.credits !== undefined && options.credits < totalCreditCost) {
     throw new Error(`Insufficient credits! Need ${totalCreditCost}, have ${options.credits}`);
   }
 
@@ -198,8 +197,6 @@ async function executeGenerateNode(
     resolution,
     updateNodeData,
     credits: options?.credits,
-    deductCredits: options?.deductCredits,
-    addCredits: options?.addCredits,
     refreshCredits: options?.refreshCredits,
   });
 
@@ -242,8 +239,6 @@ async function executeVideoGenerateNode(
     mode,
     updateNodeData,
     credits: options?.credits,
-    deductCredits: options?.deductCredits,
-    addCredits: options?.addCredits,
     refreshCredits: options?.refreshCredits,
   });
 

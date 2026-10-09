@@ -149,7 +149,7 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
     getLatestEdges,
     isGenerationRunning,
   } = useWorkflow();
-  const { credits, deductCredits, refreshCredits, addCredits } = useCredits();
+  const { credits, refreshCredits } = useCredits();
 
   const isVideoNode = selectedNode?.type === 'videoGenerate';
 
@@ -343,8 +343,6 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
           mode: selectedVideoMode,
           updateNodeData: (nodeId, data) => contextUpdateNodeData(nodeId, data),
           credits,
-          deductCredits,
-          addCredits,
           refreshCredits,
         });
         toast.success('Video generated!', { id: `generate-${selectedNode.id}` });
@@ -358,8 +356,6 @@ export function PropertiesPanel({ selectedNode, onClose }: PropertiesPanelProps)
           resolution: selectedResolution,
           updateNodeData: (nodeId, data) => contextUpdateNodeData(nodeId, data),
           credits,
-          deductCredits,
-          addCredits,
           refreshCredits,
         });
         toast.success('Amazing! Your image is ready', { id: `generate-${selectedNode.id}` });

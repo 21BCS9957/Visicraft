@@ -43,8 +43,6 @@ export interface VideoGenerateNodeParams {
   mode?: string;
   updateNodeData: (nodeId: string, data: Record<string, unknown>) => void;
   credits?: number;
-  deductCredits?: (amount: number) => Promise<boolean>;
-  addCredits?: (amount: number) => Promise<boolean>;
   refreshCredits?: () => Promise<void>;
 }
 

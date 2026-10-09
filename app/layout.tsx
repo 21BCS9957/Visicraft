@@ -27,9 +27,9 @@ export const metadata: Metadata = {
   keywords: ["AI", "thumbnail generator", "YouTube", "Amazon", "social media", "creative studio"],
   authors: [{ name: "Visicraft" }],
   icons: {
-    icon: [{ url: "/new-section/logo.png", type: "image/png" }],
-    shortcut: "/new-section/logo.png",
-    apple: "/new-section/logo.png",
+    icon: [{ url: "/brand/gogrowth-icon.png", type: "image/png" }],
+    shortcut: "/brand/gogrowth-icon.png",
+    apple: "/brand/gogrowth-apple-icon.png",
   },
 };
 

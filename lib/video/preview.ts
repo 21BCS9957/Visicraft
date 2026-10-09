@@ -60,10 +60,11 @@ export function previewReview(id: string) {
     quality: '1080p' as const,
     durationSeconds: 15,
     aspectRatio: '9:16' as const,
+    garment: true,
     mode: 'reference' as const,
     frames: [
-      { url: PHOTOS[1], label: 'zari border close-up', kind: 'crop' as const },
-      { url: PHOTOS[2], label: 'sheer pallu drape', kind: 'crop' as const },
+      { url: PHOTOS[1], label: 'zari border close-up', kind: 'crop' as const, source: { url: PHOTOS[0], box: [0.3, 0.62, 0.45, 0.3] as [number, number, number, number] } },
+      { url: PHOTOS[2], label: 'sheer pallu drape', kind: 'crop' as const, source: { url: PHOTOS[2], box: [0.18, 0.28, 0.55, 0.4] as [number, number, number, number] } },
       { url: PHOTOS[0], label: 'Scene image for shot 1', kind: 'scene' as const },
     ],
     prompt: REVIEW_PROMPT,

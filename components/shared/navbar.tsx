@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LogOut, User, Sparkles } from 'lucide-react';
+import { LogOut, User, Sparkles, Users } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import gsap from 'gsap';
+import { adminApi } from '@/lib/admin/client';
 
 export function Navbar() {
   const pathname = usePathname();
@@ -16,6 +17,16 @@ export function Navbar() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const logoRef = useRef<HTMLImageElement>(null);
+  // The GoGrowth admin gets a way into the team's workspaces (the server checks every request).
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    if (!user?.id) return;
+    let live = true;
+    adminApi.me().then((result) => live && setIsAdmin(result.admin)).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [user?.id]);
 
   // GSAP spinning animation for logo on hover
   useEffect(() => {
@@ -82,14 +93,12 @@ export function Navbar() {
             <div className="relative">
               <img 
                 ref={logoRef}
-                src="/new-section/logo.png" 
-                alt="Visicraft Logo" 
+                src="/brand/gogrowth-mark.png" 
+                alt="" 
                 className="h-9 w-9 cursor-pointer object-contain sm:h-10 sm:w-10"
               />
             </div>
-            <span className="text-base font-light tracking-wide text-white sm:text-xl">
-              Visicraft
-            </span>
+            <img src="/brand/gogrowth-wordmark.png" alt="GoGrowth" className="h-[18px] w-auto object-contain sm:h-[21px]" />
           </Link>
 
           {/* Navigation Links */}
@@ -192,6 +201,17 @@ export function Navbar() {
                             Get more credits →
                           </Link>
                         </div>
+
+                        {isAdmin && user && (
+                          <Link
+                            href="/admin/team"
+                            onClick={() => setShowUserMenu(false)}
+                            className="flex w-full items-center gap-3 border-b border-white/10 px-4 py-3 text-left text-sm text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
+                          >
+                            <Users className="h-4 w-4" />
+                            Team workspaces
+                          </Link>
+                        )}
 
                         {/* Sign Out */}
                         <button

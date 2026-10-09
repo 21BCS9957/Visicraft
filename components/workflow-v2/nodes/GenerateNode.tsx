@@ -20,7 +20,7 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
   const { user } = useAuth();
   const { getNodes, getEdges } = useReactFlow();
   const { updateNodeData, setNodes, setEdges, getLatestNodes, getLatestEdges, isGenerationRunning } = useWorkflow();
-  const { credits, deductCredits, refreshCredits, addCredits } = useCredits();
+  const { credits, refreshCredits } = useCredits();
   const [showMenu, setShowMenu] = useState(false);
   const [showFullscreen, setShowFullscreen] = useState(false);
   const [showImageActions, setShowImageActions] = useState(false);
@@ -211,8 +211,6 @@ export function GenerateNode({ data, selected, id }: NodeProps) {
         resolution: data.resolution || '2K',
         updateNodeData,
         credits,
-        deductCredits,
-        addCredits,
         refreshCredits,
       });
       toast.success('Amazing! Your image is ready', { id: `generate-${id}` });

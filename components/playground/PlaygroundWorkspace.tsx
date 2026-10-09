@@ -72,9 +72,9 @@ function Topbar({ density, onDensity, panelOpen, onTogglePanel }: {
   const preview = usePlaygroundStore((state) => state.preview);
   return (
     <header className="relative z-40 flex h-14 shrink-0 items-center gap-2 border-b border-white/8 bg-[#0a0a0d]/90 px-3 backdrop-blur-xl sm:px-4">
-      <Link href="/" title="Visicraft home" className="flex shrink-0 items-center rounded-full p-1 hover:bg-white/7">
+      <Link href="/" title="GoGrowth home" className="flex shrink-0 items-center rounded-full p-1 hover:bg-white/7">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/new-section/logo.png" alt="Visicraft" className="h-7 w-7 object-contain" />
+        <img src="/brand/gogrowth-mark.png" alt="GoGrowth" className="h-7 w-7 object-contain" />
       </Link>
       <Link href={`/playground${preview ? '?previewPlayground=1' : ''}`} className="hidden shrink-0 items-center gap-1 rounded-full px-2 py-1 text-sm text-white/55 hover:bg-white/7 hover:text-white sm:flex">
         <ChevronLeft className="h-4 w-4" /> Playground

@@ -60,7 +60,7 @@ export function Topbar({
           className="relative z-10 flex flex-shrink-0 items-center rounded-full px-2 py-1 text-white transition-colors hover:bg-white/7"
           title="Back to home"
         >
-          <img src="/new-section/logo.png" alt="Visicraft" className="h-7 w-7 object-contain" />
+          <img src="/brand/gogrowth-mark.png" alt="GoGrowth" className="h-7 w-7 object-contain" />
         </Link>
         
         <input

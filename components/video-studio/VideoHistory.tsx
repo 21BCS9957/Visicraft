@@ -22,7 +22,8 @@ function VideoCard({ video, selected, preview, onOpen, onReuse }: {
   selected: boolean;
   preview: boolean;
   onOpen: () => void;
-  onReuse: () => void;
+  /** Absent in a read-only view. */
+  onReuse?: () => void;
 }) {
   const status = studioVideoStatus(video);
   const take = mainTake(video);
@@ -74,7 +75,7 @@ function VideoCard({ video, selected, preview, onOpen, onReuse }: {
             <Download className="h-3.5 w-3.5" />
           </a>
         )}
-        <IconButton label="Use these settings again" tone="solid" onClick={onReuse}><RefreshCw className="h-3.5 w-3.5" /></IconButton>
+        {onReuse && <IconButton label="Use these settings again" tone="solid" onClick={onReuse}><RefreshCw className="h-3.5 w-3.5" /></IconButton>}
       </div>
       <button type="button" onClick={onOpen} className="mt-2 block w-full min-w-0 !p-0 text-left">
         <p className="truncate text-sm text-white/90">{video.title ?? 'Untitled video'}</p>
@@ -86,35 +87,39 @@ function VideoCard({ video, selected, preview, onOpen, onReuse }: {
   );
 }
 
-export function VideoHistory({ videos, selectedId, preview, loadingMore, hasMore, onOpen, onReuse, onLoadMore }: {
+export function VideoHistory({ videos, selectedId, preview, loadingMore, hasMore, onOpen, onReuse, onLoadMore, title = 'Your videos', owner = true }: {
   videos: StudioVideo[] | null;
   selectedId: string | null;
   preview: boolean;
   loadingMore: boolean;
   hasMore: boolean;
   onOpen: (video: StudioVideo) => void;
-  onReuse: (video: StudioVideo) => void;
+  /** Absent in a read-only view (the admin looking at a team member's videos). */
+  onReuse?: (video: StudioVideo) => void;
   onLoadMore: () => void;
+  title?: string;
+  /** The viewer's own videos ("waiting for your approval"). */
+  owner?: boolean;
 }) {
   const waiting = videos?.filter((video) => studioVideoStatus(video) === 'review').length ?? 0;
   return (
     <section>
       <div className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h2 className="text-lg font-light text-white">Your videos</h2>
+        <h2 className="text-lg font-light text-white">{title}</h2>
         {videos && videos.length > 0 && <span className="text-xs text-white/40">{videos.length}{hasMore ? '+' : ''}</span>}
-        {waiting > 0 && <span className="text-xs text-[#fff05a]/80">{waiting} waiting for your approval</span>}
+        {waiting > 0 && <span className="text-xs text-[#fff05a]/80">{waiting} waiting for {owner ? 'your ' : ''}approval</span>}
       </div>
       {videos === null ? (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4" aria-busy="true" aria-label="Loading your videos">
           {Array.from({ length: 6 }, (_, i) => <div key={i} className="playground-shimmer aspect-[9/16] rounded-[18px] border border-white/6 bg-white/[0.03]" />)}
         </div>
       ) : videos.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-white/10 px-5 py-8 text-center text-sm text-white/45">Videos you make appear here, with their drafts and upgrades.</p>
+        <p className="rounded-2xl border border-dashed border-white/10 px-5 py-8 text-center text-sm text-white/45">{owner ? 'Videos you make appear here, with their drafts and upgrades.' : 'No videos here yet.'}</p>
       ) : (
         <>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4 sm:grid-cols-[repeat(auto-fill,minmax(170px,1fr))]">
             {videos.map((video) => (
-              <VideoCard key={video.id} video={video} selected={video.id === selectedId} preview={preview} onOpen={() => onOpen(video)} onReuse={() => onReuse(video)} />
+              <VideoCard key={video.id} video={video} selected={video.id === selectedId} preview={preview} onOpen={() => onOpen(video)} onReuse={onReuse && (() => onReuse(video))} />
             ))}
           </div>
           {hasMore && (

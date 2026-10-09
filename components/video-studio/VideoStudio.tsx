@@ -16,12 +16,13 @@ import { usePlaygroundStore } from '@/lib/playground/store';
 import type { PlaygroundProject, VideoProjectProduct } from '@/lib/playground/types';
 import { pollVideoOperation, videoApi, VideoApiError, type PollReport, type StartedRender } from '@/lib/video/client';
 import { isVideoPreviewRequested, PREVIEW_CLIP, previewHistory, previewPlanEvents, previewReview, previewVideoProject } from '@/lib/video/preview';
-import { readVideoReview, studioVideoStatus, videoModelName, type StudioVideo, type VideoInfo, type VideoReviewState, type VideoTake } from '@/lib/video/shared';
+import { readVideoReview, studioVideoStatus, videoModelName, type FrameSource, type StudioVideo, type VideoInfo, type VideoReviewState, type VideoTake } from '@/lib/video/shared';
 import { initialStages, PipelineTimeline, VIDEO_STAGES, type StageId, type StageState, type StageStatus } from '@/components/ui/PipelineTimeline';
 import { cx } from '@/components/playground/ui';
 import { GuidelinesEditor } from '@/components/playground/GuidelinesEditor';
 import { EMPTY_PRODUCT, NewVideoPanel, type PlanRequest, type VideoChoices } from './NewVideoPanel';
 import { ReviewCard, type ReviewEdits } from './ReviewCard';
+import { ImageViewer } from '@/components/shared/ImageViewer';
 import { VideoHistory } from './VideoHistory';
 import { VideoPlayerCard } from './VideoPlayerCard';
 import { choicesFrom, pickerModel } from './VideoSettings';
@@ -134,9 +135,9 @@ function Topbar({ preview, project, onRename, panelOpen, onTogglePanel }: {
   const { credits } = useCredits();
   return (
     <header className="relative z-40 flex h-14 shrink-0 items-center gap-2 border-b border-white/8 bg-[#0a0a0d]/90 px-3 backdrop-blur-xl sm:px-4">
-      <Link href="/" title="Visicraft home" className="flex shrink-0 items-center rounded-full p-1 hover:bg-white/7">
+      <Link href="/" title="GoGrowth home" className="flex shrink-0 items-center rounded-full p-1 hover:bg-white/7">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/new-section/logo.png" alt="Visicraft" className="h-7 w-7 object-contain" />
+        <img src="/brand/gogrowth-mark.png" alt="GoGrowth" className="h-7 w-7 object-contain" />
       </Link>
       <Link href={`/playground/video${preview ? '?previewVideoStudio=1' : ''}`} className="flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-sm text-white/55 hover:bg-white/7 hover:text-white">
         <ChevronLeft className="h-4 w-4" /> <Clapperboard className="h-4 w-4 text-[#fff05a] sm:hidden" /><span className="hidden sm:inline">Videos</span>
@@ -232,23 +233,6 @@ function JobCard({ job, preview }: { job: LiveJob; preview: boolean }) {
   );
 }
 
-function ImageViewer({ url, onClose }: { url: string; onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-  return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 p-4 backdrop-blur-xl" onClick={onClose} role="dialog" aria-label="Image">
-      <button type="button" onClick={onClose} aria-label="Close" className="absolute right-4 top-4 rounded-full border border-white/15 p-2 text-white/70 hover:bg-white/10 hover:text-white">
-        <X className="h-4 w-4" />
-      </button>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={url} alt="" onClick={(event) => event.stopPropagation()} className="max-h-[90vh] max-w-full rounded-2xl object-contain" />
-    </div>
-  );
-}
-
 export function VideoStudio({ projectId }: { projectId: string }) {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
@@ -269,7 +253,7 @@ export function VideoStudio({ projectId }: { projectId: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [job, setJob] = useState<LiveJob | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [viewing, setViewing] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<{ url: string; box?: FrameSource['box'] } | null>(null);
   // A finished take open for small changes, to make a new draft of the same video.
   const [redrafting, setRedrafting] = useState<{ videoId: string; take: VideoTake } | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
@@ -706,6 +690,7 @@ export function VideoStudio({ projectId }: { projectId: string }) {
       frames: urls.map((url) => known.get(url) ?? { url, label: 'Your upload', kind: 'photo' as const }),
       prompt: take.prompt ?? video.prompt ?? '',
       credits: videoCredits(take.model, 'draft', take.durationSeconds, take.aspectRatio),
+      garment: video.plan?.garment,
       notes: ['This makes a new draft of the same video with your changes. The take you were watching stays, and you can upgrade whichever draft you like.'],
       referenceVideos: [],
       outline: null,
@@ -917,7 +902,7 @@ export function VideoStudio({ projectId }: { projectId: string }) {
                           preview={preview}
                           onApprove={(edits) => void approve(selected, edits)}
                           onCancel={() => void cancel(selected)}
-                          onView={setViewing}
+                          onView={(url, box) => setViewing({ url, box })}
                         />
                       ) : redrafting?.videoId === selected.id ? (
                         <ReviewCard
@@ -930,7 +915,7 @@ export function VideoStudio({ projectId }: { projectId: string }) {
                           preview={preview}
                           onApprove={(edits) => void startRedraft(selected, redrafting.take, edits)}
                           onCancel={() => setRedrafting(null)}
-                          onView={setViewing}
+                          onView={(url, box) => setViewing({ url, box })}
                         />
                       ) : (
                         <VideoPlayerCard
@@ -974,7 +959,7 @@ export function VideoStudio({ projectId }: { projectId: string }) {
           </div>
         </main>
       </div>
-      {viewing && <ImageViewer url={viewing} onClose={() => setViewing(null)} />}
+      {viewing && <ImageViewer url={viewing.url} box={viewing.box} onClose={() => setViewing(null)} />}
     </div>
   );
 }

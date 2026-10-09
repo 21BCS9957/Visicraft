@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Dialog } from 'radix-ui';
-import { Check, ChevronDown, Clapperboard, FileText, FolderHeart, ImagePlus, Info, Loader2, MapPin, Maximize2, MessageSquareQuote, Music2, Pencil, Play, RefreshCw, RotateCcw, Trash2, Upload, Users, Wand2, X } from 'lucide-react';
+import { Check, ChevronDown, Clapperboard, FileText, FolderHeart, ImagePlus, Info, Loader2, MapPin, MessageSquareQuote, Music2, Pencil, Play, RefreshCw, RotateCcw, Trash2, Upload, Users, Wand2, X } from 'lucide-react';
 import toast from '@/lib/toast';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { dictationErrorMessage, useSpeechDictation } from '@/lib/useSpeechDictation';
@@ -23,6 +23,7 @@ import {
   setShotInPrompt,
   setSpokenInPrompt,
   videoModelName,
+  type FrameSource,
   type PromptShot,
   type ReviewFrameKind,
   type VideoReviewState,
@@ -56,14 +57,6 @@ function frameKind(frame: Frame, mode: VideoReviewState['mode']): ReviewFrameKin
   if (/mannequin/i.test(frame.label)) return 'mannequin';
   return 'photo';
 }
-
-const KIND_LABELS: Record<ReviewFrameKind, string> = {
-  photo: 'Your photo',
-  crop: 'Close-up from your photo',
-  scene: 'Scene image · made for this video',
-  frame: 'Your ad frame',
-  mannequin: 'Your photo, on a mannequin',
-};
 
 function Stepper({ redraft = false }: { redraft?: boolean }) {
   const steps: Array<{ label: string; state: 'done' | 'current' | 'next' }> = redraft
@@ -253,6 +246,46 @@ function ReferenceDialog({ reference, preview, onClose }: { reference: Reference
 }
 
 /** Upload a photo or pick one from the Library, for replacing or adding an image. */
+/** What a tile is called, in plain words, and a short line under it. */
+function tileText(frame: Frame, kind: ReviewFrameKind, opening: boolean): { title: string; sub: string | null } {
+  const label = frame.label.trim();
+  const named = label ? label.charAt(0).toUpperCase() + label.slice(1) : '';
+  switch (kind) {
+    case 'crop':
+      return { title: named || 'Close-up of your product', sub: 'Cut from your photo' };
+    case 'scene': {
+      const shot = label.match(/shot (\d+)/i)?.[1];
+      return { title: 'Scene made for this video', sub: shot ? `For shot ${shot}` : null };
+    }
+    case 'mannequin':
+      return { title: 'Your photo, on a mannequin', sub: 'The model was replaced; the garment is kept' };
+    case 'frame':
+      return { title: opening ? 'Opening scene' : 'First frame', sub: opening ? 'The video opens on it' : 'The video starts from it' };
+    default:
+      return { title: named || 'Your photo', sub: named ? 'Your photo' : null };
+  }
+}
+
+/** The original photo a close-up was cut from, with the cut area outlined. */
+function SourceInset({ source, onOpen }: { source: FrameSource; onOpen: () => void }) {
+  const [x, y, w, h] = source.box;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title="Where it was cut from"
+      aria-label="See where this close-up was cut from"
+      className="absolute bottom-1.5 left-1.5 overflow-hidden rounded-md border border-white/50 bg-black/60 !p-0 shadow-lg shadow-black/40"
+    >
+      <span className="relative block">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={source.url} alt="" className="block h-14 w-auto max-w-[56px]" />
+        <span className="absolute rounded-[2px] border-[1.5px] border-[#fff05a]" style={{ left: `${x * 100}%`, top: `${y * 100}%`, width: `${w * 100}%`, height: `${h * 100}%` }} />
+      </span>
+    </button>
+  );
+}
+
 function ImageSourceMenu({ trigger, onUpload, onLibrary }: { trigger: ReactNode; onUpload: () => void; onLibrary: () => void }) {
   return (
     <Popover side="bottom" align="start" className="w-52" trigger={trigger}>
@@ -412,7 +445,8 @@ export function ReviewCard({ review, busy, credits, projectId, preview = false, 
   onApprove: (edits: ReviewEdits) => void;
   /** Cancels the video (or, for a new draft, closes the editor). */
   onCancel: () => void;
-  onView: (url: string) => void;
+  /** Opens an image full size; `box` outlines where a close-up was cut from. */
+  onView: (url: string, box?: FrameSource['box']) => void;
 }) {
   const [prompt, setPromptState] = useState(review.prompt);
   const [negative, setNegative] = useState(review.negativePrompt ?? '');
@@ -441,15 +475,6 @@ export function ReviewCard({ review, busy, credits, projectId, preview = false, 
   const reference = review.mode === 'reference';
   const parsed = useMemo(() => parseVideoPrompt(prompt), [prompt]);
   const noFaces = videoEngineOf(review.model) === 'seedance' && !seedanceSpec(review.model).realFaces;
-
-  // Which shots use each image (Image k is frames[k - 1]).
-  const usedIn = useMemo(() => {
-    const map = new Map<number, number[]>();
-    for (const shot of parsed?.shots ?? []) {
-      for (const image of shot.images) map.set(image, [...(map.get(image) ?? []), shot.n]);
-    }
-    return map;
-  }, [parsed]);
 
   const removeFrame = (index: number) => {
     setFrames((current) => current.filter((_, i) => i !== index));
@@ -522,6 +547,15 @@ export function ReviewCard({ review, busy, credits, projectId, preview = false, 
   });
 
   const cast = parsed?.cast ?? review.outline?.cast ?? null;
+  // Why the video is made from these images, in plain words.
+  const hasCrops = frames.some((frame) => frameKind(frame, review.mode) === 'crop');
+  const what = review.garment ? 'the outfit' : 'the product';
+  const fromPlan = cast && !/^Nobody/i.test(cast) ? ' The people, the setting and the moves come from the plan below.' : ' The setting and the moves come from the plan below.';
+  const imagesHint = !reference
+    ? 'The video starts from this frame. You can replace it with your own photo.'
+    : hasCrops && noFaces
+      ? `${videoModelName(review.model)} can’t take photos with a face, so we cut these close-ups of ${what} out of your photos. They give it the exact ${review.garment ? 'fabric, colours and pattern' : 'look, colours and details'}.${fromPlan}`
+      : `${videoModelName(review.model)} copies ${what} from these images.${fromPlan}`;
   const castEditable = Boolean(parsed && /Cast:\s*.+?\.\s+Faces look|One presenter speaks to the camera:/.test(prompt));
   const outlineShots = !parsed && !edited ? review.outline?.shots ?? [] : [];
   const isUploading = (where: ImageTarget) => uploading !== null && (where === 'add' ? uploading === 'add' : uploading !== 'add' && uploading.index === where.index);
@@ -568,65 +602,54 @@ export function ReviewCard({ review, busy, credits, projectId, preview = false, 
       </div>
 
       <div className="space-y-7 p-5">
-        <Section
-          title="Your video is made from"
-          hint={reference
-            ? 'The video engine gets these images. Replace or remove any of them, or add your own.'
-            : 'The video starts from this frame. You can replace it with your own photo.'}
-        >
-          <div className="flex gap-3 overflow-x-auto pb-1 sm:grid sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:overflow-visible">
+        <Section title={reference ? 'What the video copies your product from' : 'The frame your video starts from'} hint={imagesHint}>
+          <div className="flex gap-3 overflow-x-auto pb-1 sm:grid sm:grid-cols-[repeat(auto-fill,minmax(150px,1fr))] sm:overflow-visible">
             {frames.map((frame, index) => {
               const kind = frameKind(frame, review.mode);
-              const shots = usedIn.get(index + 1);
               const opening = parsed?.opening === index + 1;
               const busyHere = isUploading({ index });
               // A first frame or a scene image is made in the video's shape; photos keep the usual tile.
               const shaped = kind === 'scene' || kind === 'frame' || kind === 'mannequin';
               const tile = shaped ? review.aspectRatio : '9:16';
               const wide = shaped && isWideAspect(tile);
+              const text = tileText(frame, kind, opening);
+              const source = frame.source;
               return (
                 <figure key={frame.url} className={cx('shrink-0 sm:w-auto', wide ? 'w-64 sm:col-span-2' : 'w-36')}>
                   <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-black/40">
-                    <button type="button" onClick={() => onView(frame.url)} title="See full size" className="block w-full !p-0">
+                    <button type="button" onClick={() => onView(frame.url)} title="See full size" aria-label={`See ${text.title} full size`} className="block w-full !p-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={frame.url} alt={frame.label} style={{ aspectRatio: cssAspect(tile) }} className="w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
-                      <span className="pointer-events-none absolute bottom-2 right-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/85 opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100">
-                        <Maximize2 className="h-3.5 w-3.5" />
-                      </span>
+                      <img src={frame.url} alt={text.title} style={{ aspectRatio: cssAspect(tile) }} className="w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
                     </button>
                     {reference && (
                       <span className="pointer-events-none absolute left-2 top-2 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-medium text-white">Image {index + 1}</span>
                     )}
+                    {/* Stacked, so they never cover the image number (touch screens make every button 44 px). */}
+                    <div className="absolute right-1.5 top-1.5 flex flex-col gap-1">
+                      <ImageSourceMenu
+                        onUpload={() => chooseUpload({ index })}
+                        onLibrary={() => chooseLibrary({ index })}
+                        trigger={(
+                          <button type="button" disabled={busy || uploading !== null} title="Replace" aria-label={`Replace image ${index + 1}`} className="flex h-7 w-7 items-center justify-center rounded-full bg-black/65 !p-0 text-white/85 backdrop-blur-md hover:bg-black/85 hover:text-white disabled:opacity-40">
+                            <RefreshCw className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      />
+                      {reference && frames.length > 1 && (
+                        <button type="button" onClick={() => removeFrame(index)} disabled={busy || uploading !== null} title="Remove" aria-label={`Remove image ${index + 1}`} className="flex h-7 w-7 items-center justify-center rounded-full bg-black/65 !p-0 text-white/85 backdrop-blur-md hover:bg-red-500/70 hover:text-white disabled:opacity-40">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    {source && <SourceInset source={source} onOpen={() => onView(source.url, source.box)} />}
                     {busyHere && (
                       <span className="absolute inset-0 flex items-center justify-center bg-black/60"><Loader2 className="h-5 w-5 animate-spin text-white" /></span>
                     )}
                   </div>
                   <figcaption className="mt-2 space-y-0.5">
-                    <p className={cx('text-[11px] font-medium', kind === 'scene' ? 'text-[#d9ccff]' : 'text-white/80')}>{KIND_LABELS[kind]}</p>
-                    {frame.label && kind !== 'scene' && <p className="line-clamp-2 text-[11px] leading-snug text-white/45">{frame.label}</p>}
-                    {(shots?.length || opening) && (
-                      <p className="text-[10px] text-[#fbf2a0]/80">
-                        {opening ? 'Opening scene' : ''}{opening && shots?.length ? ' · ' : ''}{shots?.length ? `Used in shot ${shots.join(', ')}` : ''}
-                      </p>
-                    )}
-                    {reference && !shots?.length && !opening && parsed && <p className="text-[10px] text-white/35">Not used in a shot yet</p>}
+                    <p className={cx('line-clamp-2 text-xs leading-snug', kind === 'scene' ? 'text-[#d9ccff]' : 'text-white/85')}>{text.title}</p>
+                    {text.sub && <p className="text-[10.5px] text-white/45">{text.sub}</p>}
                   </figcaption>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    <ImageSourceMenu
-                      onUpload={() => chooseUpload({ index })}
-                      onLibrary={() => chooseLibrary({ index })}
-                      trigger={(
-                        <button type="button" disabled={busy || uploading !== null} className="inline-flex h-7 items-center gap-1 rounded-full border border-white/12 px-2.5 text-[11px] text-white/80 hover:bg-white/8 hover:text-white disabled:opacity-40">
-                          <RefreshCw className="h-3 w-3" /> Replace
-                        </button>
-                      )}
-                    />
-                    {reference && frames.length > 1 && (
-                      <button type="button" onClick={() => removeFrame(index)} disabled={busy || uploading !== null} className="inline-flex h-7 items-center gap-1 rounded-full border border-white/12 px-2.5 text-[11px] text-white/70 hover:border-red-400/40 hover:bg-red-500/10 hover:text-red-200 disabled:opacity-40">
-                        <Trash2 className="h-3 w-3" /> Remove
-                      </button>
-                    )}
-                  </div>
                 </figure>
               );
             })}
@@ -644,11 +667,6 @@ export function ReviewCard({ review, busy, credits, projectId, preview = false, 
               />
             )}
           </div>
-          {reference && noFaces && (
-            <p className="flex items-start gap-1.5 text-[11px] leading-snug text-white/40">
-              <Info className="mt-0.5 h-3 w-3 shrink-0" /> {videoModelName(review.model)} can’t use photos that show a person’s face; product-only photos work. The people in the video are created from the plan below.
-            </p>
-          )}
           <input
             ref={fileInput}
             type="file"

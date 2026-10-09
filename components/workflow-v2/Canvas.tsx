@@ -108,7 +108,7 @@ function FlowCanvas() {
   const { user } = useAuth();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const reactFlowInstance = useReactFlow();
-  const { credits, deductCredits, addCredits, refreshCredits } = useCredits();
+  const { credits, refreshCredits } = useCredits();
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
@@ -376,8 +376,6 @@ function FlowCanvas() {
         {
           updateNodeData,
           credits,
-          deductCredits,
-          addCredits,
           refreshCredits,
         }
       );

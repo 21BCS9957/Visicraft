@@ -79,6 +79,20 @@ export interface ReviewOutline {
   script?: string;
 }
 
+/** Where a close-up was cut from: the original photo and the area, [x, y, width, height] as shares of it. */
+export interface FrameSource {
+  url: string;
+  box: [number, number, number, number];
+}
+
+function readSource(raw: unknown): FrameSource | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const s = raw as Record<string, unknown>;
+  const box = Array.isArray(s.box) ? s.box.map(Number) : [];
+  if (typeof s.url !== 'string' || box.length !== 4 || !box.every((n) => Number.isFinite(n) && n >= 0 && n <= 1)) return undefined;
+  return { url: s.url, box: box as FrameSource['box'] };
+}
+
 /** A video the pipeline prepared, waiting for the user's approval before it renders. */
 export interface VideoReviewState {
   id: string;
@@ -89,11 +103,13 @@ export interface VideoReviewState {
   aspectRatio: VideoAspect;
   /** first_frame: the clip starts from the frame. reference: the film is built from all images (Image 1..N). */
   mode: 'first_frame' | 'reference';
-  frames: Array<{ url: string; label: string; kind?: ReviewFrameKind }>;
+  frames: Array<{ url: string; label: string; kind?: ReviewFrameKind; source?: FrameSource }>;
   prompt: string;
   negativePrompt?: string;
   credits: number;
   notes: string[];
+  /** The product is a garment ("the outfit"). */
+  garment?: boolean;
   /** How the prompt was written ("Written from the shots of your reference video"). */
   writtenBy?: string;
   /** The reference videos the shots were copied from; never sent to the video model. */
@@ -132,11 +148,14 @@ export function readVideoReview(id: unknown, raw: unknown): VideoReviewState | n
         url: f.url as string,
         label: typeof f.label === 'string' ? f.label : '',
         kind: FRAME_KINDS.find((kind) => kind === f.kind),
+        source: readSource(f.source),
       })),
     prompt: r.prompt,
     negativePrompt: typeof r.negativePrompt === 'string' ? r.negativePrompt : undefined,
     credits: typeof r.credits === 'number' ? r.credits : 0,
     notes: Array.isArray(r.notes) ? r.notes.filter((n): n is string => typeof n === 'string') : [],
+    // Older reviews: a fixed camera was set for garments only.
+    garment: r.garment === true || (r.garment === undefined && r.cameraFixed === true),
     writtenBy: typeof r.writtenBy === 'string' ? r.writtenBy : undefined,
     referenceVideos: Array.isArray(r.referenceVideos)
       ? (r.referenceVideos as Array<Record<string, unknown>>)
@@ -401,7 +420,7 @@ export interface StudioVideo {
   /** It didn't render (or was cancelled) and its approved plan can come back for approval. */
   retryable?: boolean;
   /** How it was planned: reference images or a first frame, with what each image is. */
-  plan?: { mode: VideoReviewState['mode']; frames: VideoReviewState['frames'] } | null;
+  plan?: { mode: VideoReviewState['mode']; frames: VideoReviewState['frames']; garment?: boolean } | null;
 }
 
 export type StudioVideoStatus = 'review' | 'rendering' | 'ready' | 'failed' | 'cancelled' | 'unsaved';

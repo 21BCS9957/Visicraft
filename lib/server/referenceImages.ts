@@ -15,6 +15,8 @@ export interface ReferenceImage {
   url: string;
   /** What it shows, in a few words ("zari border close-up", "front of the box"). */
   label: string;
+  /** A close-up's original photo and where in it the close-up was cut ([x, y, width, height], 0-1), for the approval card. */
+  source?: { url: string; box: [number, number, number, number] };
 }
 
 function textOf(response: Awaited<ReturnType<typeof requestGeminiText>>['response']): string {
@@ -110,9 +112,11 @@ Return JSON only: {"regions":[{"label":"3-6 words","box_2d":[ymin,xmin,ymax,xmax
       .resize(Math.max(300, Math.round(cropWidth * scale)), Math.max(300, Math.round(cropHeight * scale)), { kernel: 'lanczos3', fit: 'fill' })
       .jpeg({ quality: 95, chromaSubsampling: '4:4:4' })
       .toBuffer();
+    const share = (value: number, of: number) => Number((value / of).toFixed(4));
     crops.push({
       url: await uploadBufferToBucket(buffer, 'generated-thumbnails', 'image/jpeg'),
       label: typeof region.label === 'string' ? region.label.slice(0, 60) : 'product detail',
+      source: { url: imageUrl, box: [share(left, width), share(top, height), share(cropWidth, width), share(cropHeight, height)] },
     });
   }
   return { crops, usage: usageOf(response, providerModel) };

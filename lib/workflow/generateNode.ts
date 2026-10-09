@@ -23,8 +23,6 @@ export interface GenerateNodeParams {
   resolution: string;
   updateNodeData: (nodeId: string, data: Record<string, any>) => void;
   credits?: number;
-  deductCredits?: (amount: number) => Promise<boolean>;
-  addCredits?: (amount: number) => Promise<boolean>;
   refreshCredits?: () => Promise<void>;
 }
 

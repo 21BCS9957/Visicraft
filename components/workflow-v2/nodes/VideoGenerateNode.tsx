@@ -20,7 +20,7 @@ export function VideoGenerateNode({ data, selected, id }: NodeProps) {
   const { user } = useAuth();
   const { getNodes, getEdges } = useReactFlow();
   const { updateNodeData, setNodes, setEdges, getLatestNodes, getLatestEdges, isGenerationRunning } = useWorkflow();
-  const { credits, deductCredits, refreshCredits, addCredits } = useCredits();
+  const { credits, refreshCredits } = useCredits();
   const [showMenu, setShowMenu] = useState(false);
   const [showFullscreen, setShowFullscreen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -161,8 +161,6 @@ export function VideoGenerateNode({ data, selected, id }: NodeProps) {
         mode: data.mode,
         updateNodeData,
         credits,
-        deductCredits,
-        addCredits,
         refreshCredits,
       });
       toast.success('Video generated!', { id: `videogen-${id}` });
