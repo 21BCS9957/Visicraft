@@ -25,6 +25,7 @@ const RENDER_WINDOW_MS = 20 * 60 * 60 * 1000;
 
 interface Row {
   id: string | number;
+  user_id?: string | null;
   created_at: string;
   model: string | null;
   credit_cost: number | null;
@@ -121,24 +122,35 @@ function planOf(row: Row, review: Record<string, unknown> | null): StudioVideo['
 
 type Db = ReturnType<typeof createServiceClient>;
 
-/** One page of a user's videos (24), optionally of one project, older than `before`. */
-export async function loadVideoHistory(admin: Db, userId: string, options: { projectId?: string | null; before?: string | null } = {}): Promise<VideoHistoryPage> {
+const COLUMNS = 'id,user_id,created_at,model,credit_cost,metadata';
+
+/**
+ * Videos of one or more users, newest first, each with the user it belongs to and its
+ * upgrades as extra takes: one page (`limit`, 24 by default), optionally of one project.
+ */
+export async function loadVideosOf(
+  admin: Db,
+  userIds: string[],
+  options: { projectId?: string | null; before?: string | null; limit?: number } = {}
+): Promise<{ entries: Array<{ userId: string; projectId: string | null; video: StudioVideo }>; nextBefore: string | null }> {
   const { projectId, before } = options;
+  const limit = options.limit ?? PAGE;
+  if (!userIds.length) return { entries: [], nextBefore: null };
 
   let query = admin
     .from('usage_logs')
-    .select('id,created_at,model,credit_cost,metadata')
-    .eq('user_id', userId)
+    .select(COLUMNS)
+    .in('user_id', userIds)
     .eq('feature', 'video_generation')
     .in('metadata->>mode', VIDEO_MODES)
     .order('created_at', { ascending: false })
-    .limit(PAGE + 1);
+    .limit(limit + 1);
   if (projectId && /^[0-9a-f-]{36}$/i.test(projectId)) query = query.eq('metadata->>projectId', projectId);
   if (before && !Number.isNaN(Date.parse(before))) query = query.lt('created_at', before);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   const rows = (data ?? []) as Row[];
-  const page = rows.slice(0, PAGE);
+  const page = rows.slice(0, limit);
   const all = page.map(videoOf);
 
   // Upgrades come after the video they were made from, so everything since this page's oldest
@@ -147,8 +159,8 @@ export async function loadVideoHistory(admin: Db, userId: string, options: { pro
     const oldest = page.at(-1)!.created_at;
     const upgrades = await admin
       .from('usage_logs')
-      .select('id,created_at,model,credit_cost,metadata')
-      .eq('user_id', userId)
+      .select(COLUMNS)
+      .in('user_id', userIds)
       .eq('feature', 'video_generation')
       .eq('metadata->>mode', 'video_upgrade')
       .gte('created_at', oldest)
@@ -169,6 +181,14 @@ export async function loadVideoHistory(admin: Db, userId: string, options: { pro
   }
 
   // Videos whose file was never kept (made before the Studio saved them) are left out.
-  const videos = all.filter((video) => video.review || video.cancelled || video.takes.some((take) => take.status !== 'unsaved'));
-  return { videos, nextBefore: rows.length > PAGE ? page.at(-1)!.created_at : null };
+  const entries = page
+    .map((row, index) => ({ userId: String(row.user_id ?? ''), projectId: text(row.metadata ?? {}, 'projectId'), video: all[index] }))
+    .filter(({ video }) => video.review || video.cancelled || video.takes.some((take) => take.status !== 'unsaved'));
+  return { entries, nextBefore: rows.length > limit ? page.at(-1)!.created_at : null };
+}
+
+/** One page of a user's videos (24), optionally of one project, older than `before`. */
+export async function loadVideoHistory(admin: Db, userId: string, options: { projectId?: string | null; before?: string | null } = {}): Promise<VideoHistoryPage> {
+  const { entries, nextBefore } = await loadVideosOf(admin, [userId], options);
+  return { videos: entries.map((entry) => entry.video), nextBefore };
 }

@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  // The GoGrowth dashboard runs on dashboard.<domain>; locally dashboard.localhost:3000 (proxy.ts).
+  allowedDevOrigins: ['dashboard.localhost'],
   // Native/ONNX packages must load from node_modules at runtime, not be bundled.
   serverExternalPackages: ['@imgly/background-removal-node', 'onnxruntime-node', 'sharp'],
   

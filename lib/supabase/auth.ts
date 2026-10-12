@@ -2,9 +2,9 @@ import { supabase } from './client';
 
 export async function signInWithGoogle() {
   // Get the correct redirect URL based on environment
-  const redirectUrl = typeof window !== 'undefined' 
+  const redirectUrl = typeof window !== 'undefined'
     ? `${window.location.origin}/auth/callback`
-    : process.env.NEXT_PUBLIC_SITE_URL 
+    : process.env.NEXT_PUBLIC_SITE_URL
       ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`
       : 'http://localhost:3000/auth/callback';
 

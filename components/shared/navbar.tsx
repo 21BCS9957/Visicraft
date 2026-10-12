@@ -1,32 +1,24 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { LogOut, User, Sparkles, Users } from 'lucide-react';
+import { usePathname, useSelectedLayoutSegments } from 'next/navigation';
+import { LogOut, User, Sparkles } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import gsap from 'gsap';
-import { adminApi } from '@/lib/admin/client';
 
 export function Navbar() {
   const pathname = usePathname();
+  // The matched route, not the browser path: the dashboard is served on its own subdomain at "/",
+  // rewritten to /dashboard, and the segments name that route on the server and in the browser alike.
+  const segments = useSelectedLayoutSegments();
   const { user, signOut } = useAuth();
   const { credits } = useCredits();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const logoRef = useRef<HTMLImageElement>(null);
-  // The GoGrowth admin gets a way into the team's workspaces (the server checks every request).
-  const [isAdmin, setIsAdmin] = useState(false);
-  useEffect(() => {
-    if (!user?.id) return;
-    let live = true;
-    adminApi.me().then((result) => live && setIsAdmin(result.admin)).catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [user?.id]);
 
   // GSAP spinning animation for logo on hover
   useEffect(() => {
@@ -67,7 +59,8 @@ export function Navbar() {
 
   // Full-screen tools draw their own top bar: a Playground project (and its Canvas) and the
   // Video Studio. The Playground hub and the Library keep the navbar.
-  const fullScreen = pathname?.startsWith('/workflow')
+  const fullScreen = segments[0] === 'dashboard'
+    || pathname?.startsWith('/workflow')
     // Inside an image project (and its Canvas) or a video project; the hubs and the Library keep it.
     || /^\/playground\/(video\/[^/]+|[0-9a-f-]{8,}|preview)(\/|$)/i.test(pathname ?? '');
   if (fullScreen) {
@@ -201,17 +194,6 @@ export function Navbar() {
                             Get more credits →
                           </Link>
                         </div>
-
-                        {isAdmin && user && (
-                          <Link
-                            href="/admin/team"
-                            onClick={() => setShowUserMenu(false)}
-                            className="flex w-full items-center gap-3 border-b border-white/10 px-4 py-3 text-left text-sm text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
-                          >
-                            <Users className="h-4 w-4" />
-                            Team workspaces
-                          </Link>
-                        )}
 
                         {/* Sign Out */}
                         <button
