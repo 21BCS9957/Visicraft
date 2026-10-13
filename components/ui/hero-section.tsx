@@ -47,6 +47,7 @@ import {
 } from '@/components/ui/PipelineTimeline';
 import { getAuthenticatedHeaders } from '@/lib/supabase/auth';
 import { uploadFileWithSignedUrl } from '@/lib/supabase/storage';
+import { SHOW_GENERATE, SHOW_PRICING } from '@/lib/siteSections';
 
 const IMAGE_CREDIT_COST = 65;
 const MARQUEE_WRAP_MIN = -20;
@@ -2005,17 +2006,19 @@ export function HeroSection() {
                 product content?
               </h2>
               <p className="mx-auto mt-5 max-w-2xl text-base font-light leading-relaxed text-[#9a9aa2] sm:mt-7 sm:text-xl">
-                Start creating campaign-ready product shots today.{' '}
-                <span className="text-[#fff05a]">From ₹499/mo.</span>
+                Start creating campaign-ready product shots today.
+                {SHOW_PRICING && <>{' '}<span className="text-[#fff05a]">From ₹499/mo.</span></>}
               </p>
               <div className="mt-7 flex flex-wrap items-center justify-center gap-3 sm:mt-9">
-                <button
-                  type="button"
-                  onClick={handlePricingClick}
-                  className="inline-flex h-12 items-center justify-center rounded-full border border-white/16 bg-transparent px-6 text-base font-light text-[#f4f4f5] transition-colors hover:border-white/35 hover:bg-white/8"
-                >
-                  View pricing
-                </button>
+                {SHOW_PRICING && (
+                  <button
+                    type="button"
+                    onClick={handlePricingClick}
+                    className="inline-flex h-12 items-center justify-center rounded-full border border-white/16 bg-transparent px-6 text-base font-light text-[#f4f4f5] transition-colors hover:border-white/35 hover:bg-white/8"
+                  >
+                    View pricing
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleSignupClick}
@@ -2053,8 +2056,8 @@ export function HeroSection() {
                       <a href="#showcase" className="transition-colors hover:text-[#fff05a]">Features</a>
                       <a href="#showcase" className="transition-colors hover:text-[#fff05a]">Showcase</a>
                       <a href="/workflow" className="transition-colors hover:text-[#fff05a]">Workflow</a>
-                      <a href="/pricing" className="transition-colors hover:text-[#fff05a]">Pricing</a>
-                      <a href="/generate" className="transition-colors hover:text-[#fff05a]">Tools</a>
+                      {SHOW_PRICING && <a href="/pricing" className="transition-colors hover:text-[#fff05a]">Pricing</a>}
+                      {SHOW_GENERATE && <a href="/generate" className="transition-colors hover:text-[#fff05a]">Tools</a>}
                     </div>
                   </div>
                   <div>
@@ -2063,7 +2066,7 @@ export function HeroSection() {
                       <a href="/workflow" className="transition-colors hover:text-[#fff05a]">Docs</a>
                       <a href="#showcase" className="transition-colors hover:text-[#fff05a]">Learn</a>
                       <a href="#showcase" className="transition-colors hover:text-[#fff05a]">Customers</a>
-                      <a href="/pricing" className="transition-colors hover:text-[#fff05a]">Plans</a>
+                      {SHOW_PRICING && <a href="/pricing" className="transition-colors hover:text-[#fff05a]">Plans</a>}
                       <a href="/login" className="transition-colors hover:text-[#fff05a]">Account</a>
                       <a href="mailto:support@visicraft.in" className="break-all transition-colors hover:text-[#fff05a]">support@visicraft.in</a>
                     </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, Download, FolderOutput, ImagePlus, Loader2, RotateCcw, Star, Trash2, Wand2 } from 'lucide-react';
+import { AlertTriangle, Download, FolderOutput, ImagePlus, Loader2, MoreHorizontal, RotateCcw, Star, Trash2, Wand2 } from 'lucide-react';
 import toast from '@/lib/toast';
 import { downloadUrl, libraryApi, playgroundApi } from '@/lib/playground/api';
 import { ROLE_LABELS, type ReferenceRole } from '@/lib/playground/models';
@@ -8,6 +8,7 @@ import { retryItem } from '@/lib/playground/runner';
 import { usePlaygroundStore } from '@/lib/playground/store';
 import type { PlaygroundItem } from '@/lib/playground/types';
 import { imageFileName } from '@/lib/playground/zip';
+import { useCoarsePointer, useElementWidth } from './hooks';
 import { cssRatio, cx, IconButton, Popover, PopoverClose } from './ui';
 
 const TOAST = { position: 'top-center' as const };
@@ -124,6 +125,53 @@ function PendingFitCard({ item, fit, checking }: { item: PlaygroundItem; fit: Pe
   );
 }
 
+/** Everything a finished card can do, in one menu: for cards too narrow to show each action as a button. */
+function MoreMenu({ item, actions, onCanvas, withQuick }: {
+  item: PlaygroundItem;
+  actions: ReturnType<typeof useItemActions>;
+  onCanvas?: () => void;
+  /** Also favourite and download (when even those don't fit beside it). */
+  withQuick: boolean;
+}) {
+  const row = 'flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm text-white/85 hover:bg-white/8';
+  return (
+    <Popover side="bottom" align="end" className="w-56" trigger={<IconButton label="More actions" tone="solid"><MoreHorizontal className="h-4 w-4" /></IconButton>}>
+      {withQuick && (
+        <>
+          <PopoverClose asChild>
+            <button type="button" onClick={actions.toggleFavorite} className={row}>
+              <Star className={cx('h-4 w-4', item.favorite && 'fill-[#fff05a] text-[#fff05a]')} /> {item.favorite ? 'Remove from favourites' : 'Add to favourites'}
+            </button>
+          </PopoverClose>
+          <PopoverClose asChild>
+            <a href={actions.href} download={actions.fileName} className={row}><Download className="h-4 w-4" /> Download</a>
+          </PopoverClose>
+        </>
+      )}
+      {onCanvas && (
+        <PopoverClose asChild>
+          <button type="button" onClick={onCanvas} className={row}><Wand2 className="h-4 w-4" /> Open in Canvas</button>
+        </PopoverClose>
+      )}
+      <PopoverClose asChild>
+        <button type="button" onClick={actions.saveToLibrary} className={row}><FolderOutput className="h-4 w-4" /> Save to Library</button>
+      </PopoverClose>
+      <p className="px-2.5 pb-1 pt-2 text-[11px] uppercase tracking-wide text-white/40">Use as reference</p>
+      {(['product', 'person', 'style'] as ReferenceRole[]).map((role) => (
+        <PopoverClose asChild key={role}>
+          <button type="button" onClick={() => actions.useAsReference(role)} className={row}>
+            <ImagePlus className="h-4 w-4" /> {ROLE_LABELS[role]}
+          </button>
+        </PopoverClose>
+      ))}
+      <div className="my-1 h-px bg-white/8" />
+      <PopoverClose asChild>
+        <button type="button" onClick={actions.remove} className={cx(row, 'text-red-300/90 hover:bg-red-500/10')}><Trash2 className="h-4 w-4" /> Delete</button>
+      </PopoverClose>
+    </Popover>
+  );
+}
+
 export function ImageCard({ item, prompt, onOpen, onCanvas, pendingFit, canRetry = true }: {
   item: PlaygroundItem;
   prompt: string;
@@ -137,6 +185,11 @@ export function ImageCard({ item, prompt, onOpen, onCanvas, pendingFit, canRetry
   const actions = useItemActions(item, prompt);
   const checking = usePlaygroundStore((state) => state.runner.checking.includes(item.id));
   const ratio = cssRatio(item.aspectRatio);
+  // Small tiles can't fit every action as a button: favourite and download stay, the rest go in "More".
+  const [cardRef, cardWidth] = useElementWidth();
+  const buttonSize = useCoarsePointer() ? 44 : 32;
+  const fitting = (buttons: number) => buttons * buttonSize + (buttons - 1) * 4 + 16;
+  const layout = !cardWidth || cardWidth >= fitting(onCanvas ? 6 : 5) ? 'all' : cardWidth >= fitting(3) ? 'some' : 'menu';
 
   if (pendingFit && (item.status === 'queued' || item.status === 'generating')) {
     return <PendingFitCard item={item} fit={pendingFit} checking={checking} />;
@@ -144,7 +197,7 @@ export function ImageCard({ item, prompt, onOpen, onCanvas, pendingFit, canRetry
 
   if (item.status === 'done' && item.previewUrl) {
     return (
-      <figure className="group relative overflow-hidden rounded-2xl border border-white/8 bg-white/[0.03]" style={{ aspectRatio: ratio }}>
+      <figure ref={cardRef} className="group relative overflow-hidden rounded-2xl border border-white/8 bg-white/[0.03]" style={{ aspectRatio: ratio }}>
         <button type="button" onClick={onOpen} className="absolute inset-0 block h-full w-full cursor-zoom-in" aria-label="Open image">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={item.previewUrl} alt={prompt} loading="lazy" decoding="async" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.02]" />
@@ -154,28 +207,36 @@ export function ImageCard({ item, prompt, onOpen, onCanvas, pendingFit, canRetry
         )}
         <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-end gap-1 p-2 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
           <div className="pointer-events-auto flex gap-1">
-            <IconButton label={item.favorite ? 'Remove from favourites' : 'Add to favourites'} tone="solid" onClick={actions.toggleFavorite}>
-              <Star className={cx('h-4 w-4', item.favorite && 'fill-[#fff05a] text-[#fff05a]')} />
-            </IconButton>
-            {onCanvas && (
+            {layout !== 'menu' && (
+              <IconButton label={item.favorite ? 'Remove from favourites' : 'Add to favourites'} tone="solid" onClick={actions.toggleFavorite}>
+                <Star className={cx('h-4 w-4', item.favorite && 'fill-[#fff05a] text-[#fff05a]')} />
+              </IconButton>
+            )}
+            {layout === 'all' && onCanvas && (
               <IconButton label="Open in Canvas" tone="solid" onClick={onCanvas}>
                 <Wand2 className="h-4 w-4" />
               </IconButton>
             )}
-            <ReferenceRoleMenu onPick={actions.useAsReference}>
-              <IconButton label="Use as reference" tone="solid"><ImagePlus className="h-4 w-4" /></IconButton>
-            </ReferenceRoleMenu>
-            <IconButton label="Save to Library" tone="solid" onClick={actions.saveToLibrary}><FolderOutput className="h-4 w-4" /></IconButton>
-            <a
-              href={actions.href}
-              download={actions.fileName}
-              aria-label="Download"
-              title="Download"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-md hover:bg-black/75"
-            >
-              <Download className="h-4 w-4" />
-            </a>
-            <IconButton label="Delete" tone="solid" onClick={actions.remove}><Trash2 className="h-4 w-4" /></IconButton>
+            {layout === 'all' && (
+              <ReferenceRoleMenu onPick={actions.useAsReference}>
+                <IconButton label="Use as reference" tone="solid"><ImagePlus className="h-4 w-4" /></IconButton>
+              </ReferenceRoleMenu>
+            )}
+            {layout === 'all' && <IconButton label="Save to Library" tone="solid" onClick={actions.saveToLibrary}><FolderOutput className="h-4 w-4" /></IconButton>}
+            {layout !== 'menu' && (
+              <a
+                href={actions.href}
+                download={actions.fileName}
+                aria-label="Download"
+                title="Download"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-md hover:bg-black/75"
+              >
+                <Download className="h-4 w-4" />
+              </a>
+            )}
+            {layout === 'all'
+              ? <IconButton label="Delete" tone="solid" onClick={actions.remove}><Trash2 className="h-4 w-4" /></IconButton>
+              : <MoreMenu item={item} actions={actions} onCanvas={onCanvas} withQuick={layout === 'menu'} />}
           </div>
         </div>
         {item.favorite && (

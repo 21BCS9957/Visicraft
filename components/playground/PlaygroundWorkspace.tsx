@@ -18,6 +18,7 @@ import { Gallery } from './Gallery';
 import { Lightbox } from './Lightbox';
 import { ReferencePanel } from './ReferencePanel';
 import { cx } from './ui';
+import { SHOW_PRICING } from '@/lib/siteSections';
 
 const TOAST = { position: 'top-center' as const };
 const DENSITY_KEY = 'visicraft:playgroundDensity';
@@ -104,10 +105,17 @@ function Topbar({ density, onDensity, panelOpen, onTogglePanel }: {
             aria-label="Grid size"
           />
         </label>
-        <Link href="/pricing" className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white hover:bg-white/10" title="Credits">
-          <Sparkles className="h-4 w-4 text-[#fff05a]" />
-          {user || preview ? credits.toLocaleString('en-IN') : 0}
-        </Link>
+        {SHOW_PRICING ? (
+          <Link href="/pricing" className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white hover:bg-white/10" title="Credits">
+            <Sparkles className="h-4 w-4 text-[#fff05a]" />
+            {user || preview ? credits.toLocaleString('en-IN') : 0}
+          </Link>
+        ) : (
+          <span className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white" title="Credits">
+            <Sparkles className="h-4 w-4 text-[#fff05a]" />
+            {user || preview ? credits.toLocaleString('en-IN') : 0}
+          </span>
+        )}
         <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-white/12 bg-white/[0.07] text-white">
           {user?.user_metadata?.avatar_url ? (
             // eslint-disable-next-line @next/next/no-img-element

@@ -6,6 +6,7 @@ import { Check, Crown, Grid3x3, LogOut, Sparkles, User } from 'lucide-react';
 import { BackgroundVariant } from 'reactflow';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
+import { SHOW_PRICING } from '@/lib/siteSections';
 
 interface TopbarProps {
   onNewWorkflow?: () => void;
@@ -137,13 +138,15 @@ export function Topbar({
           )}
         </div>
 
-        <Link 
-          href="/pricing"
-          className="flex items-center gap-2 rounded-full bg-[#fff05a] px-3 py-2 text-sm font-medium text-black shadow-[0_12px_34px_rgba(255,240,90,0.12)] transition-colors hover:bg-white"
-        >
-          <Crown className="w-4 h-4" />
-          Upgrade
-        </Link>
+        {SHOW_PRICING && (
+          <Link
+            href="/pricing"
+            className="flex items-center gap-2 rounded-full bg-[#fff05a] px-3 py-2 text-sm font-medium text-black shadow-[0_12px_34px_rgba(255,240,90,0.12)] transition-colors hover:bg-white"
+          >
+            <Crown className="w-4 h-4" />
+            Upgrade
+          </Link>
+        )}
 
         <div ref={accountMenuRef} className="relative">
           <button
@@ -200,13 +203,15 @@ export function Topbar({
               </div>
 
               <div className="mt-2 grid gap-2">
-                <Link
-                  href="/pricing"
-                  onClick={() => setShowAccountMenu(false)}
-                  className="rounded-full bg-[#fff05a] px-4 py-2.5 text-center text-sm font-medium text-black transition-colors hover:bg-white"
-                >
-                  Add more tokens
-                </Link>
+                {SHOW_PRICING && (
+                  <Link
+                    href="/pricing"
+                    onClick={() => setShowAccountMenu(false)}
+                    className="rounded-full bg-[#fff05a] px-4 py-2.5 text-center text-sm font-medium text-black transition-colors hover:bg-white"
+                  >
+                    Add more tokens
+                  </Link>
+                )}
                 {user ? (
                   <button
                     type="button"

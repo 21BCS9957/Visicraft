@@ -5,6 +5,7 @@ import { usePathname, useSelectedLayoutSegments } from 'next/navigation';
 import { LogOut, User, Sparkles } from 'lucide-react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useCredits } from '@/lib/contexts/CreditsContext';
+import { SHOW_GENERATE, SHOW_PRICING } from '@/lib/siteSections';
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import gsap from 'gsap';
@@ -71,8 +72,8 @@ export function Navbar() {
     { href: '/', label: 'Home' },
     { href: '/playground', label: 'Playground' },
     { href: '/workflow', label: 'Workflow' },
-    { href: '/generate', label: 'Generate' },
-    { href: '/pricing', label: 'Pricing' },
+    ...(SHOW_GENERATE ? [{ href: '/generate', label: 'Generate' }] : []),
+    ...(SHOW_PRICING ? [{ href: '/pricing', label: 'Pricing' }] : []),
   ];
 
   return (
@@ -186,13 +187,15 @@ export function Navbar() {
                             </div>
                             <span className="text-2xl font-light text-white">{credits}</span>
                           </div>
-                          <Link
-                            href="/pricing"
-                            className="mt-3 block text-center text-xs text-[#c8b4a0] hover:text-white transition-colors"
-                            onClick={() => setShowUserMenu(false)}
-                          >
-                            Get more credits →
-                          </Link>
+                          {SHOW_PRICING && (
+                            <Link
+                              href="/pricing"
+                              className="mt-3 block text-center text-xs text-[#c8b4a0] hover:text-white transition-colors"
+                              onClick={() => setShowUserMenu(false)}
+                            >
+                              Get more credits →
+                            </Link>
+                          )}
                         </div>
 
                         {/* Sign Out */}

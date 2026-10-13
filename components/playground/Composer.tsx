@@ -31,6 +31,7 @@ import { dictationErrorMessage, useSpeechDictation } from '@/lib/useSpeechDictat
 import { DictationButton } from '@/components/shared/DictationButton';
 import { PromptWriter } from './PromptWriter';
 import { Chip, cx, Popover } from './ui';
+import { SHOW_PRICING } from '@/lib/siteSections';
 
 const TOAST = { position: 'top-center' as const };
 
@@ -490,7 +491,7 @@ export function Composer({ onHeight }: { onHeight: (height: number) => void }) {
                 <div className={cx(short ? 'text-red-300' : 'text-white/40')}>
                   {cost.credits.toLocaleString('en-IN')} credits · about {runMinutes(model.id, size.id, cost.images, quality)} min
                   {tooMany && ` · max ${MAX_IMAGES_PER_RUN} per run`}
-                  {short && <> · you have {credits.toLocaleString('en-IN')} · <Link href="/pricing" className="underline">get credits</Link></>}
+                  {short && <> · you have {credits.toLocaleString('en-IN')}{SHOW_PRICING && <> · <Link href="/pricing" className="underline">get credits</Link></>}</>}
                 </div>
               )}
             </div>

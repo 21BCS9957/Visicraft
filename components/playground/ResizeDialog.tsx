@@ -35,6 +35,7 @@ import { enqueue } from '@/lib/playground/runner';
 import { usePlaygroundStore } from '@/lib/playground/store';
 import type { PlaygroundItem, PlaygroundRun } from '@/lib/playground/types';
 import { cx, Toggle } from './ui';
+import { SHOW_PRICING } from '@/lib/siteSections';
 
 const TOAST = { position: 'top-center' as const };
 const METHODS: ResizeMethod[] = ['extend', 'remake', 'fit'];
@@ -525,7 +526,7 @@ export function ResizeDialog({ open, onOpenChange, picked, context }: {
                   existing ? `${existing} already ${existing === 1 ? 'has' : 'have'} this version` : '',
                   short ? `you have ${credits(balance)}` : price.credits && !preview && user ? `you have ${credits(balance)}` : '',
                 ].filter(Boolean).join(' · ')}
-                {short && <> · <Link href="/pricing" className="underline">get credits</Link></>}
+                {short && SHOW_PRICING && <> · <Link href="/pricing" className="underline">get credits</Link></>}
               </div>
             </div>
             <div className="ml-auto flex items-center gap-2">

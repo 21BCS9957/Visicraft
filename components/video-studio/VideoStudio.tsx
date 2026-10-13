@@ -28,6 +28,7 @@ import { ImageViewer } from '@/components/shared/ImageViewer';
 import { VideoHistory } from './VideoHistory';
 import { VideoPlayerCard } from './VideoPlayerCard';
 import { choicesFrom, pickerModel } from './VideoSettings';
+import { SHOW_PRICING } from '@/lib/siteSections';
 
 const TOAST = { position: 'top-center' as const };
 
@@ -156,10 +157,17 @@ function Topbar({ preview, project, onRename, panelOpen, onTogglePanel }: {
         {panelOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
       </button>
       <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
-        <Link href="/pricing" className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white hover:bg-white/10" title="Credits">
-          <Sparkles className="h-4 w-4 text-[#fff05a]" />
-          {user || preview ? credits.toLocaleString('en-IN') : 0}
-        </Link>
+        {SHOW_PRICING ? (
+          <Link href="/pricing" className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white hover:bg-white/10" title="Credits">
+            <Sparkles className="h-4 w-4 text-[#fff05a]" />
+            {user || preview ? credits.toLocaleString('en-IN') : 0}
+          </Link>
+        ) : (
+          <span className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white" title="Credits">
+            <Sparkles className="h-4 w-4 text-[#fff05a]" />
+            {user || preview ? credits.toLocaleString('en-IN') : 0}
+          </span>
+        )}
         <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-white/12 bg-white/[0.07] text-white">
           {user?.user_metadata?.avatar_url ? (
             // eslint-disable-next-line @next/next/no-img-element
