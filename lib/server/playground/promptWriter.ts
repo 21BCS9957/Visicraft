@@ -31,19 +31,19 @@ function anthropic(): Anthropic {
 
 const SYSTEM = `You write image-generation prompts for a brand's product campaign in Visicraft's Playground.
 
-The brand has uploaded reference images and may have written guidelines: a Markdown document about the brand, the product's facts, the look, and what to always or never show. You write the number of prompts the user asks for. Each prompt is sent on its own to a Google Gemini image model, together with the same reference images and the guidelines, and becomes one finished image. Your prompts decide what those images are, so make every one worth generating.
+The brand has uploaded reference images and may have written guidelines: a Markdown document about the brand, the product's facts, the look, and what to always or never show. You write the number of prompts the user asks for. Each prompt is sent on its own to an image model (Google's Gemini or OpenAI's GPT Image), together with the same reference images, and becomes one finished image. Each request says whether the image model also gets the guidelines; when it doesn't, your prompt is all it knows about the brand. Your prompts decide what those images are, so make every one worth generating.
 
 Follow the guidelines closely: every prompt must fit them and none may contradict them. When the guidelines and the user's request disagree, the user's request for this batch wins, but keep the guidelines' brand and product facts.
 
 What works with these image models:
-- Describe one finished photograph or ad image per prompt, in natural sentences (roughly 40 to 110 words): who or what is in it and what is happening, the setting, the composition and camera (shot size, angle, lens feel), the light, the colour and mood, and the styling or props.
+- Describe one finished photograph or ad image per prompt, in natural sentences (roughly 40 to 110 words, or up to about 220 when details from the guidelines have to go into it): who or what is in it and what is happening, the setting, the composition and camera (shot size, angle, lens feel), the light, the colour and mood, and the styling or props.
 - Refer to the reference images the way the image model will see them: "the product from the reference images", "the person from the person reference", "the look of the style reference". Never redescribe the product's design, colours, logo or printed text in different words, and never ask for the product to change. The image model reproduces it from the references.
 - When a person suits the brief and there is no person reference, describe the person (age range, look, styling, expression) in keeping with the brief's market and audience.
 - Compose for the image sizes the user picked, which are given with each request. Describe the framing; don't write the ratio. When several sizes are picked, keep the subject clear of the edges so every size works.
 - Include written text (headlines, prices, offers, calls to action) only when the user asks for it. Then give the exact words in quotes and say where they go.
 - Keep every prompt within mainstream advertising standards: adults only; tasteful, editorial styling for lingerie and swimwear; no nudity, violence or real public figures; no logos or brands other than the ones in the references.
 - Make the set varied, like a real campaign shoot list: different settings, angles, moods, times of day, props and, where relevant, people, all serving what the user asked for. No two prompts describe the same scene.
-- Each prompt stands alone: no numbering, no markdown, no mention of other prompts, and no need to repeat the guidelines, which are sent with every image.
+- Each prompt stands alone: no numbering, no markdown, no mention of other prompts.
 
 Return exactly the number of prompts requested.`;
 
@@ -79,6 +79,8 @@ export async function writePlaygroundPrompts(options: {
   goal: string;
   count: number;
   brief: string;
+  /** The guidelines also go with every image; otherwise each prompt has to carry what its image needs. */
+  guidelinesWithImages: boolean;
   references: ReferenceSnapshot[];
   imageModel: string;
   ratios: string[];
@@ -113,7 +115,11 @@ export async function writePlaygroundPrompts(options: {
   const model = playgroundModel(options.imageModel);
   const lines = [
     shown ? `The ${shown} image${shown === 1 ? '' : 's'} above ${shown === 1 ? 'is' : 'are'} the project's reference${shown === 1 ? '' : 's'}; every generated image receives them.` : 'This project has no reference images yet.',
-    guidelines ? 'Follow the project guidelines above; they are also sent with every image.' : 'This project has no guidelines.',
+    !guidelines
+      ? 'This project has no guidelines.'
+      : options.guidelinesWithImages
+        ? 'Follow the project guidelines above. They are also sent with every image, so the prompts need not repeat them.'
+        : 'Follow the project guidelines above. The image model does not get them: it sees only your prompt and the reference images. So put into every prompt everything from the guidelines that this image needs: the brand look, colours and mood, the product facts the picture shows (its design still comes from the references), how people look and are styled, any text rules, and the always and never rules that apply. Never write "follow the guidelines" or refer to a brand guide.',
     `What the user wants: ${options.goal.trim() || '(nothing extra; follow the brief and the references)'}`,
     `Image model: ${model.name}, ${model.blurb.toLowerCase()}.`,
     `Image sizes: ${describeSizes(options.ratios)}. Every prompt is rendered in each of these sizes.`,

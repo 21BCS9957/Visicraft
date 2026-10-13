@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createServiceClient } from '@/lib/supabase/server';
 import { playgroundModel } from '@/lib/playground/models';
+import { isFitBackground, type RunResize } from '@/lib/playground/resize';
 import type {
   LibraryFolder,
   LibraryItem,
@@ -67,6 +68,28 @@ export function isMissingQualityColumn(error: { code?: string; message?: string 
 export const QUALITY_SETUP_MESSAGE =
   'OpenAI image models need one more database step. Run supabase/migrations/202610050001_playground_quality.sql in the Supabase SQL Editor.';
 
+/** The resize column (migration 202610130002) isn't there yet. */
+export function isMissingResizeColumn(error: { code?: string; message?: string } | null | undefined): boolean {
+  if (!error) return false;
+  return (error.code === '42703' || error.code === 'PGRST204' || /does not exist|could not find/i.test(error.message ?? '')) && /\bresize\b/.test(error.message ?? '');
+}
+
+export const RESIZE_SETUP_MESSAGE =
+  'Making other sizes needs one more database step. Run supabase/migrations/202610130002_playground_resize.sql in the Supabase SQL Editor.';
+
+/** A run's "Another size" settings, or null for an ordinary run (and every run before the migration). */
+function toResize(value: unknown): RunResize | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Row;
+  if (record.method !== 'extend' && record.method !== 'remake' && record.method !== 'fit') return null;
+  return {
+    method: record.method,
+    fromRunId: typeof record.fromRunId === 'string' ? record.fromRunId : null,
+    ...(isFitBackground(record.background) ? { background: record.background } : {}),
+    ...(record.safe === true ? { safe: true } : {}),
+  };
+}
+
 export function toReference(row: Row): PlaygroundReference {
   return {
     id: str(row.id),
@@ -97,6 +120,7 @@ export function toRun(row: Row): PlaygroundRun {
     creditsPerImage: num(row.credits_per_image),
     cancelledAt: strOrNull(row.cancelled_at),
     createdAt: str(row.created_at),
+    resize: toResize(row.resize),
   };
 }
 
@@ -303,8 +327,25 @@ export async function loadProjectBundle(db: Db, userId: string, projectId: strin
   const pageRows = runRows.slice(0, RUNS_PER_PAGE);
   const pageRuns = pageRows.map(toRun);
   const nextBefore = runRows.length > RUNS_PER_PAGE ? pageRuns[pageRuns.length - 1]?.createdAt ?? null : null;
+
+  // Other sizes show under the run they were made from: bring that run along when it is older than this page.
+  const onPage = new Set(pageRuns.map((run) => run.id));
+  const missing = [...new Set(pageRuns.map((run) => run.resize?.fromRunId).filter((id): id is string => Boolean(id) && !onPage.has(id as string)))];
+  let sourceRows: Row[] = [];
+  if (missing.length) {
+    const sources = await db
+      .from('playground_runs')
+      .select(`*, playground_items(${ITEM_COLUMNS})`)
+      .in('id', missing)
+      .eq('project_id', projectId)
+      .eq('user_id', userId)
+      .order('position', { referencedTable: 'playground_items', ascending: true });
+    if (sources.error) console.error('Playground: loading the runs other sizes came from failed:', sources.error);
+    else sourceRows = (sources.data ?? []) as Row[];
+  }
+
   const items: PlaygroundItem[] = [
-    ...pageRows.flatMap((row) => ((row.playground_items as Row[] | undefined) ?? []).map(toItem)),
+    ...[...pageRows, ...sourceRows].flatMap((row) => ((row.playground_items as Row[] | undefined) ?? []).map(toItem)),
     ...((editsResult.data ?? []) as unknown as Row[]).map(toItem),
   ];
 
@@ -313,7 +354,7 @@ export async function loadProjectBundle(db: Db, userId: string, projectId: strin
   return {
     project: toProject(projectResult.data as Row),
     references: ((referencesResult.data ?? []) as Row[]).map(toReference),
-    runs: pageRuns.filter((run) => withItems.has(run.id)),
+    runs: [...pageRuns, ...sourceRows.map(toRun)].filter((run) => withItems.has(run.id)),
     items,
     nextBefore,
     refunded,

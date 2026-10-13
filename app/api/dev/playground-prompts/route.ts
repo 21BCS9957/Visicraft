@@ -7,7 +7,7 @@ export const maxDuration = 300;
 /**
  * Development-only: runs the Claude prompt writer on the given references without signing
  * in or spending credits (it still calls Claude, which bills the Anthropic key).
- * POST { references: [{ url, role, label }], goal, count, brief?, model?, ratios? }
+ * POST { references: [{ url, role, label }], goal, count, brief?, guidelinesWithImages?, model?, ratios? }
  */
 export async function POST(request: NextRequest) {
   if (process.env.NODE_ENV !== 'development') {
@@ -18,6 +18,7 @@ export async function POST(request: NextRequest) {
     goal?: string;
     count?: number;
     brief?: string;
+    guidelinesWithImages?: boolean;
     model?: string;
     ratios?: string[];
   };
@@ -27,6 +28,7 @@ export async function POST(request: NextRequest) {
       goal: body.goal ?? '',
       count: Math.min(100, Math.max(1, body.count ?? 5)),
       brief: body.brief ?? '',
+      guidelinesWithImages: body.guidelinesWithImages === true,
       references: (body.references ?? []).map((reference, index) => ({ id: `dev-${index}`, ...reference })),
       imageModel: body.model ?? 'gemini-3-pro-image',
       ratios: body.ratios ?? ['4:5'],

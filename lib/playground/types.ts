@@ -1,6 +1,7 @@
 /** Rows and API shapes of the Playground, shared by the page and the server. */
 
 import type { ImageQuality, PlaygroundModelId, PlaygroundSize, ReferenceRole, ThinkingLevel } from './models';
+import type { RunResize } from './resize';
 
 export type ItemStatus = 'queued' | 'generating' | 'done' | 'failed' | 'cancelled';
 
@@ -12,6 +13,11 @@ export interface PlaygroundSettings {
   thinking: ThinkingLevel;
   /** OpenAI models' quality level; kept while a Gemini model is picked. */
   quality: ImageQuality;
+  /**
+   * The guidelines also go to the image model with every image. Off (the default), only
+   * Claude reads them, to write prompts that carry everything each image needs.
+   */
+  guidelinesWithImages: boolean;
 }
 
 export type ProjectKind = 'image' | 'video';
@@ -61,7 +67,7 @@ export interface VideoProjectSettings {
 export interface PlaygroundProject {
   id: string;
   name: string;
-  /** The project's Guidelines (Markdown), applied to every image and to Claude's prompts. */
+  /** The project's Guidelines (Markdown): Claude follows them in the prompts it writes; images get them only when `settings.guidelinesWithImages` is on. */
   brief: string;
   /** The .md file the guidelines came from, if uploaded. */
   briefName: string | null;
@@ -108,6 +114,8 @@ export interface PlaygroundRun {
   creditsPerImage: number;
   cancelledAt: string | null;
   createdAt: string;
+  /** Set when the run turns other images into another shape ("Another size"). */
+  resize?: RunResize | null;
 }
 
 export interface PlaygroundItem {

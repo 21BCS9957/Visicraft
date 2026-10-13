@@ -16,6 +16,8 @@ const WriteRequest = z.object({
   goal: z.string().max(2000),
   count: z.number().int().min(1).max(MAX_WRITTEN_PROMPTS),
   brief: z.string().max(MAX_BRIEF_CHARS),
+  /** The guidelines also go with every image; otherwise the prompts must carry what each image needs. */
+  guidelinesWithImages: z.boolean().optional(),
   referenceIds: z.array(z.uuid()).max(MAX_ENABLED_REFERENCES),
   model: z.string(),
   ratios: z.array(z.string()).min(1).max(14),
@@ -60,6 +62,7 @@ export async function POST(request: NextRequest, { params }: Context) {
       goal: body.goal,
       count: body.count,
       brief: body.brief,
+      guidelinesWithImages: body.guidelinesWithImages === true,
       references,
       imageModel: body.model,
       ratios: body.ratios,

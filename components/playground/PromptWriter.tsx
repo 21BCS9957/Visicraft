@@ -71,6 +71,7 @@ export function PromptWriter({ open, onOpenChange, existing, onPrompts }: {
           goal,
           count,
           brief: project.brief,
+          guidelinesWithImages: settings.guidelinesWithImages,
           referenceIds: enabled.map((reference) => reference.id),
           model: settings.model,
           ratios: settings.ratios,

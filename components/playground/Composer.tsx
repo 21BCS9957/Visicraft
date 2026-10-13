@@ -23,6 +23,7 @@ import {
   sizePrice,
 } from '@/lib/playground/models';
 import { MAX_IMAGES_PER_RUN, MAX_VARIATIONS, parseCsvPrompts, parsePromptList, type SplitMode } from '@/lib/playground/prompts';
+import { longestOpenAiPrompt, OPENAI_PROMPT_LIMIT, openAiTooLongMessage } from '@/lib/playground/promptText';
 import { enqueue } from '@/lib/playground/runner';
 import { usePlaygroundStore } from '@/lib/playground/store';
 import type { PlaygroundItem, PlaygroundRun } from '@/lib/playground/types';
@@ -142,7 +143,11 @@ export function Composer({ onHeight }: { onHeight: (height: number) => void }) {
   const tooMany = cost.images > MAX_IMAGES_PER_RUN;
   const tooManyRefs = enabledRefs.length > MAX_ENABLED_REFERENCES;
   const short = !preview && !creditsLoading && Boolean(user) && credits < cost.credits;
-  const canGenerate = prompts.length > 0 && !tooMany && !tooManyRefs && !short && !submitting && Boolean(project);
+  // GPT Image reads at most 32,000 characters per image, guidelines included when they go with every image.
+  const imageBrief = settings.guidelinesWithImages ? project?.brief ?? '' : '';
+  const openAiLength = model.provider === 'openai' && prompts.length ? longestOpenAiPrompt(imageBrief, enabledRefs, prompts) : 0;
+  const tooLong = openAiLength > OPENAI_PROMPT_LIMIT;
+  const canGenerate = prompts.length > 0 && !tooMany && !tooManyRefs && !tooLong && !short && !submitting && Boolean(project);
 
   // "Reuse prompts" from a run.
   useEffect(() => {
@@ -226,7 +231,7 @@ export function Composer({ onHeight }: { onHeight: (height: number) => void }) {
     setSubmitting(true);
     try {
       const { run, items } = preview
-        ? previewRun(clean, settings, project.brief)
+        ? previewRun(clean, settings, imageBrief)
         : await playgroundApi.createRun(project.id, {
           clientKey: crypto.randomUUID(),
           prompts: clean,
@@ -237,6 +242,7 @@ export function Composer({ onHeight }: { onHeight: (height: number) => void }) {
           thinking: model.thinking ? settings.thinking : undefined,
           quality: quality ?? undefined,
           brief: project.brief,
+          guidelinesWithImages: settings.guidelinesWithImages,
           referenceIds: enabledRefs.map((reference) => reference.id),
         });
       addRun(run, items);
@@ -505,6 +511,11 @@ export function Composer({ onHeight }: { onHeight: (height: number) => void }) {
         {tooManyRefs && (
           <p className="flex items-center gap-1.5 px-4 pb-3 text-[11px] text-red-300">
             <X className="h-3 w-3" /> Switch some references off: a run takes at most {MAX_ENABLED_REFERENCES} per image.
+          </p>
+        )}
+        {tooLong && (
+          <p className="flex items-start gap-1.5 px-4 pb-3 text-[11px] leading-snug text-red-300">
+            <X className="mt-px h-3 w-3 shrink-0" /> {openAiTooLongMessage(imageBrief, openAiLength)}
           </p>
         )}
       </div>

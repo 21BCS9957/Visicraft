@@ -98,15 +98,49 @@ export function ReferenceRoleMenu({ onPick, children }: { onPick: (role: Referen
   );
 }
 
-export function ImageCard({ item, prompt, onOpen, onCanvas }: {
+/** A Fit copy before its file arrives: drawn here from its original, so the whole run shows at once. */
+export interface PendingFit {
+  /** The original's preview. */
+  url: string;
+  /** 'blur' or a colour. */
+  background: string;
+}
+
+function PendingFitCard({ item, fit, checking }: { item: PlaygroundItem; fit: PendingFit; checking: boolean }) {
+  return (
+    <figure className="relative overflow-hidden rounded-2xl border border-white/8 bg-black" style={{ aspectRatio: cssRatio(item.aspectRatio) }}>
+      {fit.background === 'blur' ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={fit.url} alt="" className="absolute inset-0 h-full w-full scale-110 object-cover blur-xl brightness-75" />
+      ) : (
+        <div className="absolute inset-0" style={{ background: fit.background }} />
+      )}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={fit.url} alt="" className="absolute inset-0 h-full w-full object-contain" />
+      <span className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[11px] text-white/85 backdrop-blur-md">
+        <Loader2 className="h-3 w-3 animate-spin text-[#fff05a]" /> {checking ? 'Checking…' : item.status === 'queued' ? 'Queued' : 'Saving…'}
+      </span>
+    </figure>
+  );
+}
+
+export function ImageCard({ item, prompt, onOpen, onCanvas, pendingFit, canRetry = true }: {
   item: PlaygroundItem;
   prompt: string;
   onOpen: () => void;
   onCanvas?: () => void;
+  /** A queued Fit copy, drawn from its original until the file is made. */
+  pendingFit?: PendingFit;
+  /** False for a copy whose original was deleted: it can't be made again. */
+  canRetry?: boolean;
 }) {
   const actions = useItemActions(item, prompt);
   const checking = usePlaygroundStore((state) => state.runner.checking.includes(item.id));
   const ratio = cssRatio(item.aspectRatio);
+
+  if (pendingFit && (item.status === 'queued' || item.status === 'generating')) {
+    return <PendingFitCard item={item} fit={pendingFit} checking={checking} />;
+  }
 
   if (item.status === 'done' && item.previewUrl) {
     return (
@@ -181,9 +215,11 @@ export function ImageCard({ item, prompt, onOpen, onCanvas }: {
         {item.status === 'cancelled' && (
           <>
             <span className="text-white/40">Cancelled</span>
-            <button type="button" onClick={actions.retry} className="rounded-full border border-white/12 px-2.5 py-1 text-white/80 hover:bg-white/8">
-              Generate
-            </button>
+            {canRetry && (
+              <button type="button" onClick={actions.retry} className="rounded-full border border-white/12 px-2.5 py-1 text-white/80 hover:bg-white/8">
+                Generate
+              </button>
+            )}
           </>
         )}
         {item.status === 'failed' && (
@@ -193,9 +229,11 @@ export function ImageCard({ item, prompt, onOpen, onCanvas }: {
               <span className="line-clamp-3">{item.error ?? 'This image failed. Credits were refunded.'}</span>
             </span>
             <div className="flex items-center gap-2">
-              <button type="button" onClick={actions.retry} className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-white hover:bg-white/15">
-                <RotateCcw className="h-3 w-3" /> Retry
-              </button>
+              {canRetry && (
+                <button type="button" onClick={actions.retry} className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-white hover:bg-white/15">
+                  <RotateCcw className="h-3 w-3" /> Retry
+                </button>
+              )}
               <IconButton label="Delete" tone="danger" className="h-7 w-7" onClick={actions.remove}><Trash2 className="h-3.5 w-3.5" /></IconButton>
             </div>
           </div>

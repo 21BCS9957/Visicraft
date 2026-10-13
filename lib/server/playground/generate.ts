@@ -4,6 +4,7 @@ import type { GeneratedImage } from './errors';
 import { generateGeminiImage } from './gemini';
 import { generateOpenAiImage } from './openai';
 import { playgroundModel, type ImageQuality, type PlaygroundModelId, type PlaygroundSize, type ThinkingLevel } from '@/lib/playground/models';
+import type { LayoutReference } from '@/lib/playground/resize';
 import type { ReferenceSnapshot } from '@/lib/playground/types';
 
 /** One Playground image from the model's provider (Gemini or OpenAI). */
@@ -17,6 +18,8 @@ export async function generatePlaygroundImage(options: {
   brief: string;
   references: ReferenceSnapshot[];
   prompt: string;
+  /** Remake: the original image, sent after the references as the layout to follow. */
+  layout?: LayoutReference | null;
   /** Epoch ms after which no new attempt may start. */
   deadline: number;
 }): Promise<GeneratedImage> {

@@ -4,6 +4,7 @@ import { ApiError, apiErrorResponse, assertDb, readJson, requireUuid, withUser }
 import { getOwnedProject, isMissingQualityColumn, ITEM_COLUMNS, playgroundDb, QUALITY_SETUP_MESSAGE, toItem, toRun } from '@/lib/server/playground/db';
 import { DEFAULT_QUALITY, isPlaygroundModel, MAX_ENABLED_REFERENCES, modelQuality, playgroundModel, QUALITY_LABELS, runCost, sizeOption } from '@/lib/playground/models';
 import { MAX_BRIEF_CHARS, MAX_IMAGES_PER_RUN, MAX_PROMPT_CHARS, MAX_PROMPTS, MAX_VARIATIONS } from '@/lib/playground/prompts';
+import { longestOpenAiPrompt, OPENAI_PROMPT_LIMIT, openAiTooLongMessage } from '@/lib/playground/promptText';
 import type { ReferenceSnapshot } from '@/lib/playground/types';
 
 type Context = { params: Promise<{ projectId: string }> };
@@ -19,6 +20,8 @@ const RunRequest = z.object({
   /** OpenAI models' quality level. */
   quality: z.enum(['high', 'xhigh', 'max']).optional(),
   brief: z.string().max(MAX_BRIEF_CHARS),
+  /** Send the guidelines with every image too (off: Claude used them when writing the prompts). */
+  guidelinesWithImages: z.boolean().optional(),
   referenceIds: z.array(z.uuid()).max(MAX_ENABLED_REFERENCES),
 });
 
@@ -99,6 +102,15 @@ export async function POST(request: NextRequest, { params }: Context) {
       }
     }
 
+    // What every image gets with its prompt: the guidelines only when that is switched on.
+    const guidelinesWithImages = body.guidelinesWithImages === true;
+    const imageBrief = guidelinesWithImages ? body.brief : '';
+    // GPT Image reads at most 32,000 characters per image, guidelines included: refuse before queueing.
+    if (model.provider === 'openai') {
+      const longest = longestOpenAiPrompt(imageBrief, snapshot, body.prompts);
+      if (longest > OPENAI_PROMPT_LIMIT) throw new ApiError(400, openAiTooLongMessage(imageBrief, longest), 'too_long');
+    }
+
     const balance = await db.from('user_credits').select('credits').eq('user_id', user.id).maybeSingle();
     assertDb(balance.error, 'check your credits');
     const credits = Number(balance.data?.credits ?? 0);
@@ -121,7 +133,8 @@ export async function POST(request: NextRequest, { params }: Context) {
         aspect_ratios: ratios,
         variations: body.variations,
         thinking,
-        brief: body.brief,
+        // The run keeps what its images were sent, so "Guidelines used" shows only when they were.
+        brief: imageBrief,
         reference_snapshot: snapshot,
         prompts: body.prompts,
         image_count: cost.images,
@@ -167,7 +180,7 @@ export async function POST(request: NextRequest, { params }: Context) {
       .from('playground_projects')
       .update({
         brief: body.brief,
-        settings: { model: model.id, size: size.id, ratios, variations: body.variations, thinking: thinking ?? 'minimal', quality: quality ?? body.quality ?? DEFAULT_QUALITY },
+        settings: { model: model.id, size: size.id, ratios, variations: body.variations, thinking: thinking ?? 'minimal', quality: quality ?? body.quality ?? DEFAULT_QUALITY, guidelinesWithImages },
         updated_at: new Date().toISOString(),
       })
       .eq('id', projectId);

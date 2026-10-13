@@ -3,7 +3,9 @@ import 'server-only';
 import axios from 'axios';
 import { PlaygroundGenerationError, type GeneratedImage } from './errors';
 import { guidelinesText, loadReferences, orderedReferences, promptText, referenceLabel, roleRules } from './promptParts';
+import { loadLayoutImage } from './references';
 import { apiImageSize, type PlaygroundModelId, type PlaygroundSize, type ThinkingLevel } from '@/lib/playground/models';
+import type { LayoutReference } from '@/lib/playground/resize';
 import type { ReferenceSnapshot } from '@/lib/playground/types';
 
 // Callers that predate errors.ts import these from here.
@@ -25,15 +27,21 @@ interface ImageResponse {
   usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number };
 }
 
-/** Guidelines, then the references grouped by role and numbered, then the rules per role, then the prompt. */
-async function buildParts(options: { brief: string; references: ReferenceSnapshot[]; prompt: string }): Promise<Part[]> {
+/**
+ * Guidelines, then the references grouped by role and numbered, then the rules per role, then
+ * (Remake) the original as the last image, then the prompt.
+ */
+async function buildParts(options: { brief: string; references: ReferenceSnapshot[]; prompt: string; layout?: LayoutReference | null }): Promise<Part[]> {
   const parts: Part[] = [];
   const guidelines = guidelinesText(options.brief);
   if (guidelines) parts.push({ text: guidelines });
 
   const ordered = orderedReferences(options.references);
-  if (ordered.length) {
-    const loaded = await loadReferences(ordered);
+  const [loaded, layout] = await Promise.all([
+    ordered.length ? loadReferences(ordered) : Promise.resolve([]),
+    options.layout ? loadLayoutImage(options.layout.url) : Promise.resolve(null),
+  ]);
+  if (loaded.length) {
     parts.push({ text: 'Reference images:' });
     loaded.forEach(({ reference, image }, index) => {
       parts.push(
@@ -42,6 +50,9 @@ async function buildParts(options: { brief: string; references: ReferenceSnapsho
       );
     });
     parts.push({ text: roleRules(ordered) });
+  }
+  if (options.layout && layout) {
+    parts.push({ text: options.layout.label }, { inlineData: { mimeType: layout.mimeType, data: layout.data } });
   }
 
   parts.push({ text: promptText(options.prompt) });
@@ -146,10 +157,16 @@ function readImage(data: ImageResponse): GeneratedImage {
   };
 }
 
+function geminiKey(): string {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new PlaygroundGenerationError('paused', 'GEMINI_API_KEY is not configured on the server.');
+  return apiKey;
+}
+
 /**
- * One image for one prompt, with the project's brief and references. Transient server
- * errors are retried once while enough time is left before `deadline`; 429s are not retried
- * here (the browser re-queues the image and slows down).
+ * One image for one prompt, with the project's brief and references (and, for Remake, the
+ * original as its layout). Transient server errors are retried once while enough time is left
+ * before `deadline`; 429s are not retried here (the browser re-queues the image and slows down).
  */
 export async function generateGeminiImage(options: {
   model: PlaygroundModelId;
@@ -159,28 +176,34 @@ export async function generateGeminiImage(options: {
   brief: string;
   references: ReferenceSnapshot[];
   prompt: string;
+  layout?: LayoutReference | null;
   /** Epoch ms after which no new attempt may start. */
   deadline: number;
 }): Promise<GeneratedImage> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new PlaygroundGenerationError('paused', 'GEMINI_API_KEY is not configured on the server.');
-
+  geminiKey();
   const parts = await buildParts(options);
   const generationConfig: Record<string, unknown> = {
     responseModalities: ['IMAGE'],
     imageConfig: { aspectRatio: options.aspectRatio, imageSize: apiImageSize(options.size) },
   };
   if (options.thinking === 'high') generationConfig.thinkingConfig = { thinkingLevel: 'high' };
-  const body = { contents: [{ role: 'user', parts }], generationConfig };
+  return requestGeminiImage(options.model, { contents: [{ role: 'user', parts }], generationConfig }, options.deadline);
+}
 
+/**
+ * Sends one image request (`contents` and `generationConfig`) to a Gemini image model and reads
+ * the image it answers with; Extend builds its own request and uses this too.
+ */
+export async function requestGeminiImage(model: PlaygroundModelId, body: unknown, deadline: number): Promise<GeneratedImage> {
+  const apiKey = geminiKey();
   for (let attempt = 1; ; attempt++) {
-    const remaining = options.deadline - Date.now() - 20_000;
+    const remaining = deadline - Date.now() - 20_000;
     if (remaining < 30_000) {
       throw new PlaygroundGenerationError('timeout', 'Gemini took too long on this image. Try it again.');
     }
     try {
       const response = await axios.post<ImageResponse>(
-        `https://generativelanguage.googleapis.com/v1beta/models/${options.model}:generateContent`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
         body,
         {
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
@@ -194,7 +217,7 @@ export async function generateGeminiImage(options: {
       const classified = classifyGeminiError(error);
       const status = axios.isAxiosError(error) ? error.response?.status : undefined;
       const transient = classified.kind === 'failed' && (status === undefined || status >= 500);
-      if (transient && attempt < 2 && options.deadline - Date.now() > 90_000) {
+      if (transient && attempt < 2 && deadline - Date.now() > 90_000) {
         await new Promise((resolve) => setTimeout(resolve, 2_000));
         continue;
       }

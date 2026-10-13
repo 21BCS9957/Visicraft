@@ -11,6 +11,7 @@ export const DEFAULT_SETTINGS: PlaygroundSettings = {
   variations: 1,
   thinking: 'minimal',
   quality: DEFAULT_QUALITY,
+  guidelinesWithImages: false,
 };
 
 const QUALITIES: ImageQuality[] = ['high', 'xhigh', 'max'];
@@ -26,6 +27,7 @@ export function settingsFrom(saved: Partial<PlaygroundSettings> | undefined): Pl
     variations: Math.min(4, Math.max(1, Number(saved?.variations) || 1)),
     thinking: saved?.thinking === 'high' ? 'high' : 'minimal',
     quality: QUALITIES.includes(saved?.quality as ImageQuality) ? (saved?.quality as ImageQuality) : DEFAULT_QUALITY,
+    guidelinesWithImages: saved?.guidelinesWithImages === true,
   };
 }
 

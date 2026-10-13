@@ -1,8 +1,11 @@
 import 'server-only';
 
 import { PlaygroundGenerationError, type GeneratedImage } from './errors';
-import { guidelinesText, loadReferences, orderedReferences, promptText, referenceLabel, roleRules } from './promptParts';
+import { loadReferences, orderedReferences } from './promptParts';
+import { loadLayoutImage } from './references';
+import { OPENAI_PROMPT_LIMIT, openAiPrompt, openAiPromptLength, openAiTooLongMessage } from '@/lib/playground/promptText';
 import { DEFAULT_QUALITY, openAiImageSize, type ImageQuality, type PlaygroundModelId, type PlaygroundSize } from '@/lib/playground/models';
+import type { LayoutReference } from '@/lib/playground/resize';
 import type { ReferenceSnapshot } from '@/lib/playground/types';
 
 /**
@@ -89,6 +92,8 @@ export async function generateOpenAiImage(options: {
   brief: string;
   references: ReferenceSnapshot[];
   prompt: string;
+  /** Remake: the original, attached after the references (the prompt says what it is). */
+  layout?: LayoutReference | null;
   /** Epoch ms after which no new attempt may start. */
   deadline: number;
 }): Promise<GeneratedImage> {
@@ -102,14 +107,16 @@ export async function generateOpenAiImage(options: {
 
   // The same words Gemini gets; the images are attached in the order they are numbered.
   const ordered = orderedReferences(options.references);
-  const loaded = await loadReferences(ordered);
-  const prompt = [
-    guidelinesText(options.brief),
-    loaded.length
-      ? ['Reference images, attached in this order:', ...loaded.map(({ reference }, index) => referenceLabel(reference, index + 1)), roleRules(ordered)].join('\n')
-      : null,
-    promptText(options.prompt),
-  ].filter(Boolean).join('\n\n');
+  const prompt = openAiPrompt(options.brief, ordered, options.prompt);
+  // Runs are checked when they are made; this catches older ones before OpenAI is called.
+  const length = openAiPromptLength(prompt, ordered.length > 0 || Boolean(options.layout));
+  if (length > OPENAI_PROMPT_LIMIT) throw new PlaygroundGenerationError('failed', openAiTooLongMessage(options.brief, length));
+  const [loaded, layout] = await Promise.all([
+    loadReferences(ordered),
+    options.layout ? loadLayoutImage(options.layout.url) : Promise.resolve(null),
+  ]);
+  // Remake's original goes last, after the numbered references.
+  const images = [...loaded.map(({ image }) => image), ...(layout ? [layout] : [])];
 
   for (let attempt = 1; ; attempt++) {
     const remaining = options.deadline - Date.now() - 20_000;
@@ -121,11 +128,11 @@ export async function generateOpenAiImage(options: {
     let status: number | undefined;
     try {
       let response: Response;
-      if (loaded.length) {
+      if (images.length) {
         const form = new FormData();
         form.append('model', options.model);
         form.append('prompt', prompt);
-        loaded.forEach(({ image }, index) => {
+        images.forEach((image, index) => {
           form.append('image[]', new Blob([Buffer.from(image.data, 'base64')], { type: image.mimeType }), `reference-${index + 1}.${EXTENSIONS[image.mimeType] ?? 'png'}`);
         });
         form.append('size', size);

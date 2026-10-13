@@ -1,6 +1,6 @@
 'use client';
 
-import { playgroundModel } from './models';
+import { outputDimensions, playgroundModel } from './models';
 import { usePlaygroundStore } from './store';
 import type { GenerateResponse, PlaygroundBundle, PlaygroundItem, PlaygroundProjectSummary, PlaygroundRun } from './types';
 
@@ -84,6 +84,39 @@ export function previewBundle(): PlaygroundBundle {
     finishedAt: status === 'done' || status === 'failed' ? iso(60_000) : null,
     createdAt: run.createdAt,
   }));
+
+  // A finished 40-image Feed run, and a 9:16 Extend of its first six (for "Another size").
+  const themes = ['Hero shot on dark walnut, warm diya light', 'Flat lay on linen with loose chamomile', 'Gift hamper with gold ribbon, Diwali bokeh', 'Bedside at night with a steaming cup', 'Minimal sage-green studio, one hard shadow', 'Close-up of the label, soft side light', 'Morning tray with a brass cup and marigolds', 'Hands holding the box by a window'];
+  const feedPrompts = Array.from({ length: 40 }, (_, i) => `${themes[i % themes.length]} — take ${Math.floor(i / themes.length) + 1}`);
+  const feed: PlaygroundRun = {
+    ...run,
+    id: 'preview-run-feed',
+    ratios: ['4:5'],
+    prompts: feedPrompts,
+    imageCount: 40,
+    createdAt: iso(7_200_000),
+  };
+  const feedItems: PlaygroundItem[] = feedPrompts.map((_, position) => ({
+    id: `preview-feed-${position}`, runId: feed.id, kind: 'generated', parentItemId: null, position, promptIndex: position,
+    aspectRatio: '4:5', variation: 1, status: 'done', imageUrl: SAMPLES[position % SAMPLES.length], previewUrl: SAMPLES[position % SAMPLES.length],
+    width: 1856, height: 2304, error: null, favorite: false, attempts: 1, hasCanvas: false,
+    startedAt: iso(7_100_000), finishedAt: iso(7_000_000), createdAt: feed.createdAt,
+  }));
+  const reels: PlaygroundRun = {
+    ...feed,
+    id: 'preview-run-reels',
+    ratios: ['9:16'],
+    brief: '',
+    references: [],
+    prompts: feedPrompts.slice(0, 6),
+    imageCount: 6,
+    createdAt: iso(3_600_000),
+    resize: { method: 'extend', fromRunId: feed.id },
+  };
+  const reelsItems: PlaygroundItem[] = feedItems.slice(0, 6).map((original) => ({
+    ...original, id: `preview-reels-${original.position}`, runId: reels.id, parentItemId: original.id, aspectRatio: '9:16',
+    width: 1536, height: 2752, createdAt: reels.createdAt,
+  }));
   return {
     project: {
       id: PREVIEW_PROJECT_ID,
@@ -101,8 +134,8 @@ export function previewBundle(): PlaygroundBundle {
       { id: 'ref-2', url: SAMPLES[2], role: 'product', label: 'Box side', enabled: false, width: 1280, height: 720, sourceItemId: null, createdAt: iso(86_000_000) },
       { id: 'ref-3', url: SAMPLES[1], role: 'style', label: 'Moody Diwali style', enabled: true, width: 1280, height: 720, sourceItemId: null, createdAt: iso(85_000_000) },
     ],
-    runs: [run],
-    items,
+    runs: [run, reels, feed],
+    items: [...items, ...feedItems, ...reelsItems],
     nextBefore: null,
     refunded: 0,
   };
@@ -112,7 +145,10 @@ let previewCounter = 0;
 
 /** A fake image generation: done after a few seconds, now and then a failure. */
 export async function simulateGenerate(id: string): Promise<{ status: number; body: GenerateResponse }> {
-  await new Promise((resolve) => setTimeout(resolve, 1_500 + Math.random() * 3_000));
+  const before = usePlaygroundStore.getState();
+  // Fit copies are a quick composite on the server; the rest take an AI call.
+  const fit = before.runs.find((known) => known.id === before.items[id]?.runId)?.resize?.method === 'fit';
+  await new Promise((resolve) => setTimeout(resolve, fit ? 300 + Math.random() * 600 : 1_500 + Math.random() * 3_000));
   const state = usePlaygroundStore.getState();
   const item = state.items[id];
   // ?previewOpenAiPaused: OpenAI images answer as they do when the OpenAI key has no credit left.
@@ -128,15 +164,19 @@ export async function simulateGenerate(id: string): Promise<{ status: number; bo
     };
   }
   const n = previewCounter++;
-  const failed = n % 9 === 5;
+  const failed = !fit && n % 9 === 5;
+  // A copy shows its original (the preview has no real composite).
+  const original = run?.resize && item.parentItemId ? state.items[item.parentItemId] : undefined;
+  const sample = original?.imageUrl ?? SAMPLES[n % SAMPLES.length];
+  const pixels = outputDimensions(run?.size ?? '2K', item.aspectRatio) ?? { width: 1536, height: 2752 };
   const done: PlaygroundItem = {
     ...item,
     status: failed ? 'failed' : 'done',
-    imageUrl: failed ? null : SAMPLES[n % SAMPLES.length],
-    previewUrl: failed ? null : SAMPLES[n % SAMPLES.length],
+    imageUrl: failed ? null : sample,
+    previewUrl: failed ? null : sample,
     error: failed ? 'Gemini returned no image (preview). Try again.' : null,
-    width: failed ? null : 1536,
-    height: failed ? null : 2752,
+    width: failed ? null : pixels.width,
+    height: failed ? null : pixels.height,
     attempts: item.attempts + 1,
     finishedAt: new Date().toISOString(),
   };

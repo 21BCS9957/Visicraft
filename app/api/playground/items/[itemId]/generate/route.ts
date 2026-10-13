@@ -4,6 +4,7 @@ import { claimItem, getOwnedItem, ITEM_COLUMNS, playgroundDb, releaseItem, toIte
 import { PlaygroundGenerationError } from '@/lib/server/playground/errors';
 import { generatePlaygroundImage } from '@/lib/server/playground/generate';
 import { savePlaygroundImage } from '@/lib/server/playground/images';
+import { makeOtherSize } from '@/lib/server/playground/resize';
 import { logUsage } from '@/lib/server/usage';
 import { playgroundModel, sizeOption, sizePrice } from '@/lib/playground/models';
 import type { GenerateResponse, PlaygroundRun } from '@/lib/playground/types';
@@ -19,7 +20,8 @@ const MAX_ATTEMPTS = 5;
  * Makes one queued image: claims it and charges the run's price in one database step,
  * sends the model's provider (Gemini or OpenAI) the brief, the references and this image's
  * prompt, stores the result, and refunds on any failure. A busy provider puts the image back
- * in the queue (429); a billing or key problem pauses the run (503).
+ * in the queue (429); a billing or key problem pauses the run (503). An "Another size" run
+ * makes the image from its original instead (Extend, Remake or the free Fit).
  */
 export async function POST(request: NextRequest, { params }: Context) {
   const deadline = Date.now() + 270_000;
@@ -52,7 +54,17 @@ export async function POST(request: NextRequest, { params }: Context) {
     const prompt = run.prompts[Number(item.prompt_index)] ?? '';
 
     try {
-      const generated = await generatePlaygroundImage({
+      const other = run.resize
+        ? await makeOtherSize({
+          db,
+          user,
+          run,
+          item: { id: itemId, aspectRatio: item.aspect_ratio as string, parentItemId: (item.parent_item_id as string | null) ?? null },
+          prompt,
+          deadline,
+        })
+        : null;
+      const generated = other ?? await generatePlaygroundImage({
         model: run.model,
         size: run.size,
         aspectRatio: item.aspect_ratio as string,
@@ -85,11 +97,13 @@ export async function POST(request: NextRequest, { params }: Context) {
 
       const model = playgroundModel(run.model);
       const listed = sizeOption(model, run.size) ?? model.sizes.find((size) => size.id === run.size);
+      // Fit makes no AI call (nothing to log), and its copy shouldn't become the project's cover.
+      const fit = run.resize?.method === 'fit';
       await Promise.all([
-        db.from('playground_projects')
+        fit ? null : db.from('playground_projects')
           .update({ cover_url: saved.previewUrl, updated_at: new Date().toISOString() })
           .eq('id', item.project_id as string),
-        logUsage({
+        fit ? null : logUsage({
           user,
           provider: model.provider,
           model: run.model,
@@ -112,6 +126,7 @@ export async function POST(request: NextRequest, { params }: Context) {
             variation: item.variation,
             referenceCount: run.references.length,
             attempt: item.attempts,
+            ...(run.resize ? { resize: run.resize.method, parentItemId: item.parent_item_id, calls: other?.calls, ...other?.details } : {}),
           },
         }),
       ]);

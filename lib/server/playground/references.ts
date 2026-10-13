@@ -2,6 +2,7 @@ import 'server-only';
 
 import axios from 'axios';
 import sharp from 'sharp';
+import { PlaygroundGenerationError } from './errors';
 
 /**
  * Downloads a reference image and fits it to what Gemini accepts (JPEG, PNG or WebP, at
@@ -73,4 +74,13 @@ export function loadReferenceImage(url: string): Promise<ReferenceImage> {
   });
   cache.set(url, { at: now, image });
   return image;
+}
+
+/** The original image Remake sends as its layout; failing to read it fails the image. */
+export async function loadLayoutImage(url: string): Promise<ReferenceImage> {
+  try {
+    return await loadReferenceImage(url);
+  } catch {
+    throw new PlaygroundGenerationError('bad_reference', "The original image couldn't be read. It may have been deleted.");
+  }
 }

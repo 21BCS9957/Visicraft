@@ -11,10 +11,12 @@ import type { GenerateResponse, PlaygroundItem } from './types';
  * makes exactly one image; the server charges and refunds. This module only decides what to
  * send next and reacts to the answer (busy provider → slow down; a provider's key or billing
  * → pause that provider's images only; the user's credits → pause everything; dropped
- * connection → ask the server what happened).
+ * connection → ask the server what happened). Fit copies ("Another size" without AI) have a
+ * lane of their own: they are free and quick, so they never wait for AI images or pauses.
  */
 
 const MAX_CONCURRENCY = 3;
+const FIT_CONCURRENCY = 6;
 const CHECK_EVERY_MS = 15_000;
 /** Longer than any request can run; after this the server's sweep fails and refunds it. */
 const STUCK_AFTER_MS = 11 * 60_000;
@@ -35,12 +37,20 @@ export function setRunnerListener(next: RunnerListener) {
 
 const store = () => usePlaygroundStore.getState();
 
-/** Which provider makes this image (its run's model). */
-function providerOf(id: string): ImageProvider {
+function runOf(id: string) {
   const state = store();
   const runId = state.items[id]?.runId;
-  const run = runId ? state.runs.find((known) => known.id === runId) : undefined;
-  return playgroundModel(run?.model).provider;
+  return runId ? state.runs.find((known) => known.id === runId) : undefined;
+}
+
+/** Which provider makes this image (its run's model). */
+function providerOf(id: string): ImageProvider {
+  return playgroundModel(runOf(id)?.model).provider;
+}
+
+/** A Fit copy: made on our server without AI, free. */
+function isFit(id: string): boolean {
+  return runOf(id)?.resize?.method === 'fit';
 }
 
 function creditsChanged() {
@@ -72,21 +82,35 @@ export function enqueue(ids: string[], front = false) {
 export function pump() {
   const state = store();
   const { runner } = state;
-  if (runner.paused) return;
+  if (runner.queue.length === 0) return;
+  // AI images wait while the user is out of credits or a provider asked us to slow down.
   const wait = runner.backoffUntil - Date.now();
-  if (wait > 0) return wakeAfter(wait);
-
-  const free = runner.concurrency - runner.inFlight.length;
-  if (free <= 0 || runner.queue.length === 0) return;
+  if (!runner.paused && wait > 0) wakeAfter(wait);
+  const fitFlying = runner.inFlight.filter(isFit).length;
+  let fitFree = FIT_CONCURRENCY - fitFlying;
+  let aiFree = runner.paused || wait > 0 ? 0 : runner.concurrency - (runner.inFlight.length - fitFlying);
+  if (fitFree <= 0 && aiFree <= 0) return;
 
   const next: string[] = [];
   const rest: string[] = [];
   for (const id of runner.queue) {
     const item = state.items[id];
     if (!item || (item.status !== 'queued' && item.status !== 'failed')) continue;
-    // A paused provider's images keep their place; the other models' images go ahead.
-    if (next.length < free && !runner.pausedProviders[providerOf(id)]) next.push(id);
-    else rest.push(id);
+    if (isFit(id)) {
+      if (fitFree > 0) {
+        fitFree--;
+        next.push(id);
+      } else rest.push(id);
+    } else if (aiFree > 0 && !runner.pausedProviders[providerOf(id)]) {
+      // A paused provider's images keep their place; the other models' images go ahead.
+      aiFree--;
+      next.push(id);
+    } else rest.push(id);
+  }
+  if (!next.length) {
+    // Nothing to send: only drop images that left the queue meanwhile (cancelled, done).
+    if (rest.length !== runner.queue.length) state.setRunner({ queue: rest });
+    return;
   }
   const startedAt = new Date().toISOString();
   state.upsertItems(next.map((id) => ({ ...state.items[id], status: 'generating', error: null, startedAt })));
@@ -102,11 +126,16 @@ async function send(id: string) {
     if (body.item) store().upsertItems([body.item]);
 
     if (body.outcome === 'done' || body.outcome === 'failed') {
+      if (isFit(id)) return;
       creditsChanged();
       if (++successStreak >= 4 && store().runner.concurrency < MAX_CONCURRENCY) {
         successStreak = 0;
         store().setRunner((runner) => ({ concurrency: Math.min(MAX_CONCURRENCY, runner.concurrency + 1) }));
       }
+    } else if ((body.outcome === 'paused' || body.outcome === 'insufficient_credits') && isFit(id)) {
+      // A free copy never pauses the queue (and is never sent again in a loop): show why it stopped.
+      outcome = 'failed';
+      store().upsertItems([{ ...store().items[id], status: 'failed', error: body.message ?? "This copy couldn't start.", finishedAt: new Date().toISOString() }]);
     } else if (body.outcome === 'rate_limited') {
       successStreak = 0;
       creditsChanged();
@@ -195,7 +224,8 @@ export function resumeProvider(provider: ImageProvider) {
 export async function cancelProviderWaiting(provider: ImageProvider) {
   const state = store();
   const runIds = state.runs
-    .filter((run) => playgroundModel(run.model).provider === provider)
+    // Fit copies use no provider: they never wait for one.
+    .filter((run) => playgroundModel(run.model).provider === provider && run.resize?.method !== 'fit')
     .filter((run) => runItems(state.items, run.id).some((item) => item.status === 'queued'))
     .map((run) => run.id);
   for (const runId of runIds) await cancelRun(runId);

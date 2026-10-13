@@ -169,7 +169,7 @@ export function ReferencePanel() {
       <input {...getInputProps()} />
       <div>
         <h2 className="text-sm font-medium text-white">Project context</h2>
-        <p className="mt-0.5 text-xs text-white/45">Saved with the project and used for every image.</p>
+        <p className="mt-0.5 text-xs text-white/45">Saved with the project. References go with every image; Claude follows the guidelines when it writes prompts.</p>
       </div>
 
       <div className="space-y-3">

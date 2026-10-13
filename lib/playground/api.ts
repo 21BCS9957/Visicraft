@@ -2,6 +2,7 @@
 
 import { getAuthenticatedHeaders } from '@/lib/supabase/auth';
 import type { ImageQuality, ReferenceRole, ThinkingLevel } from './models';
+import type { ResizeMethod } from './resize';
 import type {
   GenerateResponse,
   LibraryFolder,
@@ -67,7 +68,25 @@ export interface NewRunRequest {
   /** OpenAI models only. */
   quality?: ImageQuality;
   brief: string;
+  /** Send the guidelines with every image too. */
+  guidelinesWithImages?: boolean;
   referenceIds: string[];
+}
+
+/** "Another size" for a run's images or one image. */
+export interface ResizeRunRequest {
+  clientKey: string;
+  itemIds: string[];
+  ratio: string;
+  method: ResizeMethod;
+  /** Extend's model. */
+  model?: string;
+  /** Fit: 'blur' or '#rrggbb'. */
+  background?: string;
+  /** A new take of a copy: make it although its original has one like it. */
+  again?: boolean;
+  /** The total the page showed; the server refuses a higher one. */
+  expectedCredits?: number;
 }
 
 export const playgroundApi = {
@@ -89,12 +108,15 @@ export const playgroundApi = {
     call<{ reference: PlaygroundReference }>(`/api/playground/references/${id}`, { method: 'PATCH', body: json(patch) }),
   deleteReference: (id: string) => call<{ deleted: boolean }>(`/api/playground/references/${id}`, { method: 'DELETE' }),
 
-  writePrompts: (projectId: string, request: { goal: string; count: number; brief: string; referenceIds: string[]; model: string; ratios: string[]; existing?: string[] }) =>
+  writePrompts: (projectId: string, request: { goal: string; count: number; brief: string; guidelinesWithImages?: boolean; referenceIds: string[]; model: string; ratios: string[]; existing?: string[] }) =>
     call<{ prompts: string[]; credits: number }>(`/api/playground/projects/${projectId}/write-prompts`, { method: 'POST', body: json(request) }),
 
   createRun: (projectId: string, run: NewRunRequest) =>
     call<{ run: PlaygroundRun; items: PlaygroundItem[] }>(`/api/playground/projects/${projectId}/runs`, { method: 'POST', body: json(run) }),
   cancelRun: (runId: string) => call<{ cancelledIds: string[] }>(`/api/playground/runs/${runId}/cancel`, { method: 'POST' }),
+  /** Queues the images in another shape; `note` says what was left out. */
+  resizeImages: (projectId: string, request: ResizeRunRequest) =>
+    call<{ run: PlaygroundRun; items: PlaygroundItem[]; note?: string | null }>(`/api/playground/projects/${projectId}/resize`, { method: 'POST', body: json(request) }),
 
   getItem: (id: string) => call<{ item: PlaygroundItem }>(`/api/playground/items/${id}`),
   updateItem: (id: string, patch: { favorite?: boolean; requeue?: boolean }) =>

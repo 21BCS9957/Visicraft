@@ -5,23 +5,27 @@ import { Dialog } from 'radix-ui';
 import { BookOpen, Download, FileText, FolderInput, FolderOutput, MoreHorizontal, Pencil, Trash2, Upload, X } from 'lucide-react';
 import toast from '@/lib/toast';
 import { libraryApi, playgroundApi } from '@/lib/playground/api';
-import { MAX_BRIEF_CHARS } from '@/lib/playground/prompts';
+import { MAX_BRIEF_CHARS, MAX_PROMPT_CHARS } from '@/lib/playground/prompts';
+import { longestOpenAiPrompt, OPENAI_PROMPT_LIMIT } from '@/lib/playground/promptText';
 import { usePlaygroundStore } from '@/lib/playground/store';
 import { LibraryPicker } from './library/LibraryPicker';
 import { Markdown } from './Markdown';
-import { cx, Popover, PopoverClose } from './ui';
+import { cx, Popover, PopoverClose, Toggle } from './ui';
 
 const TOAST = { position: 'top-center' as const };
 
 /**
- * The project's Guidelines: a Markdown document (uploaded or written here) that goes with
- * every image and into every written prompt. `emptyHint` replaces the text shown before any
- * are written; `compact` shows one row (name, size, actions) instead of the preview card.
+ * The project's Guidelines: a Markdown document (uploaded or written here). In the Playground,
+ * Claude follows them in the prompts it writes, and they go with every image only when "Send
+ * with every image" is on. `emptyHint` replaces the text shown before any are written;
+ * `compact` shows one row (name, size, actions) instead of the preview card.
  */
 export function GuidelinesEditor({ emptyHint, compact = false }: { emptyHint?: string; compact?: boolean } = {}) {
   const project = usePlaygroundStore((state) => state.project);
   const setProject = usePlaygroundStore((state) => state.setProject);
   const preview = usePlaygroundStore((state) => state.preview);
+  const withImages = usePlaygroundStore((state) => state.settings.guidelinesWithImages);
+  const setSettings = usePlaygroundStore((state) => state.setSettings);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [editorOpen, setEditorOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -34,6 +38,23 @@ export function GuidelinesEditor({ emptyHint, compact = false }: { emptyHint?: s
 
   if (!project) return null;
   const brief = project.brief;
+  // The switch is the Playground's; the Video Studio uses its guidelines its own way.
+  const imageProject = project.kind === 'image';
+  // What GPT Image has left for a prompt once these guidelines go with it (and a product photo).
+  const gptRoom = imageProject && withImages ? OPENAI_PROMPT_LIMIT - longestOpenAiPrompt(brief, [{ role: 'product', label: '' }], ['']) : Infinity;
+  const sendSwitch = (
+    <div className="flex items-start gap-2.5">
+      <Toggle checked={withImages} onCheckedChange={(checked) => setSettings({ guidelinesWithImages: checked })} label="Send the guidelines with every image" />
+      <span className="min-w-0 text-[11px] leading-snug">
+        <span className="block text-white/80">Send with every image</span>
+        <span className="block text-white/40">
+          {withImages
+            ? 'On: the image model reads them with each prompt too, for prompts you paste yourself.'
+            : 'Off: only Claude reads them, when it writes your prompts, and puts what each image needs into the prompt.'}
+        </span>
+      </span>
+    </div>
+  );
 
   const save = (patch: { brief?: string; briefName?: string | null }, immediate = false) => {
     const next = { ...usePlaygroundStore.getState().project!, ...patch };
@@ -134,14 +155,24 @@ export function GuidelinesEditor({ emptyHint, compact = false }: { emptyHint?: s
           <Dialog.Content className="fixed inset-3 z-[81] flex flex-col rounded-3xl border border-white/12 bg-[#121216] text-white shadow-[0_30px_120px_rgba(0,0,0,0.6)] outline-none sm:inset-8">
             <div className="flex flex-wrap items-center gap-3 border-b border-white/8 px-5 py-3">
               <Dialog.Title className="flex items-center gap-2 text-base font-medium"><BookOpen className="h-4 w-4 text-[#fff05a]" /> Guidelines</Dialog.Title>
-              <Dialog.Description className="text-xs text-white/45">Markdown · every image and prompt follows them</Dialog.Description>
+              <Dialog.Description className="text-xs text-white/45">
+                {!imageProject ? 'Markdown · every image and prompt follows them' : withImages ? 'Markdown · Claude follows them in your prompts, and every image gets them' : 'Markdown · Claude follows them when it writes your prompts'}
+              </Dialog.Description>
               <span className="ml-auto text-[11px] text-white/40">
                 {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : ''} · {brief.length.toLocaleString('en-IN')} / {MAX_BRIEF_CHARS.toLocaleString('en-IN')}
               </span>
+              {gptRoom < MAX_PROMPT_CHARS && (
+                <span className="w-full text-[11px] text-[#fff6a8]/80 sm:order-last">
+                  {gptRoom <= 0
+                    ? `Too long for GPT Image, which reads ${OPENAI_PROMPT_LIMIT.toLocaleString('en-IN')} characters per image with the prompt: shorten them, or use a Nano Banana model, which takes them whole.`
+                    : `With guidelines this long, GPT Image has room for prompts of about ${gptRoom.toLocaleString('en-IN')} characters (Nano Banana models take any length).`}
+                </span>
+              )}
               <button type="button" onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1.5 rounded-full border border-white/12 px-3 py-1.5 text-xs text-white/80 hover:bg-white/8"><Upload className="h-3.5 w-3.5" /> Upload .md</button>
               <button type="button" disabled={!brief.trim()} onClick={download} className="inline-flex items-center gap-1.5 rounded-full border border-white/12 px-3 py-1.5 text-xs text-white/80 hover:bg-white/8 disabled:opacity-40"><Download className="h-3.5 w-3.5" /> Download</button>
               <Dialog.Close className="rounded-full p-1.5 text-white/50 hover:bg-white/8 hover:text-white" aria-label="Close"><X className="h-4 w-4" /></Dialog.Close>
             </div>
+            {imageProject && <div className="border-b border-white/8 px-5 py-2.5">{sendSwitch}</div>}
             <div className="grid min-h-0 flex-1 md:grid-cols-2">
               <textarea
                 value={brief}
@@ -234,7 +265,7 @@ export function GuidelinesEditor({ emptyHint, compact = false }: { emptyHint?: s
           </>
         ) : (
           <span className="block py-3 text-xs leading-relaxed text-white/35">
-            {emptyHint ?? 'Upload a .md file or write your guidelines: brand, product facts, what to always or never show. Every image and prompt follows them.'}
+            {emptyHint ?? 'Upload a .md file or write your guidelines: brand, product facts, what to always or never show. Claude follows them when it writes your prompts.'}
           </span>
         )}
       </button>
@@ -267,6 +298,7 @@ export function GuidelinesEditor({ emptyHint, compact = false }: { emptyHint?: s
           </PopoverClose>
         </Popover>
       </div>
+      {imageProject && <div className="pt-1">{sendSwitch}</div>}
       {dialogs}
     </div>
   );

@@ -2,23 +2,44 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Download, ImageIcon, Loader2, Pause, Play, RotateCcw, Sparkles, Square, TextQuote, Upload } from 'lucide-react';
+import { ChevronDown, CornerDownRight, Download, ImageIcon, Loader2, Pause, Play, Proportions, RotateCcw, Sparkles, Square, TextQuote, Upload } from 'lucide-react';
 import toast from '@/lib/toast';
 import { playgroundApi } from '@/lib/playground/api';
 import { playgroundModel, QUALITY_LABELS, sizeOption, type ImageProvider } from '@/lib/playground/models';
+import { copyMethodLabel, orderRuns } from '@/lib/playground/resize';
 import { cancelProviderWaiting, cancelRun, cancelWaiting, resume, resumeProvider, resumeWaiting, retryItem } from '@/lib/playground/runner';
 import { runItems, usePlaygroundStore } from '@/lib/playground/store';
 import type { PlaygroundItem, PlaygroundRun } from '@/lib/playground/types';
-import { downloadZip, imageFileName } from '@/lib/playground/zip';
-import { ImageCard } from './ImageCard';
-import { timeAgo } from './ui';
+import { downloadZip, imageFileName, type ZipFile } from '@/lib/playground/zip';
+import { ImageCard, type PendingFit } from './ImageCard';
+import { ResizeDialog } from './ResizeDialog';
+import { cx, Popover, PopoverClose, timeAgo } from './ui';
 
 const TOAST = { position: 'top-center' as const };
 /** The Canvas editor is the next step of the build; its buttons appear once it exists. */
 const CANVAS_ENABLED = true;
 
-function RunSection({ run, density, onOpen, onCanvas }: {
+/** "Extend", "Fit on #000000", "Extend · clear of Reels". */
+function copyLabel(run: PlaygroundRun): string {
+  return run.resize ? copyMethodLabel(run.resize) : '';
+}
+
+/** A run's finished images as ZIP entries; with a folder when several runs go in one ZIP. */
+function zipFiles(run: PlaygroundRun, items: Record<string, PlaygroundItem>, folder = ''): ZipFile[] {
+  return runItems(items, run.id)
+    .filter((item) => item.status === 'done' && item.imageUrl)
+    .map((item) => ({
+      name: `${folder ? `${folder}/` : ''}${imageFileName(item.position, run.prompts[item.promptIndex ?? 0] ?? '', item.aspectRatio, item.imageUrl!, item.variation)}`,
+      url: item.imageUrl!,
+    }));
+}
+
+function RunSection({ run, source, group, density, onOpen, onCanvas }: {
   run: PlaygroundRun;
+  /** The run this one's images were made from, when this is an "Another size" run shown under it. */
+  source: PlaygroundRun | null;
+  /** The source run and every other size made from it (for "Download all sizes"). */
+  group: PlaygroundRun[];
   density: number;
   onOpen: (id: string) => void;
   onCanvas: (id: string) => void;
@@ -27,6 +48,7 @@ function RunSection({ run, density, onOpen, onCanvas }: {
   const setComposerDraft = usePlaygroundStore((state) => state.setComposerDraft);
   const items = useMemo(() => runItems(allItems, run.id), [allItems, run.id]);
   const [zipProgress, setZipProgress] = useState<string | null>(null);
+  const [resizing, setResizing] = useState(false);
 
   const counts = items.reduce<Record<PlaygroundItem['status'], number>>(
     (acc, item) => ({ ...acc, [item.status]: acc[item.status] + 1 }),
@@ -36,14 +58,36 @@ function RunSection({ run, density, onOpen, onCanvas }: {
   const finished = counts.done + counts.failed + counts.cancelled;
   const active = counts.queued + counts.generating > 0;
   const promptFor = (item: PlaygroundItem) => run.prompts[item.promptIndex ?? 0] ?? '';
+  const copy = run.resize ?? null;
+  // A copy whose original was deleted can't be made again.
+  const retryable = (item: PlaygroundItem) => !copy || Boolean(item.parentItemId);
+  const failedRetryable = items.filter((item) => item.status === 'failed' && retryable(item));
+  const done = items.filter((item) => item.status === 'done');
+  const groupFiles = group.length > 1
+    ? group.reduce((sum, member) => sum + runItems(allItems, member.id).filter((item) => item.status === 'done').length, 0)
+    : 0;
 
-  const saveZip = async () => {
-    const done = items.filter((item) => item.status === 'done' && item.imageUrl);
-    setZipProgress(`0/${done.length}`);
+  // Fit copies show at once as their original on the background, until the real file arrives.
+  const pendingFit = (item: PlaygroundItem): PendingFit | undefined => {
+    if (copy?.method !== 'fit' || !item.parentItemId) return undefined;
+    const original = allItems[item.parentItemId];
+    return original?.previewUrl ? { url: original.previewUrl, background: copy.background ?? 'blur' } : undefined;
+  };
+
+  const saveZip = async (members: PlaygroundRun[]) => {
+    const used = new Set<string>();
+    const files = members.flatMap((member) => {
+      if (members.length === 1) return zipFiles(member, allItems);
+      let folder = member.resize ? `${member.ratios[0].replace(':', 'x')}-${member.resize.method}` : 'originals';
+      for (let i = 2; used.has(folder); i++) folder = `${folder.replace(/-\d+$/, '')}-${i}`;
+      used.add(folder);
+      return zipFiles(member, allItems, folder);
+    });
+    setZipProgress(`0/${files.length}`);
     try {
       await downloadZip(
-        done.map((item) => ({ name: imageFileName(item.position, promptFor(item), item.aspectRatio, item.imageUrl!, item.variation), url: item.imageUrl! })),
-        `playground-${new Date(run.createdAt).toISOString().slice(0, 16).replace(/[:T]/g, '-')}`,
+        files,
+        `playground-${new Date((members[0] ?? run).createdAt).toISOString().slice(0, 16).replace(/[:T]/g, '-')}${members.length > 1 ? '-all-sizes' : run.resize ? `-${run.ratios[0].replace(':', 'x')}` : ''}`,
         (count, total) => setZipProgress(`${count}/${total}`)
       );
     } catch (error) {
@@ -53,20 +97,43 @@ function RunSection({ run, density, onOpen, onCanvas }: {
     }
   };
 
+  const downloadButtonClass = 'inline-flex h-8 items-center gap-1.5 rounded-full bg-white/10 px-3 text-xs text-white hover:bg-white/15 disabled:opacity-60';
+  const downloadLabel = zipProgress ? `Zipping ${zipProgress}` : `Download ${counts.done}`;
+
   return (
-    <section className="space-y-3">
+    <section id={`run-${run.id}`} className={cx('scroll-mt-4 space-y-3', source && 'border-l-2 border-[#fff05a]/25 pl-3 sm:pl-4')}>
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-white">
-            <span className="font-medium">{run.prompts.length} prompt{run.prompts.length === 1 ? '' : 's'}</span>
-            <span className="text-white/25">·</span>
-            <span className="text-white/65">{model.name}</span>
-            <span className="text-white/25">·</span>
-            <span className="text-white/65">{sizeOption(model, run.size)?.label ?? run.size}</span>
-            {run.quality && <><span className="text-white/25">·</span><span className="text-white/65">{QUALITY_LABELS[run.quality]}</span></>}
-            <span className="text-white/25">·</span>
-            <span className="text-white/65">{run.ratios.join(', ')}</span>
-            {run.variations > 1 && <><span className="text-white/25">·</span><span className="text-white/65">×{run.variations}</span></>}
+            {copy ? (
+              <>
+                <CornerDownRight className="h-3.5 w-3.5 text-[#fff05a]/70" />
+                <span className="font-medium">
+                  {run.ratios[0]} of {!copy.fromRunId
+                    ? 'an image edited in Canvas'
+                    : items.length === 1
+                      ? `image #${items[0].position + 1}${source ? ' above' : ''}`
+                      : source ? 'the run above' : 'an older run'}
+                </span>
+                <span className="text-white/25">·</span>
+                <span className="text-white/65">{copyLabel(run)}</span>
+                {copy.method !== 'fit' && <><span className="text-white/25">·</span><span className="text-white/65">{model.name}</span></>}
+                <span className="text-white/25">·</span>
+                <span className="text-white/65">{sizeOption(model, run.size)?.label ?? run.size}</span>
+              </>
+            ) : (
+              <>
+                <span className="font-medium">{run.prompts.length} prompt{run.prompts.length === 1 ? '' : 's'}</span>
+                <span className="text-white/25">·</span>
+                <span className="text-white/65">{model.name}</span>
+                <span className="text-white/25">·</span>
+                <span className="text-white/65">{sizeOption(model, run.size)?.label ?? run.size}</span>
+                {run.quality && <><span className="text-white/25">·</span><span className="text-white/65">{QUALITY_LABELS[run.quality]}</span></>}
+                <span className="text-white/25">·</span>
+                <span className="text-white/65">{run.ratios.join(', ')}</span>
+                {run.variations > 1 && <><span className="text-white/25">·</span><span className="text-white/65">×{run.variations}</span></>}
+              </>
+            )}
             <span className="text-white/25">·</span>
             <span className="text-white/40">{timeAgo(run.createdAt)}</span>
           </div>
@@ -89,27 +156,66 @@ function RunSection({ run, density, onOpen, onCanvas }: {
               <Square className="h-3 w-3" /> Cancel the rest
             </button>
           )}
-          {counts.failed > 0 && (
-            <button type="button" onClick={() => items.filter((item) => item.status === 'failed').forEach((item) => void retryItem(item))} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 px-3 text-xs text-white/70 hover:bg-white/8 hover:text-white">
-              <RotateCcw className="h-3 w-3" /> Retry {counts.failed} failed
+          {failedRetryable.length > 0 && (
+            <button type="button" onClick={() => failedRetryable.forEach((item) => void retryItem(item))} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 px-3 text-xs text-white/70 hover:bg-white/8 hover:text-white">
+              <RotateCcw className="h-3 w-3" /> Retry {failedRetryable.length} failed
             </button>
           )}
-          <button type="button" onClick={() => setComposerDraft(run.prompts.join('\n\n'))} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 px-3 text-xs text-white/70 hover:bg-white/8 hover:text-white">
-            <TextQuote className="h-3 w-3" /> Reuse prompts
-          </button>
+          {!copy && (
+            <button type="button" onClick={() => setComposerDraft(run.prompts.join('\n\n'))} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 px-3 text-xs text-white/70 hover:bg-white/8 hover:text-white">
+              <TextQuote className="h-3 w-3" /> Reuse prompts
+            </button>
+          )}
           {counts.done > 0 && (
-            <button type="button" disabled={Boolean(zipProgress)} onClick={saveZip} className="inline-flex h-8 items-center gap-1.5 rounded-full bg-white/10 px-3 text-xs text-white hover:bg-white/15 disabled:opacity-60">
-              {zipProgress ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
-              {zipProgress ? `Zipping ${zipProgress}` : `Download ${counts.done}`}
+            <button type="button" onClick={() => setResizing(true)} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 px-3 text-xs text-white/70 hover:bg-white/8 hover:text-white">
+              <Proportions className="h-3 w-3" /> Another size
             </button>
           )}
+          {counts.done > 0 && (groupFiles > counts.done ? (
+            <Popover
+              side="bottom"
+              align="end"
+              className="w-60"
+              trigger={
+                <button type="button" disabled={Boolean(zipProgress)} className={downloadButtonClass}>
+                  {zipProgress ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                  {downloadLabel} {!zipProgress && <ChevronDown className="h-3 w-3" />}
+                </button>
+              }
+            >
+              <PopoverClose asChild>
+                <button type="button" onClick={() => saveZip([run])} className="flex w-full items-center justify-between gap-3 rounded-xl px-2.5 py-2 text-left text-sm text-white hover:bg-white/8">
+                  This run <span className="text-xs text-white/45">{counts.done} · {run.ratios.join(', ')}</span>
+                </button>
+              </PopoverClose>
+              <PopoverClose asChild>
+                <button type="button" onClick={() => saveZip(group)} className="flex w-full items-center justify-between gap-3 rounded-xl px-2.5 py-2 text-left text-sm text-white hover:bg-white/8">
+                  All sizes <span className="text-xs text-white/45">{groupFiles} · a folder each</span>
+                </button>
+              </PopoverClose>
+            </Popover>
+          ) : (
+            <button type="button" disabled={Boolean(zipProgress)} onClick={() => saveZip([run])} className={downloadButtonClass}>
+              {zipProgress ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+              {downloadLabel}
+            </button>
+          ))}
         </div>
       </header>
       <div className="grid items-start gap-3" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${density}px, 1fr))` }}>
         {items.map((item) => (
-          <ImageCard key={item.id} item={item} prompt={promptFor(item)} onOpen={() => onOpen(item.id)} onCanvas={CANVAS_ENABLED ? () => onCanvas(item.id) : undefined} />
+          <ImageCard
+            key={item.id}
+            item={item}
+            prompt={promptFor(item)}
+            onOpen={() => onOpen(item.id)}
+            onCanvas={CANVAS_ENABLED ? () => onCanvas(item.id) : undefined}
+            pendingFit={item.status === 'queued' || item.status === 'generating' ? pendingFit(item) : undefined}
+            canRetry={retryable(item)}
+          />
         ))}
       </div>
+      {resizing && <ResizeDialog open={resizing} onOpenChange={setResizing} picked={done} context="run" />}
     </section>
   );
 }
@@ -160,8 +266,16 @@ export function Gallery({ density, bottomPadding }: { density: number; bottomPad
     () => (idle ? [...runs].reverse().flatMap((run) => runItems(items, run.id)).filter((item) => item.status === 'queued') : []),
     [idle, items, runs]
   );
-  // A run whose images were all deleted has nothing left to show.
-  const visibleRuns = useMemo(() => runs.filter((run) => Object.values(items).some((item) => item.runId === run.id)), [runs, items]);
+  // A run whose images were all deleted has nothing left to show. Other sizes sit under the run they came from.
+  const visibleRuns = useMemo(() => orderRuns(runs.filter((run) => Object.values(items).some((item) => item.runId === run.id))), [runs, items]);
+  const groups = useMemo(() => {
+    const byRoot = new Map<string, PlaygroundRun[]>();
+    for (const { run, source } of visibleRuns) {
+      const root = source ?? run;
+      byRoot.set(root.id, [...(byRoot.get(root.id) ?? []), run]);
+    }
+    return byRoot;
+  }, [visibleRuns]);
   const edits = useMemo(
     () => Object.values(items).filter((item) => item.kind === 'edit').sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [items]
@@ -237,8 +351,8 @@ export function Gallery({ density, bottomPadding }: { density: number; bottomPad
       {visibleRuns.length === 0 && edits.length === 0 ? (
         <EmptyState />
       ) : (
-        visibleRuns.map((run) => (
-          <RunSection key={run.id} run={run} density={density} onOpen={setLightbox} onCanvas={openCanvas} />
+        visibleRuns.map(({ run, source }) => (
+          <RunSection key={run.id} run={run} source={source} group={groups.get((source ?? run).id) ?? [run]} density={density} onOpen={setLightbox} onCanvas={openCanvas} />
         ))
       )}
 
