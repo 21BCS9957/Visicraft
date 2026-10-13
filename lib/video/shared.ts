@@ -68,7 +68,10 @@ export function readAspect(raw: unknown): VideoAspect {
 }
 
 /** What a review image is: the user's photo, a close-up cut from one, a scene image, the hero frame or the mannequin edit. */
-export type ReviewFrameKind = 'photo' | 'crop' | 'scene' | 'frame' | 'mannequin';
+export type ReviewFrameKind = 'photo' | 'crop' | 'scene' | 'frame' | 'mannequin' | 'face';
+
+/** A verified face registered with BytePlus: Seedance 2.x takes it as `asset://<id>`. */
+export const isFaceAsset = (url: string) => url.startsWith('asset://');
 
 /** The plan in plain words (cast, setting, shots, spoken line), saved with the review. */
 export interface ReviewOutline {
@@ -103,7 +106,8 @@ export interface VideoReviewState {
   aspectRatio: VideoAspect;
   /** first_frame: the clip starts from the frame. reference: the film is built from all images (Image 1..N). */
   mode: 'first_frame' | 'reference';
-  frames: Array<{ url: string; label: string; kind?: ReviewFrameKind; source?: FrameSource }>;
+  /** No frames: Seedance makes the whole video from the prompt. */
+  frames: Array<{ url: string; label: string; kind?: ReviewFrameKind; source?: FrameSource; preview?: string }>;
   prompt: string;
   negativePrompt?: string;
   credits: number;
@@ -117,7 +121,7 @@ export interface VideoReviewState {
   outline: ReviewOutline | null;
 }
 
-const FRAME_KINDS: ReviewFrameKind[] = ['photo', 'crop', 'scene', 'frame', 'mannequin'];
+const FRAME_KINDS: ReviewFrameKind[] = ['photo', 'crop', 'scene', 'frame', 'mannequin', 'face'];
 
 function readOutline(raw: unknown): ReviewOutline | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -149,6 +153,7 @@ export function readVideoReview(id: unknown, raw: unknown): VideoReviewState | n
         label: typeof f.label === 'string' ? f.label : '',
         kind: FRAME_KINDS.find((kind) => kind === f.kind),
         source: readSource(f.source),
+        preview: typeof f.preview === 'string' ? f.preview : undefined,
       })),
     prompt: r.prompt,
     negativePrompt: typeof r.negativePrompt === 'string' ? r.negativePrompt : undefined,

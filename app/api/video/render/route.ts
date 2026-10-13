@@ -4,7 +4,8 @@ import { deductCreditsForUser, refundCreditsForUser, requireAuthenticatedUser } 
 import { isVideoEngineConfigured, submitVideoJob, videoEngineSetup } from '@/lib/server/video';
 import { isOwnStorageUrl } from '@/lib/server/playground/db';
 import type { VideoReview } from '@/lib/server/videoReview';
-import { retimePrompt, promptSeconds } from '@/lib/video/shared';
+import { ownFaceAssets } from '@/lib/server/videoFaces';
+import { isFaceAsset, retimePrompt, promptSeconds } from '@/lib/video/shared';
 import { videoCostUsd, videoCredits, videoModelOptions } from '@/lib/videoModels';
 
 // Starting a render (and its refund on failure) must not be cut off after the charge.
@@ -61,9 +62,16 @@ export async function POST(request: NextRequest) {
     const kept = review.mode === 'reference'
       ? sent ? sent.slice(0, MAX_REFERENCE_IMAGES) : planned
       : sent?.[0] ? [sent[0]] : planned.slice(0, 1);
-    if (kept.length === 0) return NextResponse.json({ error: 'Keep at least one reference image.' }, { status: 400 });
+    // A text-only quick video was planned with no images, and renders from the prompt alone.
+    const textOnly = planned.length === 0 && kept.length === 0;
+    if (kept.length === 0 && !textOnly) return NextResponse.json({ error: 'Keep at least one reference image.' }, { status: 400 });
+    // A verified face must still be the user's own, accepted by BytePlus.
+    const faces = kept.filter(isFaceAsset);
+    if (faces.length && !(await ownFaceAssets(user.id, faces))) {
+      return NextResponse.json({ error: 'A face photo in this video was removed. Remove it from the video or add it again under Faces.' }, { status: 409 });
+    }
     // A first frame the user swapped in may show a real person.
-    const replacedFirstFrame = review.mode === 'first_frame' && kept[0] !== planned[0];
+    const replacedFirstFrame = review.mode === 'first_frame' && !textOnly && kept[0] !== planned[0];
     // Another length the engine renders, if the user picked one; the shots are timed to match.
     const asked = Number(body.durationSeconds);
     const seconds = videoModelOptions(review.model).durations.includes(asked) ? asked : review.durationSeconds;
@@ -102,8 +110,9 @@ export async function POST(request: NextRequest) {
       quality: review.quality,
       duration: seconds,
       aspectRatio: review.aspectRatio,
-      imageUrl: kept[0],
-      lastFrameUrl: review.mode === 'first_frame' && lastFramePinned ? kept[0] : undefined,
+      // No image: Seedance makes the clip from the prompt alone.
+      imageUrl: kept[0] ?? '',
+      lastFrameUrl: review.mode === 'first_frame' && lastFramePinned && kept[0] ? kept[0] : undefined,
       referenceImageUrls: review.mode === 'reference' ? kept : undefined,
       prompt,
       negativePrompt,
@@ -139,7 +148,8 @@ export async function POST(request: NextRequest) {
           // and /api/video/upgrade to render it again at a higher quality.
           operationIds: [job.operationName],
           retries: 0,
-          heroUrl: kept[0],
+          heroUrl: kept[0] ?? null,
+          textOnly,
           referenceImageUrls: review.mode === 'reference' ? kept : null,
           prompt,
           // What the user approved; `prompt` follows any retry, this stays for "Try again".

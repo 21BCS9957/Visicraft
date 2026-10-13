@@ -54,7 +54,9 @@ export async function POST(request: NextRequest) {
     const heroUrl = text('heroUrl');
     const prompt = text('prompt');
     const model = text('videoModel');
-    if (!heroUrl || !prompt || !model) {
+    // A quick video made from the prompt alone has no image to start from.
+    const textOnly = meta.textOnly === true;
+    if ((!heroUrl && !textOnly) || !prompt || !model) {
       return NextResponse.json({ error: 'This video was made before upgrades existed, so it cannot be upgraded. Generate it again.' }, { status: 400 });
     }
     const engine: VideoEngine = (text('videoEngine') as VideoEngine | undefined) ?? videoEngineOf(model) ?? 'veo';
@@ -82,8 +84,8 @@ export async function POST(request: NextRequest) {
       engine,
       // A Veo draft rendered on Veo Fast; its upgrade uses the full model.
       model: engine === 'veo' ? undefined : model,
-      imageUrl: heroUrl,
-      lastFrameUrl: meta.lastFramePinned === true ? heroUrl : undefined,
+      imageUrl: heroUrl ?? '',
+      lastFrameUrl: meta.lastFramePinned === true && heroUrl ? heroUrl : undefined,
       prompt,
       negativePrompt: text('negativePrompt'),
       aspectRatio,

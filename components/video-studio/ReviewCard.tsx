@@ -261,6 +261,11 @@ function tileText(frame: Frame, kind: ReviewFrameKind, opening: boolean): { titl
       return { title: 'Your photo, on a mannequin', sub: 'The model was replaced; the garment is kept' };
     case 'frame':
       return { title: opening ? 'Opening scene' : 'First frame', sub: opening ? 'The video opens on it' : 'The video starts from it' };
+    case 'face': {
+      // "Priya · verified face" / "Priya · another photo"
+      const [name, what] = label.split(' · ');
+      return { title: name || 'Verified face', sub: what ? what.charAt(0).toUpperCase() + what.slice(1) : 'Verified face' };
+    }
     default:
       return { title: named || 'Your photo', sub: named ? 'Your photo' : null };
   }
@@ -551,9 +556,12 @@ export function ReviewCard({ review, busy, credits, projectId, preview = false, 
   const hasCrops = frames.some((frame) => frameKind(frame, review.mode) === 'crop');
   const what = review.garment ? 'the outfit' : 'the product';
   const fromPlan = cast && !/^Nobody/i.test(cast) ? ' The people, the setting and the moves come from the plan below.' : ' The setting and the moves come from the plan below.';
+  const hasFace = frames.some((frame) => frameKind(frame, review.mode) === 'face');
   const imagesHint = !reference
     ? 'The video starts from this frame. You can replace it with your own photo.'
-    : hasCrops && noFaces
+    : hasFace
+      ? `The verified face goes to ${videoModelName(review.model)} as it is, so the person looks the same in every shot. Any other image shows what else to feature.`
+      : hasCrops && noFaces
       ? `${videoModelName(review.model)} can’t take photos with a face, so we cut these close-ups of ${what} out of your photos. They give it the exact ${review.garment ? 'fabric, colours and pattern' : 'look, colours and details'}.${fromPlan}`
       : `${videoModelName(review.model)} copies ${what} from these images.${fromPlan}`;
   const castEditable = Boolean(parsed && /Cast:\s*.+?\.\s+Faces look|One presenter speaks to the camera:/.test(prompt));
@@ -602,7 +610,8 @@ export function ReviewCard({ review, busy, credits, projectId, preview = false, 
       </div>
 
       <div className="space-y-7 p-5">
-        <Section title={reference ? 'What the video copies your product from' : 'The frame your video starts from'} hint={imagesHint}>
+        {frames.length > 0 && (
+        <Section title={hasFace ? 'Who and what is in your video' : reference ? 'What the video copies your product from' : 'The frame your video starts from'} hint={imagesHint}>
           <div className="flex gap-3 overflow-x-auto pb-1 sm:grid sm:grid-cols-[repeat(auto-fill,minmax(150px,1fr))] sm:overflow-visible">
             {frames.map((frame, index) => {
               const kind = frameKind(frame, review.mode);
@@ -617,24 +626,27 @@ export function ReviewCard({ review, busy, credits, projectId, preview = false, 
               return (
                 <figure key={frame.url} className={cx('shrink-0 sm:w-auto', wide ? 'w-64 sm:col-span-2' : 'w-36')}>
                   <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-black/40">
-                    <button type="button" onClick={() => onView(frame.url)} title="See full size" aria-label={`See ${text.title} full size`} className="block w-full !p-0">
+                    <button type="button" onClick={() => onView(frame.preview ?? frame.url)} title="See full size" aria-label={`See ${text.title} full size`} className="block w-full !p-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={frame.url} alt={text.title} style={{ aspectRatio: cssAspect(tile) }} className="w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
+                      <img src={frame.preview ?? frame.url} alt={text.title} style={{ aspectRatio: cssAspect(tile) }} className="w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
                     </button>
                     {reference && (
                       <span className="pointer-events-none absolute left-2 top-2 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-medium text-white">Image {index + 1}</span>
                     )}
                     {/* Stacked, so they never cover the image number (touch screens make every button 44 px). */}
                     <div className="absolute right-1.5 top-1.5 flex flex-col gap-1">
-                      <ImageSourceMenu
-                        onUpload={() => chooseUpload({ index })}
-                        onLibrary={() => chooseLibrary({ index })}
-                        trigger={(
-                          <button type="button" disabled={busy || uploading !== null} title="Replace" aria-label={`Replace image ${index + 1}`} className="flex h-7 w-7 items-center justify-center rounded-full bg-black/65 !p-0 text-white/85 backdrop-blur-md hover:bg-black/85 hover:text-white disabled:opacity-40">
-                            <RefreshCw className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      />
+                      {/* A verified face can't be swapped for a photo (Seedance would refuse it); remove it instead. */}
+                      {kind !== 'face' && (
+                        <ImageSourceMenu
+                          onUpload={() => chooseUpload({ index })}
+                          onLibrary={() => chooseLibrary({ index })}
+                          trigger={(
+                            <button type="button" disabled={busy || uploading !== null} title="Replace" aria-label={`Replace image ${index + 1}`} className="flex h-7 w-7 items-center justify-center rounded-full bg-black/65 !p-0 text-white/85 backdrop-blur-md hover:bg-black/85 hover:text-white disabled:opacity-40">
+                              <RefreshCw className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        />
+                      )}
                       {reference && frames.length > 1 && (
                         <button type="button" onClick={() => removeFrame(index)} disabled={busy || uploading !== null} title="Remove" aria-label={`Remove image ${index + 1}`} className="flex h-7 w-7 items-center justify-center rounded-full bg-black/65 !p-0 text-white/85 backdrop-blur-md hover:bg-red-500/70 hover:text-white disabled:opacity-40">
                           <Trash2 className="h-3.5 w-3.5" />
@@ -679,6 +691,7 @@ export function ReviewCard({ review, busy, credits, projectId, preview = false, 
             }}
           />
         </Section>
+        )}
 
         {review.referenceVideos.length > 0 && (
           <Section title="Copied from" hint="Your video copies the shots and pacing of this video. It is not sent to the video engine.">
@@ -806,9 +819,9 @@ export function ReviewCard({ review, busy, credits, projectId, preview = false, 
                   </div>
                   <div className="mt-1.5 flex gap-3 pl-8">
                     {shot.images[0] && frames[shot.images[0] - 1] && (
-                      <button type="button" onClick={() => onView(frames[shot.images[0] - 1].url)} title={`Image ${shot.images[0]}`} className="shrink-0 overflow-hidden rounded-lg border border-white/10 !p-0">
+                      <button type="button" onClick={() => onView(frames[shot.images[0] - 1].preview ?? frames[shot.images[0] - 1].url)} title={`Image ${shot.images[0]}`} className="shrink-0 overflow-hidden rounded-lg border border-white/10 !p-0">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={frames[shot.images[0] - 1].url} alt="" className="h-14 w-8 object-cover" />
+                        <img src={frames[shot.images[0] - 1].preview ?? frames[shot.images[0] - 1].url} alt="" className="h-14 w-8 object-cover" />
                       </button>
                     )}
                     <div className="min-w-0 flex-1 space-y-1">

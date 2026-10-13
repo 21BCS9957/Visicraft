@@ -21,6 +21,8 @@ import { initialStages, PipelineTimeline, VIDEO_STAGES, type StageId, type Stage
 import { cx } from '@/components/playground/ui';
 import { GuidelinesEditor } from '@/components/playground/GuidelinesEditor';
 import { EMPTY_PRODUCT, NewVideoPanel, type PlanRequest, type VideoChoices } from './NewVideoPanel';
+import { QuickVideoPanel, type QuickRequest } from './QuickVideoPanel';
+import { PREVIEW_FACE_PHOTO } from './FacesSection';
 import { ReviewCard, type ReviewEdits } from './ReviewCard';
 import { ImageViewer } from '@/components/shared/ImageViewer';
 import { VideoHistory } from './VideoHistory';
@@ -233,6 +235,42 @@ function JobCard({ job, preview }: { job: LiveJob; preview: boolean }) {
   );
 }
 
+type PanelMode = 'quick' | 'product';
+const PANEL_MODE_KEY = 'visicraft:videoPanelMode';
+
+/** A short title for a quick video, from its prompt's first words. */
+function quickTitle(prompt: string): string {
+  const words = prompt.replace(/\s+/g, ' ').trim().split(' ');
+  return words.length > 8 ? `${words.slice(0, 8).join(' ')}…` : words.join(' ');
+}
+
+/** What /api/video/quick would answer, for the Studio preview (no API calls, nothing charged). */
+function previewQuickReview(request: QuickRequest): Record<string, unknown> {
+  const frames = request.faceId
+    ? [{ url: 'asset://preview-face', preview: PREVIEW_FACE_PHOTO, label: 'Priya · verified face', kind: 'face' }, ...(request.imageUrl ? [{ url: request.imageUrl, label: 'Your image', kind: 'photo' }] : [])]
+    : request.imageUrl ? [{ url: request.imageUrl, label: 'Your image', kind: 'photo' }] : [];
+  const notes = request.faceId
+    ? ['Priya’s verified face is in this video, so Seedance keeps it and the video can have sound.']
+    : request.imageUrl ? ['The video starts from your image and keeps its shape.'] : ['No image: Seedance makes the whole video from your prompt.'];
+  return {
+    engine: 'seedance',
+    model: request.model,
+    quality: request.quality,
+    durationSeconds: request.duration,
+    aspectRatio: request.aspectRatio,
+    mode: request.faceId ? 'reference' : 'first_frame',
+    frames,
+    prompt: request.faceId ? `${request.prompt}\n\nThe person in this video is Priya, exactly as in Image 1.` : request.prompt,
+    credits: videoCredits(request.model, request.quality, request.duration, request.aspectRatio),
+    notes,
+    lastFramePinned: false,
+    cameraFixed: false,
+    realFace: false,
+    needsAudio: false,
+    writtenBy: 'Your prompt, sent as you wrote it',
+  };
+}
+
 export function VideoStudio({ projectId }: { projectId: string }) {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
@@ -258,7 +296,21 @@ export function VideoStudio({ projectId }: { projectId: string }) {
   const [redrafting, setRedrafting] = useState<{ videoId: string; take: VideoTake } | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
   const [mobilePanel, setMobilePanel] = useState<boolean | null>(null);
+  // Quick video (a prompt, straight to Seedance) or From a product (the planned film); the last one used is remembered.
+  const [mode, setMode] = useState<PanelMode>('quick');
+  const [quickBusy, setQuickBusy] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let saved: string | null = null;
+    try {
+      saved = window.localStorage.getItem(PANEL_MODE_KEY);
+    } catch {
+      saved = null;
+    }
+    if (saved !== 'product') return;
+    const timer = window.setTimeout(() => setMode('product'), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
   const polling = useRef(new Map<string, AbortController>());
 
   const signedOut = !preview && !authLoading && !user;
@@ -774,6 +826,62 @@ export function VideoStudio({ projectId }: { projectId: string }) {
     }
   };
 
+  /** Quick video: the prompt (and an image or a verified face) goes straight to the approval card; nothing is charged until it's approved. */
+  const makeQuick = async (request: QuickRequest) => {
+    if (quickBusy) return;
+    if (!preview && !user) {
+      toast.error('Sign in to make videos', TOAST);
+      return;
+    }
+    setQuickBusy(true);
+    try {
+      const { reviewId, review: raw } = preview
+        ? await sleep(700).then(() => ({ reviewId: `preview-quick-${Date.now()}`, review: previewQuickReview(request) }))
+        : await videoApi.quick({
+          prompt: request.prompt,
+          imageUrl: request.imageUrl,
+          faceId: request.faceId,
+          model: request.model,
+          durationSeconds: request.duration,
+          quality: request.quality,
+          aspectRatio: request.aspectRatio,
+          projectId,
+        });
+      const review = readVideoReview(reviewId, raw);
+      if (!review) throw new Error('The video could not be prepared.');
+      const video: StudioVideo = {
+        id: review.id,
+        createdAt: new Date().toISOString(),
+        title: quickTitle(request.prompt),
+        style: null,
+        poster: review.frames[0]?.preview ?? review.frames[0]?.url ?? null,
+        review,
+        cancelled: false,
+        prompt: review.prompt,
+        settings: { model: review.model, quality: review.quality, durationSeconds: review.durationSeconds, aspectRatio: review.aspectRatio, style: 'any' },
+        takes: [],
+      };
+      setVideos((current) => [video, ...(current ?? [])]);
+      setSelectedId(video.id);
+      setMobilePanel(false);
+      showStage();
+      toast.success('Ready for your approval', TOAST);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The video could not be prepared', { ...TOAST, duration: 9000 });
+    } finally {
+      setQuickBusy(false);
+    }
+  };
+
+  const changeMode = (next: PanelMode) => {
+    setMode(next);
+    try {
+      window.localStorage.setItem(PANEL_MODE_KEY, next);
+    } catch {
+      // A private window: the choice lasts for this visit.
+    }
+  };
+
   const reuse = (video: StudioVideo) => {
     onChoices({
       model: pickerModel(video.settings.model),
@@ -851,6 +959,38 @@ export function VideoStudio({ projectId }: { projectId: string }) {
           <ChevronDown className={cx('h-4 w-4 text-white/45 transition-transform', mobileOpen && 'rotate-180')} />
         </button>
         <aside className={cx('shrink-0 border-white/8 bg-[#0c0c0f]/80 lg:w-[360px] lg:overflow-y-auto lg:border-r', !mobileOpen && 'max-lg:hidden', !panelOpen && 'lg:hidden')}>
+          <div className="border-b border-white/6 px-4 pb-3 pt-4">
+            <div role="tablist" aria-label="How to make the video" className="grid grid-cols-2 gap-1 rounded-full border border-white/10 bg-black/30 p-1">
+              {(['quick', 'product'] as const).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === option}
+                  onClick={() => changeMode(option)}
+                  className={cx('h-8 rounded-full text-xs font-medium transition-colors', mode === option ? 'bg-white text-black' : 'text-white/55 hover:text-white')}
+                >
+                  {option === 'quick' ? 'Quick video' : 'From a product'}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] leading-snug text-white/40">
+              {mode === 'quick' ? 'Your prompt, and an image if you like, straight to Seedance.' : 'A product link or photos: Claude plans the film shot by shot.'}
+            </p>
+          </div>
+          {/* Both stay mounted, so switching keeps what was typed in either. */}
+          <div className={cx(mode !== 'quick' && 'hidden')}>
+            <QuickVideoPanel
+              busy={quickBusy}
+              preview={preview}
+              signedIn={Boolean(user)}
+              choices={choices}
+              onChoices={onChoices}
+              cardOpen={Boolean(selected?.review) || (redrafting !== null && redrafting.videoId === selected?.id)}
+              onMake={(request) => void makeQuick(request)}
+            />
+          </div>
+          <div className={cx(mode !== 'product' && 'hidden')}>
           <NewVideoPanel
             busy={planning}
             preview={preview}
@@ -865,6 +1005,7 @@ export function VideoStudio({ projectId }: { projectId: string }) {
             cardOpen={Boolean(selected?.review) || (redrafting !== null && redrafting.videoId === selected?.id)}
             onPlan={(request) => void plan(request)}
           />
+          </div>
         </aside>
 
         <main className="min-w-0 flex-1 lg:overflow-y-auto">

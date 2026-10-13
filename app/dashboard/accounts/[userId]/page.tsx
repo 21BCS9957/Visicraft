@@ -11,7 +11,7 @@ export default async function DashboardAccountPage({ params }: { params: Promise
   const { userId } = await params;
   // The account page reads ?tab= and ?project=.
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#08080a]" />}>
+    <Suspense fallback={<div className="min-h-screen bg-[#0a0a0b]" />}>
       <AccountWorkspace userId={userId} />
     </Suspense>
   );

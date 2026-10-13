@@ -31,13 +31,34 @@ const query = (values: Record<string, string | null | undefined>) => {
 // Development only (?previewDashboard=1): sample data, no requests.
 const sample = <T,>(value: () => T): Promise<T> => new Promise((resolve) => setTimeout(() => resolve(value()), 250));
 
+export interface FeedQuery {
+  account?: string | null;
+  project?: string | null;
+  type?: FeedType;
+  status?: FeedStatus;
+  before?: string | null;
+  /** How many (48 by default, 60 at most). */
+  limit?: number;
+}
+
 export const dashboardApi = {
   me: () => (isDashboardPreview() ? sample(() => ({ allowed: true, email: 'gogrowthsoftware@gmail.com' })) : get<{ allowed: boolean; email: string | null }>('/api/dashboard/me')),
+  team: () => (isDashboardPreview() ? sample(() => ({ members: previewDashboard.overview().members as TeamMember[] })) : get<{ members: TeamMember[] }>('/api/dashboard/team')),
   overview: () => (isDashboardPreview() ? sample(previewDashboard.overview) : get<DashboardOverview>('/api/dashboard/overview')),
-  feed: (options: { account?: string | null; type?: FeedType; status?: FeedStatus; before?: string | null } = {}) => (isDashboardPreview()
-    ? sample(() => previewDashboard.feed(options))
-    : get<FeedPage>(`/api/dashboard/feed${query({ account: options.account, type: options.type === 'all' ? null : options.type, status: options.status === 'all' ? null : options.status, before: options.before })}`)),
-  live: (account?: string | null) => (isDashboardPreview() ? sample(() => previewDashboard.live(account)) : get<LiveSnapshot>(`/api/dashboard/live${query({ account })}`)),
+  feed: (options: FeedQuery = {}) => (isDashboardPreview()
+    ? sample(() => {
+      const page = previewDashboard.feed(options);
+      return options.limit ? { ...page, items: page.items.slice(0, options.limit) } : page;
+    })
+    : get<FeedPage>(`/api/dashboard/feed${query({
+      account: options.account,
+      project: options.project,
+      type: options.type === 'all' ? null : options.type,
+      status: options.status === 'done' ? null : options.status,
+      before: options.before,
+      limit: options.limit ? String(options.limit) : null,
+    })}`)),
+  live: () => (isDashboardPreview() ? sample(() => previewDashboard.live()) : get<LiveSnapshot>('/api/dashboard/live')),
   projects: (userId: string, kind: 'image' | 'video') => (isDashboardPreview()
     ? sample(() => ({ member: previewDashboard.member(userId), projects: previewDashboard.projects(kind) }))
     : get<{ member: MemberWithSummary; projects: PlaygroundProjectSummary[]; setup?: string }>(`/api/dashboard/accounts/${userId}/projects${query({ kind })}`)),

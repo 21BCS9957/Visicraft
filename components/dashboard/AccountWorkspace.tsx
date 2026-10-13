@@ -1,106 +1,117 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { AlertTriangle, ChevronLeft, Clapperboard, Download, Eye, FileText, Film, Image as ImageIcon, Library, Loader2, Radio, Search } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, Clapperboard, Download, FileText, Image as ImageIcon, Loader2, Search } from 'lucide-react';
 import { dashboardApi } from '@/lib/dashboard/client';
-import { isDashboardPreview, useDashboardPreview } from '@/lib/dashboard/preview';
-import type { MemberWithSummary, TeamMember } from '@/lib/dashboard/types';
+import { isDashboardPreview } from '@/lib/dashboard/preview';
+import type { FeedImage, MemberWithSummary } from '@/lib/dashboard/types';
 import { downloadUrl } from '@/lib/playground/api';
 import { playgroundModel } from '@/lib/playground/models';
 import type { LibraryItem, LibraryKind, PlaygroundBundle, PlaygroundItem, PlaygroundProjectSummary, PlaygroundRun } from '@/lib/playground/types';
-import type { StudioVideo } from '@/lib/video/shared';
-import { Chip, cx, timeAgo } from '@/components/playground/ui';
+import { cx, timeAgo } from '@/components/playground/ui';
 import { ShotSequence, VideoThumb } from '@/components/playground/library/libraryParts';
-import { ImageViewer } from '@/components/shared/ImageViewer';
-import { VideoHistory } from '@/components/video-studio/VideoHistory';
-import { VideoPlayerCard } from '@/components/video-studio/VideoPlayerCard';
+import { useDashboard } from './DashboardData';
 import { DashboardShell } from './DashboardShell';
-import { GenerationFeed, LiveNow } from './Feed';
-import { dashboardHref, failureMessage, failureOf, Loading, MemberAvatar, Message, Overlay, type Failure } from './parts';
+import { Gallery, MediaTile, TILE_GRID, TileSkeleton } from './Gallery';
+import { isGenerating, itemKey } from './items';
+import { Lightbox } from './Lightbox';
+import { LiveDot } from './Sidebar';
+import {
+  dashboardHref, displayName, EmptyState, failureMessage, failureOf, formatCount, Loading, MemberAvatar, Message, Overlay,
+  PageHeader, PANEL, Segmented, type Failure,
+} from './parts';
 
-type Tab = 'generations' | 'images' | 'videos' | 'library';
+type Tab = 'gallery' | 'projects' | 'library';
+type ProjectCardData = PlaygroundProjectSummary & { kind: 'image' | 'video' };
 
 /**
- * One GoGrowth account in the dashboard, read-only: what it is generating now and has made
- * (Generations), its image projects (runs and images), video projects (videos and takes) and
- * Library. Nothing here edits, re-runs, charges, polls a render or saves anything.
+ * One GoGrowth account, read-only: everything it made (Gallery), its image and video projects,
+ * and its Library. Nothing here edits, re-runs, charges, polls a render or saves anything.
  */
 export function AccountWorkspace({ userId }: { userId: string }) {
   return (
-    <DashboardShell crumb={<AccountCrumb />}>
+    <DashboardShell active={`account:${userId}`}>
       <AccountBody userId={userId} />
     </DashboardShell>
   );
 }
 
-function AccountCrumb() {
-  const preview = useDashboardPreview();
+function SmallStat({ label, value }: { label: string; value: string | null }) {
   return (
-    <Link href={dashboardHref('/', {}, preview)} className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-white/55 hover:bg-white/7 hover:text-white">
-      <ChevronLeft className="h-4 w-4" /> All accounts
-    </Link>
+    <div className={cx(PANEL, 'min-w-0 p-5')}>
+      <p className="text-[13px] text-zinc-400">{label}</p>
+      {value === null ? <span className="mt-3 block h-8 w-20 animate-pulse rounded-full bg-white/[0.06]" /> : <p className="mt-2 text-[32px] font-semibold leading-none tracking-tight text-zinc-50">{value}</p>}
+    </div>
   );
 }
 
 function AccountBody({ userId }: { userId: string }) {
   const router = useRouter();
   const search = useSearchParams();
+  const { memberById, live } = useDashboard();
   const asked = search.get('tab');
-  const tab: Tab = asked === 'images' || asked === 'videos' || asked === 'library' ? asked : 'generations';
+  // Old links (?tab=images / videos) land on Projects.
+  const tab: Tab = asked === 'library' ? 'library' : asked === 'projects' || asked === 'images' || asked === 'videos' ? 'projects' : 'gallery';
   const projectId = search.get('project');
+  const projectKind = search.get('kind') === 'video' || asked === 'videos' ? 'video' : 'image';
   const [member, setMember] = useState<MemberWithSummary | null>(null);
-  const [imageProjects, setImageProjects] = useState<PlaygroundProjectSummary[] | null>(null);
+  const [projects, setProjects] = useState<ProjectCardData[] | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
 
-  const go = useCallback((next: { tab: Tab; project?: string | null }) => {
-    router.push(dashboardHref(`/accounts/${userId}`, { tab: next.tab === 'generations' ? null : next.tab, project: next.project ?? null }, isDashboardPreview()), { scroll: false });
+  const go = useCallback((next: { tab: Tab; project?: string | null; kind?: 'image' | 'video' }) => {
+    router.push(dashboardHref(`/accounts/${userId}`, {
+      tab: next.tab === 'gallery' ? null : next.tab,
+      project: next.project ?? null,
+      kind: next.project ? next.kind ?? null : null,
+    }, isDashboardPreview()), { scroll: false });
   }, [router, userId]);
 
   useEffect(() => {
-    dashboardApi.projects(userId, 'image')
-      .then((result) => {
-        setMember(result.member);
-        setImageProjects(result.projects);
+    let active = true;
+    Promise.all([dashboardApi.projects(userId, 'image'), dashboardApi.projects(userId, 'video')])
+      .then(([images, videos]) => {
+        if (!active) return;
+        setMember(images.member);
+        setProjects([
+          ...images.projects.map((project) => ({ ...project, kind: 'image' as const })),
+          ...videos.projects.map((project) => ({ ...project, kind: 'video' as const })),
+        ].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)));
       })
-      .catch((error) => setFailure(failureOf(error)));
+      .catch((error) => active && setFailure(failureOf(error)));
+    return () => {
+      active = false;
+    };
   }, [userId]);
 
-  const members = useMemo(() => new Map<string, TeamMember>(member ? [[member.id, member]] : []), [member]);
-  const settled = useCallback(() => setRefreshKey((key) => key + 1), []);
-
+  const known = member ?? memberById.get(userId) ?? null;
+  const liveCount = (live ?? []).filter((job) => job.userId === userId && isGenerating(job)).length;
   if (failure) return <Message {...failureMessage(failure)} />;
-  if (!member) return <Loading />;
+  if (!known) return <Loading />;
+  const summary = member?.summary ?? null;
 
-  const tabs: Array<{ id: Tab; label: string; icon: ReactNode }> = [
-    { id: 'generations', label: 'Generations', icon: <Radio className="h-4 w-4" /> },
-    { id: 'images', label: 'Image projects', icon: <ImageIcon className="h-4 w-4" /> },
-    { id: 'videos', label: 'Video projects', icon: <Clapperboard className="h-4 w-4" /> },
-    { id: 'library', label: 'Library', icon: <Library className="h-4 w-4" /> },
+  const tabs: Array<{ id: Tab; label: string; count?: number | null }> = [
+    { id: 'gallery', label: 'Gallery' },
+    { id: 'projects', label: 'Projects', count: projects?.length ?? null },
+    { id: 'library', label: 'Library' },
   ];
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-4">
-        <MemberAvatar name={member.name} email={member.email} url={member.avatarUrl} size="lg" />
-        <div className="min-w-0">
-          <h1 className="truncate text-2xl font-light text-white sm:text-3xl">{member.name ?? member.email.split('@')[0]}</h1>
-          <p className="truncate text-sm text-white/50">{member.email}</p>
-        </div>
-        <div className="flex flex-wrap gap-2 text-xs text-white/55 sm:ml-auto">
-          <span className="rounded-full border border-white/10 px-3 py-1">{member.summary.imagesMade.toLocaleString('en-IN')} images</span>
-          <span className="rounded-full border border-white/10 px-3 py-1">{member.summary.videosMade} videos</span>
-          <span className="rounded-full border border-white/10 px-3 py-1">{member.summary.creditsUsed30d.toLocaleString('en-IN')} credits · 30 days</span>
-          {member.summary.balance !== null && <span className="rounded-full border border-white/10 px-3 py-1">{member.summary.balance.toLocaleString('en-IN')} credits left</span>}
-        </div>
+      <PageHeader
+        lead={<MemberAvatar name={known.name} email={known.email} url={known.avatarUrl} size="lg" />}
+        title={displayName(known)}
+        description={<>{known.email}{summary ? <> · {summary.lastActiveAt ? `last active ${timeAgo(summary.lastActiveAt)}` : 'hasn’t made anything yet'}</> : null}</>}
+        actions={liveCount > 0 ? <span className="inline-flex items-center gap-2 rounded-lg border border-[#fff05a]/25 bg-[#fff05a]/10 px-2.5 py-1.5 text-xs font-medium text-[#fff05a]"><LiveDot /> {liveCount === 1 ? 'Generating now' : `${liveCount} running now`}</span> : null}
+      />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <SmallStat label="Images" value={summary ? formatCount(summary.imagesMade) : null} />
+        <SmallStat label="Videos" value={summary ? formatCount(summary.videosMade) : null} />
+        <SmallStat label="Credits used · 30 days" value={summary ? formatCount(summary.creditsUsed30d) : null} />
+        <SmallStat label="Credits left" value={summary ? (summary.balance === null ? '—' : formatCount(summary.balance)) : null} />
       </div>
-      <p className="mt-4 flex items-center gap-2 text-xs text-white/40">
-        <Eye className="h-3.5 w-3.5 shrink-0" /> Read-only: nothing you do here changes their work or uses their credits.
-      </p>
 
-      <div className="mt-5 flex gap-1.5 overflow-x-auto border-b border-white/8" role="tablist">
+      <div className="mt-6 inline-flex max-w-full gap-1 overflow-x-auto rounded-full border border-white/[0.08] bg-[#0b0b0d] p-1 [scrollbar-width:none]" role="tablist">
         {tabs.map((item) => (
           <button
             key={item.id}
@@ -109,28 +120,23 @@ function AccountBody({ userId }: { userId: string }) {
             aria-selected={tab === item.id}
             onClick={() => go({ tab: item.id })}
             className={cx(
-              '-mb-px inline-flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm transition-colors',
-              tab === item.id ? 'border-[#fff05a] text-white' : 'border-transparent text-white/50 hover:text-white'
+              'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-4 text-sm font-medium transition-colors',
+              tab === item.id ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-400 hover:text-zinc-100'
             )}
           >
-            {item.icon} {item.label}
+            {item.label}
+            {typeof item.count === 'number' && <span className={cx('text-xs tabular-nums', tab === item.id ? 'text-zinc-500' : 'text-zinc-600')}>{item.count}</span>}
           </button>
         ))}
       </div>
 
-      <div className="mt-6">
-        {tab === 'generations' && (
-          <div className="space-y-8">
-            <LiveNow account={userId} members={members} onSettled={settled} />
-            <GenerationFeed account={userId} members={members} refreshKey={refreshKey} />
-          </div>
-        )}
-        {tab === 'images' && (projectId
-          ? <ImageProjectView userId={userId} projectId={projectId} onBack={() => go({ tab: 'images' })} />
-          : <ProjectGrid kind="image" projects={imageProjects} onOpen={(id) => go({ tab: 'images', project: id })} />)}
-        {tab === 'videos' && (projectId
-          ? <VideoProjectView userId={userId} projectId={projectId} onBack={() => go({ tab: 'videos' })} />
-          : <VideoProjects userId={userId} onOpen={(id) => go({ tab: 'videos', project: id })} />)}
+      <div className="mt-2">
+        {tab === 'gallery' && <Gallery account={userId} />}
+        {tab === 'projects' && (projectId
+          ? projectKind === 'video'
+            ? <VideoProject userId={userId} projectId={projectId} name={projects?.find((project) => project.id === projectId)?.name ?? null} onBack={() => go({ tab: 'projects' })} />
+            : <ImageProject userId={userId} projectId={projectId} onBack={() => go({ tab: 'projects' })} />
+          : <ProjectGrid projects={projects} onOpen={(project) => go({ tab: 'projects', project: project.id, kind: project.kind })} />)}
         {tab === 'library' && <LibraryView userId={userId} />}
       </div>
     </>
@@ -139,109 +145,96 @@ function AccountBody({ userId }: { userId: string }) {
 
 /* ----------------------------------------------------------------- projects */
 
-function ProjectCard({ project, kind, onOpen }: { project: PlaygroundProjectSummary; kind: 'image' | 'video'; onOpen: () => void }) {
+function ProjectCard({ project, onOpen }: { project: ProjectCardData; onOpen: () => void }) {
   const [coverFailed, setCoverFailed] = useState(false);
-  const what = kind === 'video'
+  const what = project.kind === 'video'
     ? `${project.videoCount ?? 0} video${project.videoCount === 1 ? '' : 's'}`
-    : `${project.imageCount} image${project.imageCount === 1 ? '' : 's'}`;
+    : `${formatCount(project.imageCount)} image${project.imageCount === 1 ? '' : 's'}`;
   return (
-    <button type="button" onClick={onOpen} className="group overflow-hidden rounded-2xl border border-white/8 bg-white/[0.03] !p-0 text-left transition-colors hover:border-white/20">
-      <div className="aspect-[4/3] overflow-hidden bg-[#111115]">
+    <button type="button" onClick={onOpen} className={cx(PANEL, 'group overflow-hidden !p-0 text-left transition-colors hover:border-white/15')}>
+      <div className="relative aspect-[16/10] overflow-hidden bg-zinc-900">
         {project.coverUrl && !coverFailed ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={project.coverUrl} alt="" loading="lazy" onError={() => setCoverFailed(true)} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
         ) : (
-          <div className="flex h-full items-center justify-center">{kind === 'video' ? <Clapperboard className="h-8 w-8 text-white/15" /> : <ImageIcon className="h-8 w-8 text-white/15" />}</div>
+          <div className="flex h-full items-center justify-center text-zinc-700">{project.kind === 'video' ? <Clapperboard className="h-7 w-7" /> : <ImageIcon className="h-7 w-7" />}</div>
         )}
+        <span className="absolute left-2.5 top-2.5 inline-flex items-center gap-1 rounded-full bg-black/65 px-1.5 py-0.5 text-[11px] font-medium text-white backdrop-blur-sm">
+          {project.kind === 'video' ? <Clapperboard className="h-3 w-3" /> : <ImageIcon className="h-3 w-3" />}
+          {project.kind === 'video' ? 'Video' : 'Images'}
+        </span>
       </div>
       <div className="px-3.5 py-3">
-        <h3 className="truncate text-sm font-medium text-white">{project.name}</h3>
-        <p className="mt-0.5 truncate text-[11px] text-white/45">{what} · {timeAgo(project.updatedAt)}</p>
+        <h3 className="truncate text-sm font-medium text-zinc-100">{project.name}</h3>
+        <p className="mt-0.5 truncate text-xs text-zinc-500">{what} · updated {timeAgo(project.updatedAt)}</p>
       </div>
     </button>
   );
 }
 
-function ProjectGrid({ kind, projects, onOpen, lead }: { kind: 'image' | 'video'; projects: PlaygroundProjectSummary[] | null; onOpen: (id: string) => void; lead?: ReactNode }) {
-  if (!projects) return <Loading />;
-  if (!projects.length && !lead) {
-    return <p className="rounded-2xl border border-dashed border-white/10 px-5 py-10 text-center text-sm text-white/45">No {kind === 'video' ? 'video' : 'image'} projects yet.</p>;
-  }
+function ProjectGrid({ projects, onOpen }: { projects: ProjectCardData[] | null; onOpen: (project: ProjectCardData) => void }) {
+  if (!projects) return <div className="pt-5"><Loading /></div>;
+  if (!projects.length) return <div className={cx(PANEL, 'mt-5')}><EmptyState icon={<ImageIcon className="h-5 w-5" />} title="No projects yet" body="Image and video projects this account creates show up here." /></div>;
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(220px,1fr))]">
-      {lead}
-      {projects.map((project) => <ProjectCard key={project.id} project={project} kind={kind} onOpen={() => onOpen(project.id)} />)}
+    <div className="grid grid-cols-1 gap-3 pt-5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+      {projects.map((project) => <ProjectCard key={`${project.kind}-${project.id}`} project={project} onOpen={() => onOpen(project)} />)}
     </div>
   );
 }
 
-function BackBar({ title, detail, onBack }: { title: string; detail?: string; onBack: () => void }) {
+function BackBar({ title, detail, onBack, children }: { title: string; detail?: string; onBack: () => void; children?: ReactNode }) {
   return (
-    <div className="mb-5 flex flex-wrap items-center gap-3">
-      <button type="button" onClick={onBack} className="inline-flex items-center gap-1 rounded-full border border-white/12 px-3 py-1.5 text-xs text-white/70 hover:bg-white/8 hover:text-white">
-        <ChevronLeft className="h-3.5 w-3.5" /> All projects
+    <div className="flex flex-wrap items-center gap-3 pb-1 pt-5">
+      <button type="button" onClick={onBack} className="inline-flex h-9 items-center gap-1 rounded-full border border-white/15 px-3.5 text-xs text-zinc-200 hover:bg-white/[0.06]">
+        <ChevronLeft className="h-3.5 w-3.5" /> Projects
       </button>
-      <h2 className="min-w-0 truncate text-lg font-light text-white">{title}</h2>
-      {detail && <span className="text-xs text-white/40">{detail}</span>}
+      <h2 className="min-w-0 truncate text-lg font-semibold tracking-tight text-zinc-50">{title}</h2>
+      {detail && <span className="text-xs text-zinc-500">{detail}</span>}
+      {children}
     </div>
   );
 }
 
-/* -------------------------------------------------------------------- images */
+/* -------------------------------------------------------------- image project */
 
-function ItemTile({ item, onOpen }: { item: PlaygroundItem; onOpen: () => void }) {
-  const ratio = item.aspectRatio.replace(':', ' / ');
-  if (item.status === 'done' && (item.previewUrl || item.imageUrl)) {
-    return (
-      <button type="button" onClick={onOpen} className="group overflow-hidden rounded-xl border border-white/8 bg-black/30 !p-0" style={{ aspectRatio: ratio }} title="See full size">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={item.previewUrl ?? item.imageUrl ?? ''} alt="" loading="lazy" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
-      </button>
-    );
-  }
-  const label = item.status === 'failed' ? 'Failed' : item.status === 'cancelled' ? 'Cancelled' : 'Not finished';
-  return (
-    <div className="flex items-center justify-center rounded-xl border border-dashed border-white/10 bg-black/20 text-[11px] text-white/40" style={{ aspectRatio: ratio }} title={item.error ?? undefined}>
-      {item.status === 'failed' && <AlertTriangle className="mr-1 h-3.5 w-3.5 text-red-300/70" />} {label}
-    </div>
-  );
+/** A Playground image as a feed image, so the gallery's tile and viewer can show it. */
+function asFeedImage(item: PlaygroundItem, run: PlaygroundRun | null, userId: string, project: { id: string; name: string }): FeedImage {
+  return {
+    kind: 'image',
+    id: item.id,
+    userId,
+    createdAt: item.createdAt,
+    status: item.status,
+    url: item.imageUrl,
+    previewUrl: item.previewUrl,
+    aspectRatio: item.aspectRatio,
+    width: item.width,
+    height: item.height,
+    prompt: run && item.promptIndex !== null ? run.prompts[item.promptIndex] ?? null : item.kind === 'edit' ? 'Edited in Canvas' : null,
+    model: run ? playgroundModel(run.model).name : null,
+    size: run?.size ?? null,
+    projectId: project.id,
+    projectName: project.name,
+    source: 'playground',
+    error: item.error,
+    startedAt: item.startedAt,
+  };
 }
 
-function RunBlock({ run, items, onOpen }: { run: PlaygroundRun; items: PlaygroundItem[]; onOpen: (item: PlaygroundItem) => void }) {
-  const model = playgroundModel(run.model);
-  return (
-    <section className="rounded-2xl border border-white/8 bg-white/[0.02] p-4">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h3 className="text-sm text-white">{timeAgo(run.createdAt)}</h3>
-        <p className="text-[11px] text-white/45">
-          {model.name} · {run.size}{run.quality ? ` · ${run.quality}` : ''} · {run.imageCount} image{run.imageCount === 1 ? '' : 's'} · {run.creditsPerImage} credits each{run.cancelledAt ? ' · stopped early' : ''}
-        </p>
-      </div>
-      {run.prompts.length > 0 && (
-        <details className="mt-2">
-          <summary className="cursor-pointer list-none text-[11px] text-white/55 hover:text-white">{run.prompts.length === 1 ? 'Prompt' : `${run.prompts.length} prompts`}</summary>
-          <ol className="mt-2 space-y-1.5">
-            {run.prompts.map((prompt, index) => (
-              <li key={index} className="whitespace-pre-wrap rounded-lg bg-black/25 px-3 py-2 text-[11.5px] leading-relaxed text-white/65">{prompt}</li>
-            ))}
-          </ol>
-        </details>
-      )}
-      <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(130px,1fr))]">
-        {items.map((item) => <ItemTile key={item.id} item={item} onOpen={() => onOpen(item)} />)}
-      </div>
-    </section>
-  );
-}
-
-function ImageProjectView({ userId, projectId, onBack }: { userId: string; projectId: string; onBack: () => void }) {
+/** An image project: its runs, newest first, each headed by its prompt, with the finished images in the gallery grid. */
+function ImageProject({ userId, projectId, onBack }: { userId: string; projectId: string; onBack: () => void }) {
   const [bundle, setBundle] = useState<PlaygroundBundle | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
-  const [open, setOpen] = useState<PlaygroundItem | null>(null);
+  const [broken, setBroken] = useState<ReadonlySet<string>>(() => new Set());
+  const [open, setOpen] = useState<number | null>(null);
 
   useEffect(() => {
-    dashboardApi.project(userId, projectId).then(setBundle).catch((error) => setFailure(failureOf(error)));
+    let active = true;
+    dashboardApi.project(userId, projectId).then((next) => active && setBundle(next)).catch((error) => active && setFailure(failureOf(error)));
+    return () => {
+      active = false;
+    };
   }, [userId, projectId]);
 
   const older = async () => {
@@ -257,182 +250,104 @@ function ImageProjectView({ userId, projectId, onBack }: { userId: string; proje
     }
   };
 
-  const byRun = useMemo(() => {
-    const map = new Map<string, PlaygroundItem[]>();
-    for (const item of bundle?.items ?? []) {
-      if (!item.runId) continue;
-      map.set(item.runId, [...(map.get(item.runId) ?? []), item]);
+  // Each run with its finished images (as feed images), plus Canvas edits; one flat list for the viewer.
+  const { sections, viewable } = useMemo(() => {
+    if (!bundle) return { sections: [], viewable: [] as FeedImage[] };
+    const project = { id: bundle.project.id, name: bundle.project.name };
+    const runOf = new Map(bundle.runs.map((run) => [run.id, run]));
+    const all: FeedImage[] = [];
+    const list: Array<{ key: string; title: string; meta: string; images: Array<{ image: FeedImage; index: number }>; unfinished: number }> = [];
+    const add = (key: string, title: string, meta: string, items: PlaygroundItem[]) => {
+      const images: Array<{ image: FeedImage; index: number }> = [];
+      let unfinished = 0;
+      for (const item of [...items].sort((a, b) => a.position - b.position)) {
+        const image = asFeedImage(item, item.runId ? runOf.get(item.runId) ?? null : null, userId, project);
+        if (item.status !== 'done' || !(item.previewUrl || item.imageUrl) || broken.has(itemKey(image))) {
+          if (item.status !== 'done') unfinished += 1;
+          continue;
+        }
+        images.push({ image, index: all.length });
+        all.push(image);
+      }
+      if (images.length || unfinished) list.push({ key, title, meta, images, unfinished });
+    };
+    for (const run of bundle.runs) {
+      const items = bundle.items.filter((item) => item.runId === run.id);
+      const model = playgroundModel(run.model);
+      const title = run.prompts.length === 1 ? run.prompts[0] : run.prompts.length ? `${run.prompts.length} prompts · ${run.prompts[0]}` : 'Run';
+      add(run.id, title, `${timeAgo(run.createdAt)} · ${model.name} · ${run.size}${run.quality ? ` · ${run.quality}` : ''}`, items);
     }
-    map.forEach((list) => list.sort((a, b) => a.position - b.position));
-    return map;
-  }, [bundle]);
-  const edits = (bundle?.items ?? []).filter((item) => item.kind === 'edit');
-  const runOf = (item: PlaygroundItem) => bundle?.runs.find((run) => run.id === item.runId) ?? null;
+    const edits = bundle.items.filter((item) => item.kind === 'edit');
+    if (edits.length) add('edits', 'Edited in Canvas', `${edits.length} image${edits.length === 1 ? '' : 's'}`, edits);
+    return { sections: list, viewable: all };
+  }, [bundle, userId, broken]);
 
   if (failure) return <Message {...failureMessage(failure)} />;
-  if (!bundle) return <Loading />;
-  const openRun = open ? runOf(open) : null;
-  const openPrompt = open && openRun && open.promptIndex !== null ? openRun.prompts[open.promptIndex] : null;
+  if (!bundle) return <div className="pt-5"><TileSkeleton /></div>;
 
   return (
     <div>
       <BackBar title={bundle.project.name} detail={`updated ${timeAgo(bundle.project.updatedAt)}`} onBack={onBack} />
       {bundle.project.brief?.trim() && (
-        <details className="mb-4 rounded-2xl border border-white/8 bg-black/20">
-          <summary className="cursor-pointer list-none px-3.5 py-2.5 text-xs text-white/60 hover:text-white">Project guidelines</summary>
-          <p className="max-h-72 overflow-y-auto whitespace-pre-wrap px-3.5 pb-3.5 text-[11.5px] leading-relaxed text-white/55">{bundle.project.brief}</p>
+        <details className={cx(PANEL, 'mt-3')}>
+          <summary className="cursor-pointer list-none px-4 py-2.5 text-xs text-zinc-400 hover:text-zinc-100">Project guidelines</summary>
+          <p className="max-h-72 overflow-y-auto whitespace-pre-wrap px-4 pb-4 text-[13px] leading-relaxed text-zinc-400">{bundle.project.brief}</p>
         </details>
       )}
-      {bundle.runs.length === 0 && edits.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-white/10 px-5 py-10 text-center text-sm text-white/45">No images in this project yet.</p>
+      {sections.length === 0 ? (
+        <div className={cx(PANEL, 'mt-5')}><EmptyState icon={<ImageIcon className="h-5 w-5" />} title="No images in this project yet" /></div>
       ) : (
-        <div className="space-y-4">
-          {bundle.runs.map((run) => <RunBlock key={run.id} run={run} items={byRun.get(run.id) ?? []} onOpen={setOpen} />)}
-          {edits.length > 0 && (
-            <section className="rounded-2xl border border-white/8 bg-white/[0.02] p-4">
-              <h3 className="text-sm text-white">Edited in Canvas</h3>
-              <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(130px,1fr))]">
-                {edits.map((item) => <ItemTile key={item.id} item={item} onOpen={() => setOpen(item)} />)}
-              </div>
-            </section>
-          )}
-          {bundle.nextBefore && (
-            <div className="flex justify-center">
-              <button type="button" onClick={() => void older()} disabled={loadingOlder} className="inline-flex h-10 items-center gap-2 rounded-full border border-white/12 px-5 text-sm text-white/75 hover:bg-white/8 disabled:opacity-50">
-                {loadingOlder && <Loader2 className="h-4 w-4 animate-spin" />} Older runs
-              </button>
+        sections.map((section) => (
+          <section key={section.key} className="pt-6">
+            <div className="mb-3">
+              <h3 className="line-clamp-2 text-sm font-medium text-zinc-200" title={section.title}>{section.title}</h3>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                {section.meta} · {section.images.length} image{section.images.length === 1 ? '' : 's'}
+                {section.unfinished > 0 && <span className="text-zinc-600"> · {section.unfinished} didn’t finish</span>}
+              </p>
             </div>
-          )}
+            {section.images.length > 0 && (
+              <div className={TILE_GRID}>
+                {section.images.map(({ image, index }) => (
+                  <MediaTile key={image.id} item={image} showWho={false} onOpen={() => setOpen(index)} onBroken={() => setBroken((current) => new Set(current).add(itemKey(image)))} />
+                ))}
+              </div>
+            )}
+          </section>
+        ))
+      )}
+      {bundle.nextBefore && (
+        <div className="flex justify-center pt-8">
+          <button type="button" onClick={() => void older()} disabled={loadingOlder} className="inline-flex h-10 items-center gap-2 rounded-full border border-white/15 px-5 text-sm text-zinc-200 hover:bg-white/[0.06] disabled:opacity-50">
+            {loadingOlder && <Loader2 className="h-4 w-4 animate-spin" />} Older runs
+          </button>
         </div>
       )}
-      {open?.imageUrl && (
-        <ImageViewer url={open.imageUrl} onClose={() => setOpen(null)}>
-          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-white/40">{openRun ? playgroundModel(openRun.model).name : 'Edited in Canvas'}</p>
-          <p className="mt-1 text-xs text-white/55">{open.aspectRatio}{open.width && open.height ? ` · ${open.width}×${open.height}` : ''} · {timeAgo(open.createdAt)}</p>
-          {openPrompt && <p className="mt-3 max-h-[40vh] overflow-y-auto whitespace-pre-wrap text-[12px] leading-relaxed text-white/75">{openPrompt}</p>}
-          <a href={downloadUrl(open.imageUrl, `image-${open.id.slice(0, 8)}.png`)} download className="mt-4 inline-flex h-9 items-center gap-2 rounded-full bg-[#fff05a] px-4 text-sm font-medium text-black hover:bg-white">
-            <Download className="h-4 w-4" /> Download
-          </a>
-        </ImageViewer>
-      )}
+      {open !== null && viewable[open] && <Lightbox items={viewable} index={open} onIndex={setOpen} onClose={() => setOpen(null)} />}
     </div>
   );
 }
 
-/* -------------------------------------------------------------------- videos */
+/* -------------------------------------------------------------- video project */
 
-function VideoProjects({ userId, onOpen }: { userId: string; onOpen: (id: string) => void }) {
-  const [projects, setProjects] = useState<PlaygroundProjectSummary[] | null>(null);
-  const [failure, setFailure] = useState<Failure | null>(null);
-  useEffect(() => {
-    dashboardApi.projects(userId, 'video').then((result) => setProjects(result.projects)).catch((error) => setFailure(failureOf(error)));
-  }, [userId]);
-  if (failure) return <Message {...failureMessage(failure)} />;
-  return (
-    <ProjectGrid
-      kind="video"
-      projects={projects}
-      onOpen={onOpen}
-      lead={projects ? (
-        <button type="button" onClick={() => onOpen('all')} className="flex aspect-auto flex-col justify-end rounded-2xl border border-white/8 bg-gradient-to-br from-[#c8b8ff]/10 to-transparent p-4 text-left !p-4 hover:border-white/20">
-          <Film className="mb-auto h-6 w-6 text-[#d9ccff]" />
-          <p className="mt-10 text-sm font-medium text-white">All videos</p>
-          <p className="text-[11px] text-white/45">Every video, in any project</p>
-        </button>
-      ) : undefined}
-    />
-  );
-}
-
-/** A video still waiting for the member's approval: what was planned, nothing to play yet. */
-function PlannedVideo({ video }: { video: StudioVideo }) {
-  const review = video.review;
-  if (!review) return null;
-  return (
-    <div className="rounded-[24px] border border-white/10 bg-[#111114] p-4 sm:p-5">
-      <p className="text-sm text-white">Planned, waiting for approval</p>
-      <p className="mt-0.5 text-xs text-white/45">{review.durationSeconds}s · {review.aspectRatio} · {timeAgo(video.createdAt)} · nothing rendered yet</p>
-      <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-        {review.frames.map((frame) => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img key={frame.url} src={frame.url} alt={frame.label} className="h-28 w-auto shrink-0 rounded-lg border border-white/10 object-cover" />
-        ))}
-      </div>
-      <details className="mt-3 rounded-2xl border border-white/8 bg-black/20">
-        <summary className="cursor-pointer list-none px-3.5 py-2.5 text-xs text-white/60 hover:text-white">The planned prompt</summary>
-        <p className="max-h-72 overflow-y-auto whitespace-pre-wrap px-3.5 pb-3.5 font-mono text-[11px] leading-relaxed text-white/55">{review.prompt}</p>
-      </details>
-    </div>
-  );
-}
-
-function VideoProjectView({ userId, projectId, onBack }: { userId: string; projectId: string; onBack: () => void }) {
-  const all = projectId === 'all';
-  const [videos, setVideos] = useState<StudioVideo[] | null>(null);
-  const [nextBefore, setNextBefore] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [failure, setFailure] = useState<Failure | null>(null);
-  const [name, setName] = useState<string | null>(all ? 'All videos' : null);
-
-  useEffect(() => {
-    dashboardApi.videos(userId, { projectId: all ? null : projectId })
-      .then((page) => {
-        setVideos(page.videos);
-        setNextBefore(page.nextBefore);
-        setSelectedId(page.videos[0]?.id ?? null);
-      })
-      .catch((error) => setFailure(failureOf(error)));
-    if (!all) {
-      dashboardApi.projects(userId, 'video')
-        .then((result) => setName(result.projects.find((project) => project.id === projectId)?.name ?? 'Video project'))
-        .catch(() => setName('Video project'));
-    }
-  }, [userId, projectId, all]);
-
-  const more = async () => {
-    if (!nextBefore || loadingMore) return;
-    setLoadingMore(true);
-    try {
-      const page = await dashboardApi.videos(userId, { projectId: all ? null : projectId, before: nextBefore });
-      setVideos((current) => [...(current ?? []), ...page.videos]);
-      setNextBefore(page.nextBefore);
-    } catch (error) {
-      setFailure(failureOf(error));
-    } finally {
-      setLoadingMore(false);
-    }
-  };
-
-  if (failure) return <Message {...failureMessage(failure)} />;
-  const selected = videos?.find((video) => video.id === selectedId) ?? null;
+function VideoProject({ userId, projectId, name, onBack }: { userId: string; projectId: string; name: string | null; onBack: () => void }) {
   return (
     <div>
       <BackBar title={name ?? 'Video project'} onBack={onBack} />
-      {selected && (
-        <div className="mb-8">
-          {selected.review ? <PlannedVideo video={selected} /> : <VideoPlayerCard video={selected} preview={false} busy={false} credits={null} readOnly />}
-        </div>
-      )}
-      <VideoHistory
-        videos={videos}
-        selectedId={selectedId}
-        preview={false}
-        loadingMore={loadingMore}
-        hasMore={Boolean(nextBefore)}
-        onOpen={(video) => {
-          setSelectedId(video.id);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
-        onLoadMore={() => void more()}
-        title="Videos"
-        owner={false}
-      />
+      <Gallery account={userId} project={projectId} initialType="video" showTypes={false} />
     </div>
   );
 }
 
 /* ------------------------------------------------------------------- library */
+
+function asLibraryImage(item: LibraryItem, userId: string): FeedImage {
+  return {
+    kind: 'image', id: item.id, userId, createdAt: item.createdAt, status: 'done', url: item.url, previewUrl: item.url,
+    aspectRatio: null, width: item.width, height: item.height, prompt: null, model: null, size: null,
+    projectId: null, projectName: item.name || 'Library image', source: 'playground', error: null, startedAt: null,
+  };
+}
 
 function LibraryView({ userId }: { userId: string }) {
   const [kind, setKind] = useState<LibraryKind>('image');
@@ -442,7 +357,9 @@ function LibraryView({ userId }: { userId: string }) {
   const [nextBefore, setNextBefore] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
-  const [open, setOpen] = useState<LibraryItem | null>(null);
+  const [broken, setBroken] = useState<ReadonlySet<string>>(() => new Set());
+  const [openImage, setOpenImage] = useState<number | null>(null);
+  const [openOther, setOpenOther] = useState<LibraryItem | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setQuery(typed.trim()), 300);
@@ -451,7 +368,6 @@ function LibraryView({ userId }: { userId: string }) {
 
   useEffect(() => {
     let live = true;
-    setItems(null);
     dashboardApi.library(userId, { kind, q: query || null })
       .then((page) => {
         if (!live) return;
@@ -478,78 +394,75 @@ function LibraryView({ userId }: { userId: string }) {
     }
   };
 
-  if (failure) return <Message {...failureMessage(failure)} />;
-  const kinds: Array<{ id: LibraryKind; label: string }> = [
-    { id: 'image', label: 'Images' },
-    { id: 'video', label: 'Videos' },
-    { id: 'document', label: 'Documents' },
-  ];
+  const images = useMemo(() => (kind === 'image' ? (items ?? []).filter((item) => item.url && !broken.has(item.id)).map((item) => asLibraryImage(item, userId)) : []), [items, kind, broken, userId]);
+  const others = kind === 'image' ? [] : items ?? [];
 
+  if (failure) return <Message {...failureMessage(failure)} />;
   return (
     <div>
-      <div className="mb-5 flex flex-wrap items-center gap-2">
-        {kinds.map((option) => <Chip key={option.id} active={kind === option.id} onClick={() => setKind(option.id)}>{option.label}</Chip>)}
-        <label className="ml-auto flex h-9 min-w-[200px] items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 text-sm text-white/70">
-          <Search className="h-4 w-4 text-white/35" />
-          <input value={typed} onChange={(event) => setTyped(event.target.value)} placeholder="Search by name" className="w-full bg-transparent text-sm text-white outline-none placeholder:text-white/30" />
+      <div className="flex flex-wrap items-center gap-2 py-3">
+        <Segmented label="Library" value={kind} onChange={(next) => { setKind(next); setItems(null); }} options={[{ id: 'image', label: 'Images' }, { id: 'video', label: 'Videos' }, { id: 'document', label: 'Documents' }]} />
+        <label className="flex h-10 min-w-[200px] flex-1 items-center gap-2 rounded-full border border-white/[0.08] bg-[#0b0b0d] px-4 text-sm text-zinc-300 sm:ml-auto sm:max-w-xs">
+          <Search className="h-3.5 w-3.5 text-zinc-500" />
+          <input value={typed} onChange={(event) => setTyped(event.target.value)} placeholder="Search by name" className="w-full bg-transparent text-[13px] text-zinc-100 outline-none placeholder:text-zinc-600" />
         </label>
       </div>
       {!items ? (
-        <Loading />
-      ) : items.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-white/10 px-5 py-10 text-center text-sm text-white/45">Nothing here{query ? ' with that name' : ' yet'}.</p>
+        <TileSkeleton count={6} />
+      ) : (kind === 'image' ? images.length : others.length) === 0 ? (
+        <div className={PANEL}><EmptyState icon={kind === 'document' ? <FileText className="h-5 w-5" /> : kind === 'video' ? <Clapperboard className="h-5 w-5" /> : <ImageIcon className="h-5 w-5" />} title={query ? 'Nothing with that name' : 'Nothing saved here yet'} /></div>
+      ) : kind === 'image' ? (
+        <div className={TILE_GRID}>
+          {images.map((image, index) => (
+            <MediaTile key={image.id} item={image} showWho={false} onOpen={() => setOpenImage(index)} onBroken={() => setBroken((current) => new Set(current).add(image.id))} />
+          ))}
+        </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(170px,1fr))] sm:gap-4">
-          {items.map((item) => (
-            <button key={item.id} type="button" onClick={() => setOpen(item)} className="group overflow-hidden rounded-2xl border border-white/8 bg-white/[0.03] !p-0 text-left hover:border-white/20">
+        <div className={TILE_GRID}>
+          {others.map((item) => (
+            <button key={item.id} type="button" onClick={() => setOpenOther(item)} className="group relative block aspect-[4/5] w-full overflow-hidden rounded-[14px] bg-zinc-900 !p-0 text-left ring-1 ring-white/[0.06] focus-visible:ring-2 focus-visible:ring-[#fff05a]/70">
               {item.kind === 'video' ? (
-                <VideoThumb item={item} className="aspect-[9/16] w-full" />
-              ) : item.kind === 'image' && item.url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={item.url} alt="" loading="lazy" className="aspect-square w-full object-cover" />
+                <VideoThumb item={item} className="h-full w-full" />
               ) : (
-                <div className="flex aspect-square w-full flex-col gap-2 p-3">
-                  <FileText className="h-5 w-5 text-white/40" />
-                  <p className="line-clamp-6 text-[11px] leading-relaxed text-white/50">{item.preview}</p>
-                </div>
+                <span className="flex h-full flex-col gap-2 p-3">
+                  <FileText className="h-5 w-5 shrink-0 text-zinc-500" />
+                  <span className="line-clamp-[9] text-[11px] leading-relaxed text-zinc-400">{item.preview}</span>
+                </span>
               )}
-              <span className="block truncate px-2.5 py-2 text-xs text-white/80">{item.name || 'Untitled'}</span>
+              <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/85 to-transparent px-2.5 pb-2 pt-8 text-xs text-zinc-100">{item.name || 'Untitled'}</span>
             </button>
           ))}
         </div>
       )}
       {nextBefore && (
-        <div className="mt-6 flex justify-center">
-          <button type="button" onClick={() => void more()} disabled={loadingMore} className="inline-flex h-10 items-center gap-2 rounded-full border border-white/12 px-5 text-sm text-white/75 hover:bg-white/8 disabled:opacity-50">
+        <div className="flex justify-center pt-8">
+          <button type="button" onClick={() => void more()} disabled={loadingMore} className="inline-flex h-10 items-center gap-2 rounded-full border border-white/15 px-5 text-sm text-zinc-200 hover:bg-white/[0.06] disabled:opacity-50">
             {loadingMore && <Loader2 className="h-4 w-4 animate-spin" />} More
           </button>
         </div>
       )}
 
-      {open?.kind === 'image' && open.url && (
-        <ImageViewer url={open.url} onClose={() => setOpen(null)}>
-          <p className="text-sm text-white">{open.name || 'Untitled'}</p>
-          <p className="mt-1 text-xs text-white/50">{open.width && open.height ? `${open.width}×${open.height} · ` : ''}{timeAgo(open.createdAt)}</p>
-          <a href={downloadUrl(open.url, open.name || 'image')} download className="mt-4 inline-flex h-9 items-center gap-2 rounded-full bg-[#fff05a] px-4 text-sm font-medium text-black hover:bg-white">
-            <Download className="h-4 w-4" /> Download
-          </a>
-        </ImageViewer>
-      )}
-      {open?.kind === 'video' && open.url && (
-        <Overlay onClose={() => setOpen(null)}>
-          <p className="mb-3 text-sm text-white">{open.name || 'Untitled'}</p>
-          <video src={open.url} poster={open.posterUrl ?? undefined} controls playsInline className="max-h-[60vh] w-full rounded-xl bg-black object-contain" />
-          {open.analysis && <div className="mt-4"><ShotSequence analysis={open.analysis} /></div>}
-          <a href={downloadUrl(open.url, `${open.name || 'video'}.mp4`)} download className="mt-4 inline-flex h-9 items-center gap-2 rounded-full bg-[#fff05a] px-4 text-sm font-medium text-black hover:bg-white">
+      {openImage !== null && images[openImage] && <Lightbox items={images} index={openImage} onIndex={setOpenImage} onClose={() => setOpenImage(null)} />}
+      {openOther?.kind === 'video' && openOther.url && (
+        <Overlay onClose={() => setOpenOther(null)}>
+          <p className="mb-3 text-sm font-medium text-zinc-100">{openOther.name || 'Untitled'}</p>
+          <video src={openOther.url} poster={openOther.posterUrl ?? undefined} controls playsInline className="max-h-[60vh] w-full rounded-lg bg-black object-contain" />
+          {openOther.analysis && <div className="mt-4"><ShotSequence analysis={openOther.analysis} /></div>}
+          <a href={downloadUrl(openOther.url, `${openOther.name || 'video'}.mp4`)} download className="mt-4 inline-flex h-10 items-center gap-2 rounded-full bg-[#fff05a] px-4 text-sm font-medium text-[#1f1c00] hover:bg-[#fff59a]">
             <Download className="h-4 w-4" /> Download
           </a>
         </Overlay>
       )}
-      {open?.kind === 'document' && (
-        <Overlay onClose={() => setOpen(null)}>
-          <p className="text-sm text-white">{open.name || 'Untitled'}</p>
-          <p className="mt-1 text-xs text-white/45">{open.length ? `${open.length.toLocaleString('en-IN')} characters · ` : ''}{timeAgo(open.createdAt)}</p>
-          <p className="mt-4 whitespace-pre-wrap text-[12.5px] leading-relaxed text-white/75">{open.preview}{open.length && open.preview && open.length > open.preview.length ? '…' : ''}</p>
+      {openOther?.kind === 'document' && (
+        <Overlay onClose={() => setOpenOther(null)}>
+          <p className="text-sm font-medium text-zinc-100">{openOther.name || 'Untitled'}</p>
+          <p className="mt-1 text-xs text-zinc-500">{openOther.length ? `${formatCount(openOther.length)} characters · ` : ''}{timeAgo(openOther.createdAt)}</p>
+          <p className="mt-4 whitespace-pre-wrap text-[13px] leading-relaxed text-zinc-300">{openOther.preview}{openOther.length && openOther.preview && openOther.length > openOther.preview.length ? '…' : ''}</p>
+        </Overlay>
+      )}
+      {openOther && !openOther.url && openOther.kind === 'video' && (
+        <Overlay onClose={() => setOpenOther(null)}>
+          <p className="flex items-center gap-2 text-sm text-zinc-300"><AlertTriangle className="h-4 w-4 text-zinc-500" /> This video’s file is no longer available.</p>
         </Overlay>
       )}
     </div>

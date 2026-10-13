@@ -3,6 +3,7 @@
 import { getAuthenticatedHeaders } from '@/lib/supabase/auth';
 import { readNdjson } from '@/lib/ndjson';
 import type { FinalQuality } from '@/lib/videoModels';
+import { readFace, type FacesState, type VideoFace } from './faces';
 import { readVideoInfo, type VideoHistoryPage, type VideoInfo } from './shared';
 
 /** The Video Studio's calls to the video API, and the render poller. */
@@ -49,6 +50,23 @@ export interface StartedRender {
   notice?: string;
 }
 
+export interface QuickVideoRequest {
+  prompt: string;
+  imageUrl?: string | null;
+  faceId?: string | null;
+  model: string;
+  durationSeconds: number;
+  quality: string;
+  aspectRatio: string;
+  projectId?: string | null;
+}
+
+function faceFrom(body: { face: unknown }): VideoFace {
+  const face = readFace(body.face);
+  if (!face) throw new VideoApiError(502, 'The face could not be read.');
+  return face;
+}
+
 function started(body: Record<string, unknown>): StartedRender {
   if (typeof body.operationId !== 'string') throw new VideoApiError(502, 'The video did not start.');
   return { operationId: body.operationId, video: readVideoInfo(body.video), notice: typeof body.notice === 'string' ? body.notice : undefined };
@@ -75,6 +93,27 @@ export const videoApi = {
   /** A video that didn't render comes back for approval as a new one (no music after a music-check stop). */
   again: (videoId: string) =>
     call<{ reviewId: string; review: unknown }>('/api/video/again', { method: 'POST', body: JSON.stringify({ videoId }) }),
+
+  /** Quick video: the user's prompt (an image and a verified face if they want) goes straight to approval. */
+  quick: (request: QuickVideoRequest) =>
+    call<{ reviewId: string; review: unknown }>('/api/video/quick', { method: 'POST', body: JSON.stringify(request), timeoutMs: 60_000 }),
+
+  faces: {
+    list: async (): Promise<FacesState> => {
+      const body = await call<Record<string, unknown>>('/api/faces');
+      return {
+        faces: Array.isArray(body.faces) ? body.faces.map(readFace).filter((face): face is VideoFace => face !== null) : [],
+        missing: Array.isArray(body.missing) ? body.missing.filter((name): name is string => typeof name === 'string') : [],
+        setupMessage: typeof body.setupMessage === 'string' ? body.setupMessage : null,
+      };
+    },
+    create: (name: string) => call<{ face: unknown }>('/api/faces', { method: 'POST', body: JSON.stringify({ name, consent: true }) }).then(faceFrom),
+    get: (faceId: string) => call<{ face: unknown }>(`/api/faces/${faceId}`).then(faceFrom),
+    rescan: (faceId: string) => call<{ face: unknown }>(`/api/faces/${faceId}`, { method: 'POST', body: JSON.stringify({ action: 'rescan' }) }).then(faceFrom),
+    addPhoto: (faceId: string, url: string) => call<{ face: unknown }>(`/api/faces/${faceId}/photos`, { method: 'POST', body: JSON.stringify({ url }), timeoutMs: 45_000 }).then(faceFrom),
+    removePhoto: (faceId: string, photoId: string) => call<{ face: unknown }>(`/api/faces/${faceId}/photos/${photoId}`, { method: 'DELETE' }).then(faceFrom),
+    remove: (faceId: string) => call<{ deleted: boolean }>(`/api/faces/${faceId}`, { method: 'DELETE' }),
+  },
 
   /** Rewrites the prompt from a short instruction (nothing renders). */
   /**

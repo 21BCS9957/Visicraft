@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { deductCreditsForUser, logUsage, refundCreditsForUser, requireAuthenticatedUser } from '@/lib/server/usage';
 import { isOwnStorageUrl } from '@/lib/server/playground/db';
+import { ownFaceAssets } from '@/lib/server/videoFaces';
 import { isVideoEngineConfigured, submitVideoJob, videoEngineSetup } from '@/lib/server/video';
-import { promptSeconds, retimePrompt } from '@/lib/video/shared';
+import { isFaceAsset, promptSeconds, retimePrompt } from '@/lib/video/shared';
 import { videoCostUsd, videoCredits, videoEngineOf, videoModelOptions, type VideoEngine } from '@/lib/videoModels';
 
 // Starting a render (and its refund on failure) must not be cut off after the charge.
@@ -42,7 +43,9 @@ export async function POST(request: NextRequest) {
     const text = (key: string) => (typeof meta[key] === 'string' && (meta[key] as string) ? (meta[key] as string) : undefined);
     const model = text('requestedVideoModel') ?? text('videoModel');
     const heroUrl = text('heroUrl');
-    if (!model || !heroUrl) return NextResponse.json({ error: 'This video was made before edits existed. Plan it again instead.' }, { status: 400 });
+    // A quick video made from the prompt alone has no image to start from.
+    const textOnly = meta.textOnly === true;
+    if (!model || (!heroUrl && !textOnly)) return NextResponse.json({ error: 'This video was made before edits existed. Plan it again instead.' }, { status: 400 });
     const engine: VideoEngine = (text('videoEngine') as VideoEngine | undefined) ?? videoEngineOf(model) ?? 'veo';
     if (!isVideoEngineConfigured(engine)) {
       return NextResponse.json({ error: `Video generation is not configured yet (set ${videoEngineSetup(engine)}).` }, { status: 500 });
@@ -59,10 +62,16 @@ export async function POST(request: NextRequest) {
       ? [...new Set((body.frames as unknown[]).filter((url): url is string => typeof url === 'string'))]
       : null;
     if (sent?.some((url) => !allowed(url))) return NextResponse.json({ error: 'Images must be uploaded first.' }, { status: 400 });
-    const kept = reference ? (sent?.length ? sent : used).slice(0, MAX_REFERENCE_IMAGES) : [sent?.[0] ?? heroUrl];
-    if (!kept.length) return NextResponse.json({ error: 'Keep at least one image.' }, { status: 400 });
+    const first = sent?.[0] ?? heroUrl;
+    const kept = reference ? (sent?.length ? sent : used).slice(0, MAX_REFERENCE_IMAGES) : first ? [first] : [];
+    if (!kept.length && !textOnly) return NextResponse.json({ error: 'Keep at least one image.' }, { status: 400 });
+    // A verified face must still be the user's own, accepted by BytePlus.
+    const faces = kept.filter(isFaceAsset);
+    if (faces.length && !(await ownFaceAssets(user.id, faces))) {
+      return NextResponse.json({ error: 'A face photo in this video was removed. Remove it from the video or add it again under Faces.' }, { status: 409 });
+    }
     // A first frame the user swapped in may show a real person.
-    const replacedFirstFrame = !reference && kept[0] !== heroUrl;
+    const replacedFirstFrame = !reference && Boolean(kept[0]) && kept[0] !== heroUrl;
     const negativePrompt = typeof body.negativePrompt === 'string' ? body.negativePrompt.trim().slice(0, 1500) : text('negativePrompt');
     // The take's length, or another one the engine renders; the shots are timed to match.
     const asked = Number(body.durationSeconds);
@@ -85,8 +94,8 @@ export async function POST(request: NextRequest) {
       quality: 'draft',
       duration: durationSeconds,
       aspectRatio,
-      imageUrl: kept[0],
-      lastFrameUrl: !reference && lastFramePinned ? kept[0] : undefined,
+      imageUrl: kept[0] ?? '',
+      lastFrameUrl: !reference && lastFramePinned && kept[0] ? kept[0] : undefined,
       referenceImageUrls: reference ? kept : undefined,
       prompt,
       negativePrompt,
@@ -125,7 +134,8 @@ export async function POST(request: NextRequest) {
         // and /api/video/upgrade to render this exact take in full quality.
         operationIds: [job.operationName],
         retries: 0,
-        heroUrl: kept[0],
+        heroUrl: kept[0] ?? null,
+        textOnly: kept.length === 0,
         referenceImageUrls: reference ? kept : null,
         prompt,
         approvedPrompt: prompt,

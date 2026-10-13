@@ -10,15 +10,19 @@ import type { VideoEngine, VideoQuality } from '@/lib/videoModels';
  */
 
 export interface VideoReviewFrame {
+  /** The image itself, or `asset://<id>` for a verified face registered with BytePlus. */
   url: string;
   label: string;
   /**
    * What it is, for the approval card: one of the user's photos, a close-up cut from one, a
-   * scene image made for a shot, the hero (first or opening) frame, or the mannequin edit.
+   * scene image made for a shot, the hero (first or opening) frame, the mannequin edit, or a
+   * verified face.
    */
-  kind?: 'photo' | 'crop' | 'scene' | 'frame' | 'mannequin';
+  kind?: 'photo' | 'crop' | 'scene' | 'frame' | 'mannequin' | 'face';
   /** A close-up's original photo and where in it it was cut ([x, y, width, height], 0-1). */
   source?: { url: string; box: [number, number, number, number] };
+  /** What the card shows when `url` can't be displayed (a verified face's own photo). */
+  preview?: string;
 }
 
 /** The plan in plain words, for the approval card (the prompt itself may be edited). */

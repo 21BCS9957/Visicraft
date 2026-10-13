@@ -280,10 +280,10 @@ export async function submitSeedanceJob(options: SeedanceJobOptions): Promise<Se
     : seedancePrompt(options.prompt || 'A smooth, natural cinematic shot.', { negativePrompt: options.negativePrompt, cameraFixed: options.cameraFixed });
 
   // Reference-to-video: the product images guide every shot; there is no first frame, and
-  // neither camera_fixed nor seed apply.
+  // neither camera_fixed nor seed apply. A verified face (`asset://<id>`) goes as it is.
   if (options.referenceImageUrls?.length) {
     if (spec.family === '1.0') throw new Error(`${spec.name} cannot build a video from reference images; pick a Seedance 2.x model.`);
-    const images = await Promise.all(options.referenceImageUrls.slice(0, spec.family === '2.5' ? 30 : 9).map((url) => frameDataUrl(url, null)));
+    const images = await Promise.all(options.referenceImageUrls.slice(0, spec.family === '2.5' ? 30 : 9).map((url) => (url.startsWith('asset://') ? url : frameDataUrl(url, null))));
     const aspectRatio = options.aspectRatio || '9:16';
     const durationSeconds = clampSeconds(options.duration, spec.minSeconds, spec.maxSeconds);
     const id = await createTask(model, {
@@ -303,6 +303,26 @@ export async function submitSeedanceJob(options: SeedanceJobOptions): Promise<Se
   }
   // 1.x drafts get a seed, so the upgrade renders from the same one.
   const seed = spec.cameraFixed ? options.seed ?? (options.draft ? Math.floor(Math.random() * 2_147_483_647) : undefined) : undefined;
+
+  // Text-to-video: no image at all, the whole clip comes from the prompt, in the shape asked for.
+  if (!options.imageUrl) {
+    const shape = options.aspectRatio && RATIOS.includes(options.aspectRatio) ? options.aspectRatio : '9:16';
+    const durationSeconds = clampSeconds(options.duration, spec.minSeconds, spec.maxSeconds);
+    const id = await createTask(model, {
+      model,
+      content: [{ type: 'text', text: promptText }],
+      resolution,
+      ratio: shape,
+      duration: durationSeconds,
+      watermark: false,
+      ...(spec.audio ? { generate_audio: process.env.SEEDANCE_GENERATE_AUDIO !== 'false' } : {}),
+      ...(spec.cameraFixed && options.cameraFixed ? { camera_fixed: true } : {}),
+      ...(seed !== undefined ? { seed } : {}),
+      ...(nativeDraft ? { draft: true } : {}),
+    }, headers);
+    return { operationName: `${OPERATION_PREFIX}${id}`, model, resolution, durationSeconds, seed, nativeDraft };
+  }
+
   const aspectRatio = options.aspectRatio || '16:9';
   const durationSeconds = clampSeconds(options.duration, spec.minSeconds, spec.maxSeconds);
   const size = seedanceFrameSize(spec, resolution, aspectRatio);
@@ -412,23 +432,44 @@ export interface SeedanceAccess {
  * parameters; if it does not, the answers cannot be told apart and are marked unknown.
  * Should a task ever be created, it is cancelled while still queued.
  */
+/** One model's answer to a request with an impossible duration (see checkSeedanceAccess). */
+async function probeSeedanceModel(model: string, headers: Record<string, string>): Promise<ArkFailure> {
+  try {
+    const response = await axios.post<{ id?: string }>(
+      `${baseUrl()}/contents/generations/tasks`,
+      { model, content: [{ type: 'text', text: 'Access check.' }], resolution: '480p', duration: 1, watermark: false },
+      { headers, timeout: 30000 }
+    );
+    if (response.data.id) {
+      await axios.delete(`${baseUrl()}/contents/generations/tasks/${encodeURIComponent(response.data.id)}`, { headers, timeout: 20000 }).catch(() => undefined);
+    }
+    return { status: response.status, code: 'Created' };
+  } catch (error) {
+    return arkFailure(error);
+  }
+}
+
+let faceModelAnswer: { model: string; ready: boolean; at: number } | null = null;
+
+/**
+ * Whether the model that takes real faces (SEEDANCE_FACE_MODEL, Seedance 1.0 Pro) is switched
+ * on for this key: asked for free like checkSeedanceAccess, and remembered for 10 minutes.
+ */
+export async function seedanceFaceModelReady(): Promise<{ model: string | null; ready: boolean }> {
+  const model = seedanceFaceModel();
+  if (!model || !isSeedanceConfigured()) return { model, ready: false };
+  if (faceModelAnswer?.model === model && Date.now() - faceModelAnswer.at < 10 * 60_000) return { model, ready: faceModelAnswer.ready };
+  const result = await probeSeedanceModel(model, authHeaders());
+  const code = result.code ?? '';
+  // An answer about the impossible duration means the model itself is open to this key.
+  const ready = code === 'Created' || (result.status === 400 && code !== 'ModelNotOpen' && !code.startsWith('InvalidEndpointOrModel'));
+  faceModelAnswer = { model, ready, at: Date.now() };
+  return { model, ready };
+}
+
 export async function checkSeedanceAccess(): Promise<{ keyValid: boolean; baseUrl: string; models: SeedanceAccess[]; note?: string }> {
   const headers = authHeaders();
-  const probe = async (model: string): Promise<ArkFailure> => {
-    try {
-      const response = await axios.post<{ id?: string }>(
-        `${baseUrl()}/contents/generations/tasks`,
-        { model, content: [{ type: 'text', text: 'Access check.' }], resolution: '480p', duration: 1, watermark: false },
-        { headers, timeout: 30000 }
-      );
-      if (response.data.id) {
-        await axios.delete(`${baseUrl()}/contents/generations/tasks/${encodeURIComponent(response.data.id)}`, { headers, timeout: 20000 }).catch(() => undefined);
-      }
-      return { status: response.status, code: 'Created' };
-    } catch (error) {
-      return arkFailure(error);
-    }
-  };
+  const probe = (model: string) => probeSeedanceModel(model, headers);
 
   const control = await probe('seedance-access-check-no-such-model');
   if (control.status === 401 || control.code === 'AuthenticationError') {

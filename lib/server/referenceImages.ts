@@ -67,6 +67,29 @@ Return JSON only: {"images":[{"index":1,"person":false,"label":""}]}`,
 }
 
 /**
+ * Which images show a real person's face, the thing Seedance 2.x refuses. Hands, arms or a
+ * body without a visible face pass. An image that can't be read, or an unclear answer, counts
+ * as a face, so the user hears it before approving rather than after a refused render.
+ */
+export async function inspectFaces(urls: string[]): Promise<{ faces: boolean[]; usage?: ProviderUsage }> {
+  const faces = urls.map(() => true);
+  const { images, sourceIndexes } = await loadPreparedReferences(urls);
+  if (images.length === 0) return { faces };
+  const parts: Parameters<typeof requestGeminiText>[0] = [{
+    text: `For each numbered image: is a real human face visible, even partly or small? A mannequin, doll, statue, toy, drawing, cartoon or emoji is not a real face. Hands, arms or a body without a visible face do not count.
+Return JSON only: {"images":[{"index":1,"face":false}]}`,
+  }];
+  images.forEach((image, i) => parts.push({ text: `IMAGE ${i + 1}:` }, { inlineData: { mimeType: image.mimeType, data: image.data } }));
+  const { response, providerModel } = await requestGeminiText(parts, { temperature: 0, responseMimeType: 'application/json' }, 'Face check');
+  const parsed = parseJson<{ images?: Array<{ index?: number; face?: unknown }> }>(textOf(response), {});
+  images.forEach((_, i) => {
+    const found = parsed.images?.find((entry) => Number(entry.index) === i + 1);
+    faces[sourceIndexes[i]] = found ? found.face !== false : true;
+  });
+  return { faces, usage: usageOf(response, providerModel) };
+}
+
+/**
  * Regions of a photo that show only the product (no skin, face, hands or hair), cropped
  * and enlarged: for a garment on a model, its border, main fabric, sheer layers and pattern.
  */
