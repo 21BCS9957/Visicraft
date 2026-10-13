@@ -21,6 +21,17 @@ export function formatLength(seconds: number | null): string | null {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
 }
 
+/**
+ * A pending database migration is the operator's job, not the signed-in person's, so the UI says
+ * only that the feature is off and the technical message goes to the console.
+ */
+export const LIBRARY_SETUP_NOTICE = 'Saved videos and folders aren’t available yet.';
+
+export function noteLibrarySetup(message: string | null | undefined): string | null {
+  if (message) console.warn('Library videos are off:', message);
+  return message ?? null;
+}
+
 /** The folders of one Library tab, kept in step with creates, renames, removes and moves. */
 export function useLibraryFolders(kind: LibraryKind, preview: boolean, enabled = true) {
   const [folders, setFolders] = useState<LibraryFolder[]>([]);
@@ -36,7 +47,7 @@ export function useLibraryFolders(kind: LibraryKind, preview: boolean, enabled =
       .then((result) => {
         if (cancelled) return;
         setFolders(result.folders);
-        setSetupMessage(result.setupMessage ?? null);
+        setSetupMessage(noteLibrarySetup(result.setupMessage));
       })
       .catch(() => !cancelled && setFolders([]));
     return () => {

@@ -17,7 +17,7 @@ import { usePreviewFlag } from '../hooks';
 import { Markdown } from '../Markdown';
 import { PlaygroundTabs } from '../PlaygroundTabs';
 import { cx, IconButton, timeAgo } from '../ui';
-import { ALL_FOLDERS, FolderChips, MoveToMenu, NO_FOLDER, ShotSequence, useLibraryFolders, VideoThumb } from './libraryParts';
+import { ALL_FOLDERS, FolderChips, LIBRARY_SETUP_NOTICE, MoveToMenu, noteLibrarySetup, NO_FOLDER, ShotSequence, useLibraryFolders, VideoThumb } from './libraryParts';
 
 const TOAST = { position: 'top-center' as const };
 
@@ -88,7 +88,7 @@ export function LibraryPage() {
           if (cancelled) return;
           setItems(result.items);
           setNextBefore(result.nextBefore);
-          setSetupMessage(result.setupMessage ?? null);
+          setSetupMessage(noteLibrarySetup(result.setupMessage));
         })
         .catch((error) => !cancelled && toast.error(error instanceof Error ? error.message : 'Could not load your library', TOAST));
     }, search ? 250 : 0);
@@ -338,7 +338,7 @@ export function LibraryPage() {
             </div>
 
             {setup ? (
-              <p className="mt-4 rounded-2xl border border-[#fff05a]/20 bg-[#fff05a]/[0.05] px-4 py-3 text-sm text-[#fbf2a0]/90">{setup}</p>
+              <p className="mt-4 rounded-2xl border border-[#fff05a]/20 bg-[#fff05a]/[0.05] px-4 py-3 text-sm text-[#fbf2a0]/90">{LIBRARY_SETUP_NOTICE}</p>
             ) : (
               <div className="mt-4">
                 <FolderChips

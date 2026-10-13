@@ -11,7 +11,7 @@ import { uploadImages, uploadLibraryVideo } from '@/lib/playground/upload';
 import type { LibraryItem } from '@/lib/playground/types';
 import { Markdown } from '../Markdown';
 import { cx } from '../ui';
-import { ALL_FOLDERS, FolderChips, NO_FOLDER, useLibraryFolders, VideoThumb } from './libraryParts';
+import { ALL_FOLDERS, FolderChips, LIBRARY_SETUP_NOTICE, noteLibrarySetup, NO_FOLDER, useLibraryFolders, VideoThumb } from './libraryParts';
 
 const TOAST = { position: 'top-center' as const };
 const ROLES: ReferenceRole[] = ['product', 'person', 'style'];
@@ -83,7 +83,7 @@ export function LibraryPicker({ open, onOpenChange, kind, title, description, pr
           if (cancelled) return;
           setItems(result.items);
           setNextBefore(result.nextBefore);
-          setSetupMessage(result.setupMessage ?? null);
+          setSetupMessage(noteLibrarySetup(result.setupMessage));
         })
         .catch((error) => !cancelled && toast.error(error instanceof Error ? error.message : 'Could not load your library', TOAST));
     }, search ? 250 : 0);
@@ -236,7 +236,7 @@ export function LibraryPicker({ open, onOpenChange, kind, title, description, pr
 
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
             {setup && kind === 'video' ? (
-              <p className="rounded-2xl border border-[#fff05a]/20 bg-[#fff05a]/[0.05] px-4 py-3 text-sm text-[#fbf2a0]/90">{setup}</p>
+              <p className="rounded-2xl border border-[#fff05a]/20 bg-[#fff05a]/[0.05] px-4 py-3 text-sm text-[#fbf2a0]/90">{LIBRARY_SETUP_NOTICE}</p>
             ) : items === null ? (
               <div className="flex items-center justify-center py-16 text-white/45"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading your library…</div>
             ) : visible.length === 0 ? (

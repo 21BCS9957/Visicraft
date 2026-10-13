@@ -40,7 +40,13 @@ export function useFaces(preview: boolean, enabled: boolean) {
     if (!enabled) return;
     let active = true;
     (preview ? Promise.resolve(previewFaces()) : videoApi.faces.list())
-      .then((next) => active && setState(next))
+      .then((next) => {
+        if (!active) return;
+        if (next.missing.length > 0 || next.setupMessage) {
+          console.warn('Verified faces are off:', next.setupMessage ?? `set ${next.missing.join(' and ')}`);
+        }
+        setState(next);
+      })
       .catch((failure) => active && setError(failure instanceof Error ? failure.message : 'Your faces could not be loaded.'));
     return () => {
       active = false;
@@ -78,6 +84,11 @@ export function useFaces(preview: boolean, enabled: boolean) {
 }
 
 export type FacesHandle = ReturnType<typeof useFaces>;
+
+/** Verified faces need BytePlus keys and the faces migration; neither is something the signed-in person can fix. */
+function facesUnavailable(state: FacesState): boolean {
+  return state.missing.length > 0 || Boolean(state.setupMessage);
+}
 
 /* ------------------------------------------------------------------- pieces */
 
@@ -270,19 +281,6 @@ function FaceCard({ face, preview, selected, selectable, disabled, onSelect, fac
   );
 }
 
-function SetupNotice({ missing }: { missing: string[] }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-black/25 p-3 text-[11px] leading-relaxed text-white/55">
-      <p className="text-xs text-white/80">Verified faces need a one-time setup in BytePlus</p>
-      <ol className="mt-1.5 list-decimal space-y-1 pl-4">
-        <li>Create an Access Key and Secret Key (ArkFullAccess) and add {missing.join(' and ')} to the app’s settings.</li>
-        <li>Finish company verification and subscribe to Advanced Creation Rights (the Entry tier is free).</li>
-      </ol>
-      <p className="mt-1.5 text-white/40">Until then, an image with a real face renders with Seedance 1.0 Pro, without sound.</p>
-    </div>
-  );
-}
-
 /**
  * Verified faces: people who scanned their own face once (with BytePlus), so Seedance 2.x keeps
  * their face in a video, with sound. Pick one for the video, or add someone: their name, the
@@ -324,7 +322,10 @@ export function FacesSection({ preview, faces, selectedId, onSelect, disabled }:
 
   if (error) return <p className="text-[11px] text-red-300">{error}</p>;
   if (!state) return <p className="flex items-center gap-2 text-[11px] text-white/40"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading your faces…</p>;
-  if (state.setupMessage) return <p className="rounded-2xl border border-white/10 bg-black/25 p-3 text-[11px] leading-relaxed text-white/55">{state.setupMessage}</p>;
+  // Face verification is an account-level setup job, so say only what it means for the video.
+  if (facesUnavailable(state)) {
+    return <p className="text-[11px] leading-snug text-white/45">Verified faces aren’t available yet. Your video still renders from a photo, without sound.</p>;
+  }
 
   return (
     <div className="space-y-2">
@@ -340,9 +341,7 @@ export function FacesSection({ preview, faces, selectedId, onSelect, disabled }:
           onSelect={() => onSelect(selectedId === face.id ? null : face.id)}
         />
       ))}
-      {state.missing.length > 0 ? (
-        <SetupNotice missing={state.missing} />
-      ) : adding ? (
+      {adding ? (
         <div className="space-y-2.5 rounded-2xl border border-white/10 bg-black/25 p-3">
           <input
             value={name}
