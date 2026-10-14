@@ -15,6 +15,7 @@ import { isGenerating, itemStartedAt, itemTitle } from './items';
 import { RunBar } from './LiveList';
 import { LiveDot } from './Sidebar';
 import { TeamList } from './TeamTable';
+import { GeneratedCard, SpendCard } from './UsageCards';
 import {
   ArrowLink, dashboardHref, displayName, elapsed, failureMessage, failureOf, formatCount, Loading, Message, PageHeader, Panel, PANEL,
   PILL_OUTLINE, PILL_PRIMARY, PILL_SMALL, useNow, type Failure,
@@ -201,9 +202,9 @@ function ResultsGauge({ outcomes }: { outcomes: DashboardOutcomes }) {
 }
 
 /** The team's credits: the total left, what 30 days used, and each balance (lowest first: who needs a top-up). */
-function CreditsCard({ members }: { members: DashboardOverview['members'] }) {
+/** Credits left per account; "used" is the same 30-day total as the headline card (everyone's work). */
+function CreditsCard({ members, used }: { members: DashboardOverview['members']; used: number }) {
   const left = members.reduce((sum, member) => sum + (member.summary.balance ?? 0), 0);
-  const used = members.reduce((sum, member) => sum + member.summary.creditsUsed30d, 0);
   const balances = members.filter((member) => member.summary.balance !== null).sort((a, b) => (a.summary.balance ?? 0) - (b.summary.balance ?? 0)).slice(0, 4);
   const most = Math.max(1, ...balances.map((member) => member.summary.balance ?? 0));
   return (
@@ -298,6 +299,12 @@ function OverviewBody() {
         />
       </div>
 
+      {/* What was made and what it cost, right under the headline numbers; each card keeps its own height when expanded. */}
+      <div className="mt-3 grid grid-cols-1 items-start gap-3 sm:mt-4 sm:gap-4 lg:grid-cols-2">
+        <GeneratedCard usage={overview.usage} />
+        <SpendCard usage={overview.usage} />
+      </div>
+
       <div className="mt-3 grid grid-cols-1 gap-3 sm:mt-4 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
         <ActivityChart days={overview.activity} className="sm:col-span-2" />
         <LiveSpotlight lastActiveAt={lastActiveAt} />
@@ -308,7 +315,7 @@ function OverviewBody() {
         </Panel>
         <ResultsGauge outcomes={overview.outcomes30d} />
 
-        <CreditsCard members={overview.members} />
+        <CreditsCard members={overview.members} used={overview.kpis.credits30d} />
         <Panel
           title="Recent"
           description="The newest finished work"

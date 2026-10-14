@@ -33,7 +33,7 @@ export function ActivityChart({ days, className }: { days: ActivityDay[]; classN
   return (
     <Panel
       title="Activity"
-      description={`${formatCount(total)} ${plural(total)} finished in the last 7 days`}
+      description={`${formatCount(total)} ${plural(total)} made in the last 7 days`}
       action={<Segmented size="sm" label="Series" value={series} onChange={setSeries} options={[{ id: 'images', label: 'Images' }, { id: 'videos', label: 'Videos' }]} />}
       className={className}
     >
@@ -71,10 +71,10 @@ export function ActivityChart({ days, className }: { days: ActivityDay[]; classN
             );
           })}
         </div>
-        {total === 0 && <p className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-sm text-zinc-500">No {noun}s finished in the last 7 days</p>}
+        {total === 0 && <p className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-sm text-zinc-500">No {noun}s made in the last 7 days</p>}
       </div>
       <table className="sr-only">
-        <caption>Finished images and videos per day, last 7 days</caption>
+        <caption>Images and videos made per day, last 7 days</caption>
         <thead><tr><th scope="col">Day</th><th scope="col">Images</th><th scope="col">Videos</th></tr></thead>
         <tbody>
           {week.map((day) => <tr key={day.date}><th scope="row">{LONG.format(asDate(day.date))}</th><td>{day.images}</td><td>{day.videos}</td></tr>)}

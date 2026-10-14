@@ -14,11 +14,11 @@ export interface TeamMember {
 export interface TeamMemberSummary {
   imageProjects: number;
   videoProjects: number;
-  /** Finished Playground images. */
+  /** Images made (Playground, Canvas edits, the old tools), from the usage log: deleted ones still count. */
   imagesMade: number;
-  /** Videos rendered to a file (upgrades of a video are not counted again). */
+  /** New videos made (re-made takes of a video are not counted again). */
   videosMade: number;
-  /** Credits charged in the last 30 days, all features. */
+  /** Credits charged in the last 30 India days, all features, refunds left out. */
   creditsUsed30d: number;
   /** Credits left. */
   balance: number | null;
@@ -62,6 +62,55 @@ export interface DashboardOutcomes {
   cancelled: number;
 }
 
+/** A usage period, in India days: today, yesterday, the last 7 or 30 days, or everything so far. */
+export type UsageRange = 'today' | 'yesterday' | '7d' | '30d' | 'all';
+
+/** One model's share of what was spent in a period. */
+export interface ModelSpend {
+  /** Stable key, e.g. "gemini-3-pro-image". */
+  key: string;
+  name: string;
+  /** Whose model it is: Gemini, OpenAI, Google (Veo), BytePlus (Seedance), Anthropic (Claude). */
+  maker: string;
+  /** Colour group: Gemini images, GPT Image images and videos each have a colour; helpers are "other". */
+  group: 'gemini' | 'gpt' | 'video' | 'other';
+  images: number;
+  /** New videos made. */
+  videos: number;
+  /** Every video render charged: new videos plus re-made takes (redrafts, upgrades). */
+  renders: number;
+  credits: number;
+  /** What the provider charged, in rupees (an estimate from its prices). */
+  costInr: number;
+}
+
+/** What was made and spent in a period, by one account or in all. */
+export interface UsageCounts {
+  images: number;
+  /** Images from Gemini's Nano Banana models. */
+  gemini: number;
+  /** Images from OpenAI's GPT Image models. */
+  gpt: number;
+  /** New videos made (re-made takes of a video are not counted again). */
+  videos: number;
+  credits: number;
+  costInr: number;
+}
+
+export interface UsagePeriod extends UsageCounts {
+  /** Team accounts that made something, most images first (the owner's own accounts count in the totals, not here). */
+  members: Array<UsageCounts & { userId: string }>;
+}
+
+/** Usage and cost from the usage log, refunded work left out. */
+export interface DashboardUsage {
+  /** Rupees per US dollar used for every estimate. */
+  inrPerUsd: number;
+  periods: Record<UsageRange, UsagePeriod>;
+  /** Credits and cost per model for each period, most spent (rupees) first. */
+  byModel: Record<UsageRange, ModelSpend[]>;
+}
+
 export interface DashboardOverview {
   domain: string;
   members: Array<MemberWithSummary & { liveCount: number; latestProject: DashboardProject | null }>;
@@ -71,6 +120,7 @@ export interface DashboardOverview {
   /** The most recently updated projects, newest first. */
   recentProjects: DashboardProject[];
   outcomes30d: DashboardOutcomes;
+  usage: DashboardUsage;
 }
 
 /** An image in the feed: a Playground image, or a quick generation from the old tools. */

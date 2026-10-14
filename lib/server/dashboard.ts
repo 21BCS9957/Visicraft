@@ -7,11 +7,13 @@ import { ApiError, withUser } from '@/lib/server/playground/http';
 import { loadVideosOf } from '@/lib/server/videoHistory';
 import { isPlaygroundModel, playgroundModel } from '@/lib/playground/models';
 import { studioVideoStatus, type StudioVideo } from '@/lib/video/shared';
+import { seedanceSpec } from '@/lib/videoModels';
 import type {
   ActivityDay,
   DashboardOutcomes,
   DashboardOverview,
   DashboardProject,
+  DashboardUsage,
   FeedImage,
   FeedItem,
   FeedPage,
@@ -20,8 +22,12 @@ import type {
   LiveJob,
   LiveRun,
   LiveSnapshot,
+  ModelSpend,
   TeamMember,
   TeamMemberSummary,
+  UsageCounts,
+  UsagePeriod,
+  UsageRange,
 } from '@/lib/dashboard/types';
 
 /**
@@ -121,34 +127,35 @@ const RUN_LOOKBACK_MS = 12 * 60 * MINUTE;
 const LIVE_RUNS = 12;
 const LATEST_PER_RUN = 12;
 
-/** A video row rendered a file (its `videoUrls` holds one): a made video, not a plan or a failure. */
-function renderedVideo(row: Row): boolean {
-  const urls = row.videoUrls;
-  return Boolean(urls && typeof urls === 'object' && Object.values(urls as Row).some((url) => typeof url === 'string' && url));
-}
-
-/** What an account has made: projects, finished images, rendered videos, credits spent in 30 days, balance, last activity. */
-export async function memberSummary(userId: string): Promise<TeamMemberSummary> {
+/**
+ * What an account has made: projects, images and new videos made (from the usage log, so
+ * deleted images still count, as everywhere on the dashboard), credits spent in the last 30
+ * days, balance and last activity. The overview passes its `usage` so the log is read once.
+ */
+export async function memberSummary(userId: string, usage?: UsageEntry[]): Promise<TeamMemberSummary> {
   const db = createServiceClient();
   const count = async (query: PromiseLike<{ count: number | null; error: unknown }>) => {
     const { count: n, error } = await query;
     return error ? 0 : n ?? 0;
   };
-  const since = new Date(Date.now() - 30 * DAY).toISOString();
-  const [imageProjects, videoProjects, imagesMade, videos, spent, latest, credits] = await Promise.all([
+  const [imageProjects, videoProjects, entries, credits] = await Promise.all([
     count(db.from('playground_projects').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('kind', 'image')),
     count(db.from('playground_projects').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('kind', 'video')),
-    count(db.from('playground_items').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('status', 'done')),
-    db.from('usage_logs').select('videoUrls:metadata->videoUrls').eq('user_id', userId).eq('feature', 'video_generation').in('metadata->>mode', VIDEO_MODES).limit(5000),
-    db.from('usage_logs').select('credit_cost').eq('user_id', userId).gte('created_at', since).limit(5000),
-    db.from('usage_logs').select('created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(1),
+    usage ? Promise.resolve(usage.filter((entry) => entry.userId === userId)) : usageEntries(db, [userId]),
     db.from('user_credits').select('credits').eq('user_id', userId).maybeSingle(),
   ]);
-  const videosMade = ((videos.data ?? []) as Row[]).filter(renderedVideo).length;
-  const creditsUsed30d = ((spent.data ?? []) as Array<{ credit_cost: number | null }>).reduce((sum, row) => sum + (Number(row.credit_cost) || 0), 0);
-  const lastActiveAt = ((latest.data ?? []) as Array<{ created_at: string }>)[0]?.created_at ?? null;
-  const balance = typeof credits.data?.credits === 'number' ? credits.data.credits : null;
-  return { imageProjects, videoProjects, imagesMade, videosMade, creditsUsed30d, balance, lastActiveAt };
+  const month = lastIndiaDays(30);
+  const sum = (key: 'images' | 'videos') => entries.reduce((total, entry) => total + entry[key], 0);
+  const last = entries.at(-1);
+  return {
+    imageProjects,
+    videoProjects,
+    imagesMade: sum('images'),
+    videosMade: sum('videos'),
+    creditsUsed30d: entries.filter((entry) => month.has(entry.day)).reduce((total, entry) => total + entry.credits, 0),
+    balance: typeof credits.data?.credits === 'number' ? credits.data.credits : null,
+    lastActiveAt: last ? new Date(last.at).toISOString() : null,
+  };
 }
 
 /* ------------------------------------------------------------------ the feed */
@@ -488,31 +495,16 @@ export async function loadLive(userIds: string[]): Promise<LiveSnapshot> {
 const INDIA_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
 const dayOf = (time: string | number) => INDIA_DAY.format(new Date(time));
 
-/** Finished images and rendered videos per day over the last 14 days (today last). */
-async function loadActivity(db: Db, userIds: string[]): Promise<ActivityDay[]> {
+/** Images and new videos made per day (India time) over the last 14 days, today last. */
+function activityFrom(entries: UsageEntry[]): ActivityDay[] {
   const now = Date.now();
   const days: ActivityDay[] = Array.from({ length: 14 }, (_, index) => ({ date: dayOf(now - (13 - index) * DAY), images: 0, videos: 0 }));
-  if (!userIds.length) return days;
   const byDate = new Map(days.map((day) => [day.date, day]));
-  const since = new Date(now - 15 * DAY).toISOString();
-  const [items, quick, videos] = await Promise.all([
-    db.from('playground_items').select('created_at').in('user_id', userIds).eq('status', 'done').gte('created_at', since).limit(20000),
-    db.from('generations').select('created_at, generated_thumbnails').in('user_id', userIds).gte('created_at', since).limit(5000),
-    db.from('usage_logs').select('created_at, videoUrls:metadata->videoUrls').in('user_id', userIds).eq('feature', 'video_generation')
-      .in('metadata->>mode', VIDEO_MODES).gte('created_at', since).limit(5000),
-  ]);
-  for (const row of (items.data ?? []) as Row[]) {
-    const day = byDate.get(dayOf(String(row.created_at)));
-    if (day) day.images += 1;
-  }
-  for (const row of (quick.data ?? []) as Row[]) {
-    const day = byDate.get(dayOf(String(row.created_at)));
-    const count = Array.isArray(row.generated_thumbnails) ? row.generated_thumbnails.length : 0;
-    if (day) day.images += count;
-  }
-  for (const row of (videos.data ?? []) as Row[]) {
-    const day = byDate.get(dayOf(String(row.created_at)));
-    if (day && renderedVideo(row)) day.videos += 1;
+  for (const entry of entries) {
+    const day = byDate.get(entry.day);
+    if (!day) continue;
+    day.images += entry.images;
+    day.videos += entry.videos;
   }
   return days;
 }
@@ -547,43 +539,241 @@ async function loadProjects(db: Db, userIds: string[]): Promise<{ recent: Dashbo
 }
 
 /**
- * How generations ended over the last 30 days: Playground images by status, quick
- * generations (always finished), and videos (rendered, refunded = failed, or cancelled).
+ * How generations ended over the last 30 days: finished is what the usage log says was made
+ * (images and new videos, as every card counts them); failed and cancelled are the Playground
+ * images and the videos that ended so.
  */
-async function loadOutcomes(db: Db, userIds: string[]): Promise<DashboardOutcomes> {
+async function loadOutcomes(db: Db, userIds: string[], entries: UsageEntry[]): Promise<DashboardOutcomes> {
   if (!userIds.length) return { finished: 0, failed: 0, cancelled: 0 };
-  const since = new Date(Date.now() - 30 * DAY).toISOString();
-  const items = (status: string) => db.from('playground_items').select('id', { count: 'exact', head: true }).in('user_id', userIds).eq('status', status).gte('created_at', since);
-  const [done, failed, cancelled, quick, videos] = await Promise.all([
-    items('done'),
+  const sinceIso = new Date(Date.now() - 30 * DAY).toISOString();
+  const items = (status: string) => db.from('playground_items').select('id', { count: 'exact', head: true }).in('user_id', userIds).eq('status', status).gte('created_at', sinceIso);
+  const [failed, cancelled, videos] = await Promise.all([
     items('failed'),
     items('cancelled'),
-    db.from('generations').select('generated_thumbnails').in('user_id', userIds).gte('created_at', since).limit(5000),
-    db.from('usage_logs').select('videoUrls:metadata->videoUrls, refunded:metadata->refunded, cancelled:metadata->cancelled').in('user_id', userIds)
-      .eq('feature', 'video_generation').in('metadata->>mode', VIDEO_MODES).gte('created_at', since).limit(5000),
+    db.from('usage_logs').select('refunded:metadata->refunded, cancelled:metadata->cancelled').in('user_id', userIds)
+      .eq('feature', 'video_generation').in('metadata->>mode', VIDEO_MODES).gte('created_at', sinceIso).limit(5000),
   ]);
-  const outcome = { finished: done.count ?? 0, failed: failed.count ?? 0, cancelled: cancelled.count ?? 0 };
-  for (const row of (quick.data ?? []) as Row[]) outcome.finished += Array.isArray(row.generated_thumbnails) ? row.generated_thumbnails.length : 0;
+  // Finished = what the usage log says was made, in the same 30 India days as the other cards.
+  const month = lastIndiaDays(30);
+  const recent = entries.filter((entry) => month.has(entry.day));
+  const outcome = {
+    finished: recent.reduce((total, entry) => total + entry.images + entry.videos, 0),
+    failed: failed.count ?? 0,
+    cancelled: cancelled.count ?? 0,
+  };
   for (const row of (videos.data ?? []) as Row[]) {
-    if (renderedVideo(row)) outcome.finished += 1;
-    else if (row.cancelled === true) outcome.cancelled += 1;
+    if (row.cancelled === true) outcome.cancelled += 1;
     else if (row.refunded === true) outcome.failed += 1;
   }
   return outcome;
 }
 
-/** The accounts with what each made, the headline numbers, the last 14 days, projects, results and how much is generating now. */
+/* ------------------------------------------------------------- usage and cost */
+
+/** Rupees per US dollar for the cost estimates; USD_TO_INR changes it. */
+const INR_PER_USD = Number(process.env.USD_TO_INR) > 0 ? Number(process.env.USD_TO_INR) : 99;
+/** The owner's own accounts: what they make counts in every total, but no row shows them. */
+const OWNER_ACCOUNT_EMAILS = [DASHBOARD_OWNER_EMAIL, 'bananabondismyth@gmail.com'];
+const USAGE_COLUMNS = 'id, user_id, provider, model, feature, image_count, video_seconds, estimated_cost_usd, credit_cost, created_at, mode:metadata->>mode, refunded:metadata->>refunded, newVideo:metadata->>newVideo';
+const RANGES: UsageRange[] = ['today', 'yesterday', '7d', '30d', 'all'];
+
+/** The last `count` India days, today included. */
+const lastIndiaDays = (count: number, now = Date.now()) => new Set(Array.from({ length: count }, (_, index) => dayOf(now - index * DAY)));
+
+/** The ids of the owner's own (confirmed) accounts. */
+async function ownerAccountIds(): Promise<string[]> {
+  const admin = createServiceClient();
+  const ids: string[] = [];
+  for (let page = 1; page <= 50; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
+    if (error) break;
+    for (const user of data.users) {
+      if (user.email_confirmed_at && OWNER_ACCOUNT_EMAILS.includes((user.email ?? '').toLowerCase())) ids.push(user.id);
+    }
+    if (data.users.length < 1000) break;
+  }
+  return ids;
+}
+
+/** These accounts' usage rows, oldest first, a thousand at a time. */
+async function usageRows(db: Db, userIds: string[]): Promise<Row[]> {
+  const rows: Row[] = [];
+  if (!userIds.length) return rows;
+  for (let from = 0; from < 500_000; from += 1000) {
+    const { data, error } = await db.from('usage_logs').select(USAGE_COLUMNS).in('user_id', userIds)
+      .order('created_at', { ascending: true }).order('id', { ascending: true }).range(from, from + 999);
+    if (error) {
+      console.error('Dashboard: usage failed:', error);
+      break;
+    }
+    rows.push(...((data ?? []) as Row[]));
+    if ((data?.length ?? 0) < 1000) break;
+  }
+  return rows;
+}
+
+type SpendModel = Pick<ModelSpend, 'key' | 'name' | 'maker' | 'group'> & { kind: 'image' | 'video' | 'assist' };
+
+/** A usage row's model as the owner reads it: images, videos, or the help around them (prompt writing, checks). */
+function spendModel(row: Row): SpendModel {
+  const model = typeof row.model === 'string' ? row.model : '';
+  const provider = typeof row.provider === 'string' ? row.provider : '';
+  if (provider === 'anthropic') return { key: 'claude', name: 'Claude · prompt writing', maker: 'Anthropic', group: 'other', kind: 'assist' };
+  if (/veo/i.test(model)) return { key: /fast/i.test(model) ? 'veo-fast' : 'veo', name: /fast/i.test(model) ? 'Veo 3.1 Fast' : 'Veo 3.1', maker: 'Google', group: 'video', kind: 'video' };
+  if (/seedance/i.test(model)) return { key: seedanceSpec(model).id, name: seedanceSpec(model).name, maker: 'BytePlus', group: 'video', kind: 'video' };
+  if (provider === 'openai') return { key: model, name: modelName(model) ?? model, maker: 'OpenAI', group: 'gpt', kind: 'image' };
+  if ((Number(row.image_count) || 0) > 0) {
+    // The old Generate page logged Nano Banana Pro by its nickname.
+    const id = model === 'nano-banana-pro' ? 'gemini-3-pro-image' : model;
+    return { key: id, name: modelName(id) ?? id, maker: 'Gemini', group: 'gemini', kind: 'image' };
+  }
+  return { key: 'gemini-assist', name: 'Gemini · checks and analysis', maker: 'Gemini', group: 'other', kind: 'assist' };
+}
+
+/**
+ * One usage row as the dashboard counts it. Every number on the dashboard that says what was
+ * made or spent comes from these, so the cards agree (deleted images still count: they were made).
+ */
+interface UsageEntry {
+  userId: string;
+  at: number;
+  /** Its India day (YYYY-MM-DD). */
+  day: string;
+  model: Omit<SpendModel, 'kind'>;
+  images: number;
+  gemini: number;
+  gpt: number;
+  /** 1 for a new video's first render (not a redraft or an upgrade). */
+  videos: number;
+  /** 1 for any charged video render. */
+  renders: number;
+  credits: number;
+  usd: number;
+}
+
+/** A usage row as counted; refunded work counts nowhere. */
+function usageEntry(row: Row): UsageEntry | null {
+  if (row.refunded === 'true') return null;
+  const at = Date.parse(String(row.created_at));
+  const { kind, ...model } = spendModel(row);
+  const images = kind === 'image' ? Number(row.image_count) || 0 : 0;
+  // Every charged render counts (the oldest Veo ones predate kept files). Only a first render is
+  // a new video; renders made outside the app (mode "outside_app") say whether they are one.
+  const renders = kind === 'video' && (Number(row.video_seconds) || 0) > 0 ? 1 : 0;
+  const mode = String(row.mode ?? '');
+  const first = VIDEO_MODES.includes(mode) || (mode === 'outside_app' && row.newVideo === 'true');
+  return {
+    userId: String(row.user_id),
+    at,
+    day: dayOf(at),
+    model,
+    images,
+    gemini: model.group === 'gemini' ? images : 0,
+    gpt: model.group === 'gpt' ? images : 0,
+    videos: renders && first ? 1 : 0,
+    renders,
+    credits: Number(row.credit_cost) || 0,
+    usd: Number(row.estimated_cost_usd) || 0,
+  };
+}
+
+/** What these accounts made and spent, as counted, oldest first. */
+async function usageEntries(db: Db, userIds: string[]): Promise<UsageEntry[]> {
+  return (await usageRows(db, userIds)).map(usageEntry).filter((entry): entry is UsageEntry => entry !== null);
+}
+
+const emptyCounts = (): UsageCounts & { usd: number } => ({ images: 0, gemini: 0, gpt: 0, videos: 0, credits: 0, costInr: 0, usd: 0 });
+
+/**
+ * What was made and spent for each period (India days): images split by Gemini and GPT
+ * Image, new videos, credits and provider cost, per team account and per model. Entries of
+ * the owner's own accounts count in the totals and per model but get no row. Costs come from
+ * the providers' prices, so they are estimates, in rupees at INR_PER_USD.
+ */
+function summarizeUsage(entries: UsageEntry[], teamIds: string[]): DashboardUsage {
+  const now = Date.now();
+  const team = new Set(teamIds);
+  const days: Record<Exclude<UsageRange, 'all'>, Set<string>> = {
+    today: lastIndiaDays(1, now),
+    yesterday: new Set([dayOf(now - DAY)]),
+    '7d': lastIndiaDays(7, now),
+    '30d': lastIndiaDays(30, now),
+  };
+  type Bucket = ModelSpend & { usd: number };
+  const models = new Map(RANGES.map((range) => [range, new Map<string, Bucket>()]));
+  const totals = new Map(RANGES.map((range) => [range, emptyCounts()]));
+  const members = new Map(RANGES.map((range) => [range, new Map<string, UsageCounts & { usd: number }>()]));
+
+  for (const entry of entries) {
+    const add = (counts: UsageCounts & { usd: number }) => {
+      counts.images += entry.images;
+      counts.gemini += entry.gemini;
+      counts.gpt += entry.gpt;
+      counts.videos += entry.videos;
+      counts.credits += entry.credits;
+      counts.usd += entry.usd;
+    };
+    for (const range of RANGES) {
+      if (range !== 'all' && !days[range].has(entry.day)) continue;
+      const byKey = models.get(range)!;
+      const bucket = byKey.get(entry.model.key) ?? { ...entry.model, images: 0, videos: 0, renders: 0, credits: 0, costInr: 0, usd: 0 };
+      bucket.images += entry.images;
+      bucket.videos += entry.videos;
+      bucket.renders += entry.renders;
+      bucket.credits += entry.credits;
+      bucket.usd += entry.usd;
+      byKey.set(entry.model.key, bucket);
+      add(totals.get(range)!);
+      if (team.has(entry.userId)) {
+        const byUser = members.get(range)!;
+        const counts = byUser.get(entry.userId) ?? emptyCounts();
+        add(counts);
+        byUser.set(entry.userId, counts);
+      }
+    }
+  }
+
+  const inr = (usd: number) => Math.round(usd * INR_PER_USD);
+  const finish = <T extends { usd: number; costInr: number }>({ usd, ...rest }: T) => ({ ...rest, costInr: inr(usd) });
+  const period = (range: UsageRange): UsagePeriod => ({
+    ...finish(totals.get(range)!),
+    members: [...members.get(range)!.entries()]
+      .map(([userId, counts]) => ({ userId, ...finish(counts) }))
+      .sort((a, b) => b.images - a.images || b.credits - a.credits),
+  });
+  return {
+    inrPerUsd: INR_PER_USD,
+    periods: Object.fromEntries(RANGES.map((range) => [range, period(range)])) as Record<UsageRange, UsagePeriod>,
+    byModel: Object.fromEntries(RANGES.map((range) => [range, [...models.get(range)!.values()]
+      .map((bucket) => finish(bucket))
+      .filter((spend) => spend.credits > 0 || spend.costInr > 0)
+      // Most spent first: what each model cost, then its credits.
+      .sort((a, b) => b.costInr - a.costInr || b.credits - a.credits)])) as Record<UsageRange, ModelSpend[]>,
+  };
+}
+
+/**
+ * The accounts with what each made, the headline numbers, the last 14 days, projects, results,
+ * usage and cost, and how much is generating now. Everything that counts what was made or
+ * spent comes from the usage log, so the cards agree; the owner's own accounts count in the
+ * totals but get no row (and their work is not listed as live).
+ */
 export async function loadOverview(): Promise<DashboardOverview> {
   const db = createServiceClient();
-  const members = await listTeamMembers();
+  const [members, ownerIds] = await Promise.all([listTeamMembers(), ownerAccountIds()]);
   const ids = members.map((member) => member.id);
-  const [summaries, live, activity, projects, outcomes30d] = await Promise.all([
-    Promise.all(members.map((member) => memberSummary(member.id))),
+  const counted = [...ids, ...ownerIds];
+  const [entries, live, projects] = await Promise.all([
+    usageEntries(db, counted),
     ids.length ? loadLive(ids) : Promise.resolve({ jobs: [], checkedAt: '' } as LiveSnapshot),
-    loadActivity(db, ids),
     loadProjects(db, ids),
-    loadOutcomes(db, ids),
   ]);
+  const [summaries, outcomes30d] = await Promise.all([
+    Promise.all(members.map((member) => memberSummary(member.id, entries))),
+    loadOutcomes(db, counted, entries),
+  ]);
+  const activity = activityFrom(entries);
+  const usage = summarizeUsage(entries, ids);
   const sum = (days: ActivityDay[], key: 'images' | 'videos') => days.reduce((total, day) => total + day[key], 0);
   return {
     domain: TEAM_DOMAIN,
@@ -595,12 +785,14 @@ export async function loadOverview(): Promise<DashboardOverview> {
     })),
     recentProjects: projects.recent,
     outcomes30d,
+    usage,
     kpis: {
       images7d: sum(activity.slice(7), 'images'),
       imagesPrev7d: sum(activity.slice(0, 7), 'images'),
       videos7d: sum(activity.slice(7), 'videos'),
       videosPrev7d: sum(activity.slice(0, 7), 'videos'),
-      credits30d: summaries.reduce((total, summary) => total + summary.creditsUsed30d, 0),
+      // The same 30 India days as the Credits & cost card.
+      credits30d: usage.periods['30d'].credits,
       liveCount: live.jobs.length,
     },
     activity,

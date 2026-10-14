@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { previewBundle, previewLibrary, previewProjects } from '@/lib/playground/preview';
 import { previewHistory, previewVideoProjects } from '@/lib/video/preview';
 import type { LibraryKind } from '@/lib/playground/types';
-import type { ActivityDay, DashboardOverview, DashboardProject, FeedImage, FeedItem, FeedPage, FeedStatus, FeedType, FeedVideo, LiveJob, LiveRun, LiveSnapshot } from './types';
+import type { ActivityDay, DashboardOverview, DashboardProject, DashboardUsage, FeedImage, FeedItem, FeedPage, FeedStatus, FeedType, FeedVideo, LiveJob, LiveRun, LiveSnapshot, ModelSpend, UsageRange } from './types';
 
 /**
  * Development-only sample data for the dashboard (`?previewDashboard=1`), so its pages can be
@@ -66,6 +66,58 @@ const SAMPLE_PROJECTS: DashboardProject[] = [
   { id: 'preview-video-3', name: 'Lace bralette set', kind: 'video', coverUrl: null, userId: SHRUTI, updatedAt: ago(5 * DAY) },
 ];
 
+/** Sample spend per model for one period: the Playground's mix, scaled. */
+function sampleSpend(scale: number): ModelSpend[] {
+  const rows: Array<Omit<ModelSpend, 'credits' | 'costInr' | 'images' | 'videos' | 'renders'> & { images: number; videos: number; renders?: number; credits: number; inr: number }> = [
+    { key: 'gpt-image-2.5-sunburst', name: 'GPT Image 2.5 Sunburst', maker: 'OpenAI', group: 'gpt', images: 519, videos: 0, credits: 18320, inr: 3371 },
+    { key: 'gemini-3-pro-image', name: 'Nano Banana Pro', maker: 'Gemini', group: 'gemini', images: 202, videos: 0, credits: 10030, inr: 2382 },
+    { key: 'gpt-image-2.5-flare', name: 'GPT Image 2.5 Flare', maker: 'OpenAI', group: 'gpt', images: 126, videos: 0, credits: 3670, inr: 706 },
+    { key: 'dreamina-seedance-2-5-260628', name: 'Seedance 2.5', maker: 'BytePlus', group: 'video', images: 0, videos: 3, renders: 5, credits: 640, inr: 980 },
+    { key: 'claude', name: 'Claude · prompt writing', maker: 'Anthropic', group: 'other', images: 0, videos: 0, credits: 480, inr: 230 },
+    { key: 'gemini-3.1-flash-image', name: 'Nano Banana 2', maker: 'Gemini', group: 'gemini', images: 4, videos: 0, credits: 140, inr: 36 },
+  ];
+  return rows.map(({ inr, ...row }) => ({
+    ...row,
+    images: Math.round(row.images * scale),
+    videos: Math.round(row.videos * scale),
+    renders: Math.round((row.renders ?? row.videos) * scale),
+    credits: Math.round(row.credits * scale),
+    costInr: Math.round(inr * scale),
+  })).filter((row) => row.credits > 0).sort((a, b) => b.costInr - a.costInr);
+}
+
+function sampleUsage(): DashboardUsage {
+  const scales: Record<UsageRange, number> = { today: 0.06, yesterday: 0.09, '7d': 0.7, '30d': 1, all: 1.25 };
+  const people = [
+    { userId: PRIYA, images: 24, gemini: 9, gpt: 15, videos: 1, credits: 1310, costInr: 464 },
+    { userId: SHRUTI, images: 16, gemini: 3, gpt: 13, videos: 0, credits: 520, costInr: 133 },
+    { userId: AMEET, images: 2, gemini: 2, gpt: 0, videos: 0, credits: 100, costInr: 27 },
+  ];
+  const entries = Object.entries(scales) as Array<[UsageRange, number]>;
+  const byModel = Object.fromEntries(entries.map(([range, scale]) => [range, sampleSpend(scale)])) as Record<UsageRange, ModelSpend[]>;
+  const periods = Object.fromEntries(entries.map(([range, scale]) => {
+    const factor = scale / scales.today;
+    const members = people.map((person) => ({
+      ...person,
+      images: Math.round(person.images * factor),
+      gemini: Math.round(person.gemini * factor),
+      gpt: Math.round(person.gpt * factor),
+      videos: Math.round(person.videos * factor),
+      credits: Math.round(person.credits * factor),
+      costInr: Math.round(person.costInr * factor),
+    }));
+    const sum = (key: 'images' | 'gemini' | 'gpt' | 'videos') => members.reduce((total, member) => total + member[key], 0);
+    const list = byModel[range];
+    return [range, {
+      images: sum('images'), gemini: sum('gemini'), gpt: sum('gpt'), videos: sum('videos'),
+      credits: list.reduce((total, row) => total + row.credits, 0),
+      costInr: list.reduce((total, row) => total + row.costInr, 0),
+      members,
+    }];
+  })) as DashboardUsage['periods'];
+  return { inrPerUsd: 99, periods, byModel };
+}
+
 function overview(): DashboardOverview {
   const days = activity();
   const sum = (list: ActivityDay[], key: 'images' | 'videos') => list.reduce((total, item) => total + item[key], 0);
@@ -100,6 +152,7 @@ function overview(): DashboardOverview {
     ],
     recentProjects: SAMPLE_PROJECTS,
     outcomes30d: { finished: 489, failed: 32, cancelled: 18 },
+    usage: sampleUsage(),
     kpis: {
       images7d: sum(days.slice(7), 'images'),
       imagesPrev7d: sum(days.slice(0, 7), 'images'),
