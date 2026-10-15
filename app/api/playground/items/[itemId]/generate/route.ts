@@ -86,7 +86,8 @@ export async function POST(request: NextRequest, { params }: Context) {
           width: saved.width,
           height: saved.height,
           mime_type: saved.mimeType,
-          error: null,
+          // A finished image's "error" is a note for its card (a copy that had to keep its full size), or nothing.
+          error: other?.note ?? null,
           finished_at: new Date().toISOString(),
         })
         .eq('id', itemId)

@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { previewBundle, previewLibrary, previewProjects } from '@/lib/playground/preview';
 import { previewHistory, previewVideoProjects } from '@/lib/video/preview';
 import type { LibraryKind } from '@/lib/playground/types';
-import type { ActivityDay, DashboardOverview, DashboardProject, DashboardUsage, FeedImage, FeedItem, FeedPage, FeedStatus, FeedType, FeedVideo, LiveJob, LiveRun, LiveSnapshot, ModelSpend, UsageRange } from './types';
+import type { ActivityDay, ClientSpend, DashboardInsights, DashboardOverview, DashboardProject, DashboardUsage, ModelScore, FeedImage, FeedItem, FeedPage, FeedStatus, FeedType, FeedVideo, LiveJob, LiveRun, LiveSnapshot, ModelSpend, UsageRange } from './types';
 
 /**
  * Development-only sample data for the dashboard (`?previewDashboard=1`), so its pages can be
@@ -118,6 +118,42 @@ function sampleUsage(): DashboardUsage {
   return { inrPerUsd: 99, periods, byModel };
 }
 
+/** Sample clients, waste and scorecard: the real mix, scaled per period. */
+function sampleInsights(): DashboardInsights {
+  const scales: Record<UsageRange, number> = { today: 0.06, yesterday: 0.09, '7d': 0.4, '30d': 1, all: 1.15 };
+  const clientRows: ClientSpend[] = [
+    { key: 'night unwind tea', name: 'Night Unwind tea', projects: ['Night Unwind tea — Diwali set', 'Night Unwind tea — Holi'], userIds: [PRIYA], images: 212, videos: 2, credits: 9800, costInr: 3410 },
+    { key: 'tissue saree', name: 'Tissue saree', projects: ['Tissue saree — festive shoot', 'Tissue saree — festive films'], userIds: [SHRUTI, PRIYA], images: 168, videos: 3, credits: 7600, costInr: 2950 },
+    { key: 'brew sage', name: 'Brew Sage launch', projects: ['Brew Sage launch'], userIds: [AMEET], images: 41, videos: 0, credits: 1800, costInr: 610 },
+    { key: 'no project', name: 'No project', projects: ['No project'], userIds: [], images: 60, videos: 4, credits: 2100, costInr: 1880 },
+    { key: 'lace bralette', name: 'Lace bralette set', projects: ['Lace bralette set'], userIds: [SHRUTI], images: 12, videos: 1, credits: 600, costInr: 420 },
+    { key: 'deleted project', name: 'Deleted project', projects: ['Deleted project'], userIds: [], images: 9, videos: 0, credits: 300, costInr: 95 },
+  ];
+  const scoreRows: ModelScore[] = [
+    { key: 'gpt-image-2.5-sunburst', name: 'GPT Image 2.5 Sunburst', maker: 'OpenAI', group: 'gpt', images: 524, costInr: 3829, costPerImageInr: 7.31, tracked: 524, deleted: 27, favorites: 4, failed: 42, avgSeconds: 42 },
+    { key: 'gemini-3-pro-image', name: 'Nano Banana Pro', maker: 'Gemini', group: 'gemini', images: 494, costInr: 6593, costPerImageInr: 13.35, tracked: 284, deleted: 19, favorites: 9, failed: 7, avgSeconds: 27 },
+    { key: 'gpt-image-2.5-flare', name: 'GPT Image 2.5 Flare', maker: 'OpenAI', group: 'gpt', images: 126, costInr: 794, costPerImageInr: 6.3, tracked: 126, deleted: 0, favorites: 1, failed: 5, avgSeconds: 24 },
+    { key: 'gemini-3.1-flash-image', name: 'Nano Banana 2', maker: 'Gemini', group: 'gemini', images: 9, costInr: 90, costPerImageInr: 10, tracked: 2, deleted: 0, favorites: 0, failed: 0, avgSeconds: 16 },
+  ];
+  const scale = (value: number, factor: number) => Math.round(value * factor);
+  const entries = Object.entries(scales) as Array<[UsageRange, number]>;
+  return {
+    clients: Object.fromEntries(entries.map(([range, factor]) => [range, clientRows
+      .map((row) => ({ ...row, images: scale(row.images, factor), videos: scale(row.videos, factor), credits: scale(row.credits, factor), costInr: scale(row.costInr, factor) }))
+      .filter((row) => row.costInr > 0)])) as DashboardInsights['clients'],
+    waste: Object.fromEntries(entries.map(([range, factor]) => [range, {
+      made: scale(936, factor), deleted: scale(46, factor), deletedCostInr: scale(447, factor), imageCostInr: scale(11306, factor), failed: scale(54, factor),
+      members: [
+        { userId: SHRUTI, made: scale(542, factor), deleted: scale(27, factor), deletedCostInr: scale(195, factor) },
+        { userId: PRIYA, made: scale(310, factor), deleted: scale(12, factor), deletedCostInr: scale(160, factor) },
+      ].filter((member) => member.deleted > 0),
+    }])) as DashboardInsights['waste'],
+    scorecard: Object.fromEntries(entries.map(([range, factor]) => [range, scoreRows
+      .map((row) => ({ ...row, images: scale(row.images, factor), costInr: scale(row.costInr, factor), tracked: scale(row.tracked, factor), deleted: scale(row.deleted, factor), favorites: scale(row.favorites, factor), failed: scale(row.failed, factor) }))
+      .filter((row) => row.images > 0)])) as DashboardInsights['scorecard'],
+  };
+}
+
 function overview(): DashboardOverview {
   const days = activity();
   const sum = (list: ActivityDay[], key: 'images' | 'videos') => list.reduce((total, item) => total + item[key], 0);
@@ -153,6 +189,7 @@ function overview(): DashboardOverview {
     recentProjects: SAMPLE_PROJECTS,
     outcomes30d: { finished: 489, failed: 32, cancelled: 18 },
     usage: sampleUsage(),
+    insights: sampleInsights(),
     kpis: {
       images7d: sum(days.slice(7), 'images'),
       imagesPrev7d: sum(days.slice(0, 7), 'images'),

@@ -84,6 +84,12 @@ export const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(
 
 /** The error to show for a failed generation. */
 export function itemError(item: FeedItem): string | null {
-  if (item.kind === 'image') return item.error;
+  // A finished image's "error" is a note (see itemNote), not a failure.
+  if (item.kind === 'image') return item.status === 'done' ? null : item.error;
   return [...item.video.takes].reverse().find((take) => take.error)?.error ?? null;
+}
+
+/** A finished image's note, e.g. a keep-clear copy that had to keep its full size. */
+export function itemNote(item: FeedItem): string | null {
+  return item.kind === 'image' && item.status === 'done' ? item.error : null;
 }

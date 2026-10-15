@@ -10,7 +10,7 @@ import type { VideoTake } from '@/lib/video/shared';
 import { cx } from '@/components/playground/ui';
 import { takeLabel } from '@/components/video-studio/VideoPlayerCard';
 import { useDashboard } from './DashboardData';
-import { clock, itemError, itemFile, itemKey, itemPrompt, itemStartedAt, itemState, itemThumb, itemTitle, playableTake } from './items';
+import { clock, itemError, itemFile, itemKey, itemNote, itemPrompt, itemStartedAt, itemState, itemThumb, itemTitle, playableTake } from './items';
 import { dashboardHref, displayName, elapsed, formatWhen, MemberAvatar, StateChip, useNow } from './parts';
 
 /**
@@ -225,6 +225,7 @@ function LightboxDetails({ item, take, versions, onVersion, onLeave }: {
   const state = itemState(item);
   const prompt = itemPrompt(item);
   const error = itemError(item);
+  const note = itemNote(item);
   const file = item.kind === 'video' ? take?.url ?? null : itemFile(item);
 
   return (
@@ -284,6 +285,7 @@ function LightboxDetails({ item, take, versions, onVersion, onLeave }: {
       )}
 
       {error && <p className="mt-4 rounded-2xl border border-red-400/20 bg-red-400/[0.06] p-3.5 text-xs leading-relaxed text-red-200">{error}</p>}
+      {note && <p className="mt-4 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3.5 text-xs leading-relaxed text-zinc-300">{note}</p>}
 
       {prompt && (
         <section className="mt-5">

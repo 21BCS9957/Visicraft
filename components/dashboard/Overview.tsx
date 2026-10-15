@@ -15,6 +15,7 @@ import { isGenerating, itemStartedAt, itemTitle } from './items';
 import { RunBar } from './LiveList';
 import { LiveDot } from './Sidebar';
 import { TeamList } from './TeamTable';
+import { InsightCards } from './InsightCards';
 import { GeneratedCard, SpendCard } from './UsageCards';
 import {
   ArrowLink, dashboardHref, displayName, elapsed, failureMessage, failureOf, formatCount, Loading, Message, PageHeader, Panel, PANEL,
@@ -300,10 +301,15 @@ function OverviewBody() {
       </div>
 
       {/* What was made and what it cost, right under the headline numbers; each card keeps its own height when expanded. */}
-      <div className="mt-3 grid grid-cols-1 items-start gap-3 sm:mt-4 sm:gap-4 lg:grid-cols-2">
-        <GeneratedCard usage={overview.usage} />
-        <SpendCard usage={overview.usage} />
-      </div>
+      {/* A server older than this page (mid-deploy) sends neither; the cards wait for one that does. */}
+      {overview.usage && (
+        <div className="mt-3 grid grid-cols-1 items-start gap-3 sm:mt-4 sm:gap-4 lg:grid-cols-2">
+          <GeneratedCard usage={overview.usage} />
+          <SpendCard usage={overview.usage} />
+        </div>
+      )}
+      {/* Where the money goes: per client, on images thrown away, and model against model. */}
+      {overview.insights && <InsightCards insights={overview.insights} />}
 
       <div className="mt-3 grid grid-cols-1 gap-3 sm:mt-4 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
         <ActivityChart days={overview.activity} className="sm:col-span-2" />

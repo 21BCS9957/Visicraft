@@ -36,6 +36,8 @@ export interface OtherSize extends GeneratedImage {
   calls: number;
   /** Logged with the usage. */
   details: Record<string, unknown>;
+  /** Shown on the copy's card (e.g. it had to keep its full size). */
+  note?: string;
 }
 
 const NO_USAGE = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };

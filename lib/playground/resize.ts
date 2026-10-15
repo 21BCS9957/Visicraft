@@ -172,6 +172,19 @@ export function clearPlacement(sourceWidth: number, sourceHeight: number, canvas
   return { rect: { left: Math.round((canvasWidth - width) / 2), top, width, height }, shrunk: true };
 }
 
+/**
+ * Keep clear at full size, when the smaller placement can't be painted: the original keeps its
+ * normal size and slides so its text starts just under the Reels top bar. Text further down than
+ * the visible band falls where Reels shows its caption.
+ */
+export function fullSizeClearPlacement(sourceWidth: number, sourceHeight: number, canvasWidth: number, canvasHeight: number, text: TextBand | null | undefined, method: ResizeMethod): Rect {
+  const normal = placeOriginal(sourceWidth, sourceHeight, canvasWidth, canvasHeight, method, '9:16');
+  if (!text) return normal;
+  const bandTop = Math.round(REELS_SAFE_ZONE.top * canvasHeight);
+  const top = Math.round(bandTop - Math.max(0, text.top - 0.012) * normal.height);
+  return { ...normal, top: Math.max(0, Math.min(canvasHeight - normal.height, top)) };
+}
+
 /** Gemini's own shape for a ratio (its "9:16" is 1536 × 2752, not exactly 9:16). */
 export function geminiAspect(ratio: string): number {
   const size = outputDimensions('2K', ratio);

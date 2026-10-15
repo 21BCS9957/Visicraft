@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, Download, FolderOutput, ImagePlus, Loader2, MoreHorizontal, RotateCcw, Star, Trash2, Wand2 } from 'lucide-react';
+import { AlertTriangle, Download, FolderOutput, ImagePlus, Info, Loader2, MoreHorizontal, RotateCcw, Star, Trash2, Wand2 } from 'lucide-react';
 import toast from '@/lib/toast';
 import { downloadUrl, libraryApi, playgroundApi } from '@/lib/playground/api';
 import { ROLE_LABELS, type ReferenceRole } from '@/lib/playground/models';
@@ -204,6 +204,13 @@ export function ImageCard({ item, prompt, onOpen, onCanvas, pendingFit, canRetry
         </button>
         {item.kind === 'edit' && (
           <span className="pointer-events-none absolute left-2 top-2 rounded-full bg-[#fff05a] px-2 py-0.5 text-[10px] font-medium text-black">Edited</span>
+        )}
+        {item.error && (
+          // A finished image's note, e.g. a keep-clear copy that kept its full size.
+          <span title={item.error} className="absolute bottom-2 left-2 right-2 flex items-start gap-1.5 rounded-xl bg-black/70 px-2 py-1 text-[10px] leading-snug text-white/85 backdrop-blur-md">
+            <Info className="mt-px h-3 w-3 shrink-0 text-[#fff05a]" />
+            <span className="line-clamp-2">{item.error}</span>
+          </span>
         )}
         <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-end gap-1 p-2 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
           <div className="pointer-events-auto flex gap-1">

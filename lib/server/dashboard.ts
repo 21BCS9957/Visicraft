@@ -10,6 +10,8 @@ import { studioVideoStatus, type StudioVideo } from '@/lib/video/shared';
 import { seedanceSpec } from '@/lib/videoModels';
 import type {
   ActivityDay,
+  ClientSpend,
+  DashboardInsights,
   DashboardOutcomes,
   DashboardOverview,
   DashboardProject,
@@ -22,12 +24,14 @@ import type {
   LiveJob,
   LiveRun,
   LiveSnapshot,
+  ModelScore,
   ModelSpend,
   TeamMember,
   TeamMemberSummary,
   UsageCounts,
   UsagePeriod,
   UsageRange,
+  WasteSummary,
 } from '@/lib/dashboard/types';
 
 /**
@@ -574,7 +578,7 @@ async function loadOutcomes(db: Db, userIds: string[], entries: UsageEntry[]): P
 const INR_PER_USD = Number(process.env.USD_TO_INR) > 0 ? Number(process.env.USD_TO_INR) : 99;
 /** The owner's own accounts: what they make counts in every total, but no row shows them. */
 const OWNER_ACCOUNT_EMAILS = [DASHBOARD_OWNER_EMAIL, 'bananabondismyth@gmail.com'];
-const USAGE_COLUMNS = 'id, user_id, provider, model, feature, image_count, video_seconds, estimated_cost_usd, credit_cost, created_at, mode:metadata->>mode, refunded:metadata->>refunded, newVideo:metadata->>newVideo';
+const USAGE_COLUMNS = 'id, user_id, provider, model, feature, image_count, video_seconds, estimated_cost_usd, credit_cost, created_at, mode:metadata->>mode, refunded:metadata->>refunded, newVideo:metadata->>newVideo, projectId:metadata->>projectId, itemId:metadata->>itemId, label:metadata->>label';
 const RANGES: UsageRange[] = ['today', 'yesterday', '7d', '30d', 'all'];
 
 /** The last `count` India days, today included. */
@@ -649,6 +653,12 @@ interface UsageEntry {
   renders: number;
   credits: number;
   usd: number;
+  mode: string;
+  projectId: string | null;
+  /** The Playground image it made (for an edit: the image it edited). */
+  itemId: string | null;
+  /** What a render made outside the app was ("Colorland Treetop ad v1 · 30 s draft"). */
+  label: string | null;
 }
 
 /** A usage row as counted; refunded work counts nowhere. */
@@ -674,6 +684,10 @@ function usageEntry(row: Row): UsageEntry | null {
     renders,
     credits: Number(row.credit_cost) || 0,
     usd: Number(row.estimated_cost_usd) || 0,
+    mode,
+    projectId: typeof row.projectId === 'string' && row.projectId ? row.projectId : null,
+    itemId: typeof row.itemId === 'string' && row.itemId ? row.itemId : null,
+    label: typeof row.label === 'string' && row.label ? row.label : null,
   };
 }
 
@@ -752,6 +766,170 @@ function summarizeUsage(entries: UsageEntry[], teamIds: string[]): DashboardUsag
   };
 }
 
+/* --------------------------------------------------------------- insights */
+
+/** Is this India day inside the period? */
+function rangeDays(now: number): (range: UsageRange, day: string) => boolean {
+  const days: Record<Exclude<UsageRange, 'all'>, Set<string>> = {
+    today: lastIndiaDays(1, now),
+    yesterday: new Set([dayOf(now - DAY)]),
+    '7d': lastIndiaDays(7, now),
+    '30d': lastIndiaDays(30, now),
+  };
+  return (range, day) => range === 'all' || days[range].has(day);
+}
+
+/** Every row of a table for these accounts, a thousand at a time. */
+async function rowsOf(db: Db, table: string, columns: string, userIds: string[]): Promise<Row[]> {
+  const rows: Row[] = [];
+  if (!userIds.length) return rows;
+  for (let from = 0; from < 500_000; from += 1000) {
+    const { data, error } = await db.from(table).select(columns).in('user_id', userIds).order('id', { ascending: true }).range(from, from + 999);
+    if (error) {
+      console.error(`Dashboard: ${table} failed:`, error);
+      break;
+    }
+    rows.push(...((data ?? []) as unknown as Row[]));
+    if ((data?.length ?? 0) < 1000) break;
+  }
+  return rows;
+}
+
+/**
+ * Projects grouped into clients: a project whose name starts with another project's whole name
+ * at a word break joins it ("Thriller 40 Prompts" and "Thriller Grip me" join "Thriller").
+ */
+function clientNames(names: string[]): Map<string, string> {
+  const byLower = new Map<string, string>();
+  for (const name of [...new Set(names.map((n) => n.trim()).filter(Boolean))].sort((a, b) => a.length - b.length)) {
+    const lower = name.toLowerCase();
+    const base = [...byLower.keys()].find((known) => lower === known || lower.startsWith(`${known} `));
+    byLower.set(lower, base ? byLower.get(base)! : name);
+  }
+  return byLower;
+}
+
+/**
+ * Spend per client, wasted spend and a scorecard per image model, for each period, from the
+ * usage entries (as every other card counts) and the Playground images that still exist: a
+ * Playground image whose row is gone was deleted after it was made (and paid for).
+ */
+async function loadInsights(db: Db, entries: UsageEntry[], counted: string[], teamIds: string[]): Promise<DashboardInsights> {
+  const now = Date.now();
+  const inRange = rangeDays(now);
+  const team = new Set(teamIds);
+  const [items, runs, names] = await Promise.all([
+    rowsOf(db, 'playground_items', 'id, run_id, status, favorite, started_at, finished_at, created_at', counted),
+    rowsOf(db, 'playground_runs', 'id, model', counted),
+    projectNames(db, entries.map((entry) => entry.projectId ?? '')),
+  ]);
+  const itemById = new Map(items.map((item) => [String(item.id), item]));
+  const modelOfRun = new Map(runs.map((run) => [String(run.id), String(run.model)]));
+  const inr = (usd: number) => Math.round(usd * INR_PER_USD);
+
+  // Clients: the project's name, a render made outside the app by its label's first word.
+  const projectName = (entry: UsageEntry) => entry.projectId
+    ? names.get(entry.projectId) ?? 'Deleted project'
+    : entry.mode === 'outside_app' && entry.label ? entry.label.split(' ')[0] : 'No project';
+  const clientOf = clientNames(entries.map(projectName));
+
+  const failedItems = items.filter((item) => item.status === 'failed');
+  const failedDay = (item: Row) => dayOf(String(item.finished_at ?? item.created_at));
+
+  const clients = {} as Record<UsageRange, ClientSpend[]>;
+  const waste = {} as Record<UsageRange, WasteSummary>;
+  const scorecard = {} as Record<UsageRange, ModelScore[]>;
+
+  for (const range of RANGES) {
+    const inPeriod = entries.filter((entry) => inRange(range, entry.day));
+
+    type ClientBucket = Omit<ClientSpend, 'projects' | 'userIds' | 'costInr'> & { projects: Set<string>; users: Set<string>; usd: number };
+    const byClient = new Map<string, ClientBucket>();
+    for (const entry of inPeriod) {
+      const project = projectName(entry);
+      const name = clientOf.get(project.toLowerCase()) ?? project;
+      const bucket = byClient.get(name.toLowerCase()) ?? { key: name.toLowerCase(), name, projects: new Set<string>(), users: new Set<string>(), images: 0, videos: 0, credits: 0, usd: 0 };
+      bucket.projects.add(project);
+      if (team.has(entry.userId)) bucket.users.add(entry.userId);
+      bucket.images += entry.images;
+      bucket.videos += entry.videos;
+      bucket.credits += entry.credits;
+      bucket.usd += entry.usd;
+      byClient.set(bucket.key, bucket);
+    }
+    clients[range] = [...byClient.values()]
+      .map(({ projects, users, usd, ...client }) => ({ ...client, projects: [...projects], userIds: [...users], costInr: inr(usd) }))
+      .filter((client) => client.credits > 0 || client.costInr > 0)
+      .sort((a, b) => b.costInr - a.costInr || b.credits - a.credits);
+
+    // Waste: Playground images (followed by their row) that are gone now.
+    const wasteMembers = new Map<string, { userId: string; made: number; deleted: number; deletedUsd: number }>();
+    const summary = { made: 0, deleted: 0, deletedUsd: 0, imageUsd: 0 };
+    type ScoreBucket = Omit<ModelScore, 'costInr' | 'costPerImageInr' | 'avgSeconds'> & { usd: number; seconds: number; timed: number };
+    const byModel = new Map<string, ScoreBucket>();
+    for (const entry of inPeriod) {
+      if (!entry.images) continue;
+      summary.imageUsd += entry.usd;
+      const score = byModel.get(entry.model.key) ?? { ...entry.model, images: 0, tracked: 0, deleted: 0, favorites: 0, failed: 0, usd: 0, seconds: 0, timed: 0 };
+      score.images += entry.images;
+      score.usd += entry.usd;
+      if (entry.mode === 'playground' && entry.itemId) {
+        const item = itemById.get(entry.itemId);
+        score.tracked += entry.images;
+        summary.made += entry.images;
+        if (!item) {
+          score.deleted += entry.images;
+          summary.deleted += entry.images;
+          summary.deletedUsd += entry.usd;
+        } else {
+          if (item.favorite === true) score.favorites += 1;
+          const seconds = (Date.parse(String(item.finished_at)) - Date.parse(String(item.started_at))) / 1000;
+          if (item.status === 'done' && Number.isFinite(seconds) && seconds > 0 && seconds < 3600) {
+            score.seconds += seconds;
+            score.timed += 1;
+          }
+        }
+        if (team.has(entry.userId)) {
+          const member = wasteMembers.get(entry.userId) ?? { userId: entry.userId, made: 0, deleted: 0, deletedUsd: 0 };
+          member.made += entry.images;
+          if (!item) {
+            member.deleted += entry.images;
+            member.deletedUsd += entry.usd;
+          }
+          wasteMembers.set(entry.userId, member);
+        }
+      }
+      byModel.set(entry.model.key, score);
+    }
+    const failed = failedItems.filter((item) => inRange(range, failedDay(item)));
+    for (const item of failed) {
+      const key = modelOfRun.get(String(item.run_id));
+      const score = key ? byModel.get(key) : undefined;
+      if (score) score.failed += 1;
+    }
+    waste[range] = {
+      made: summary.made,
+      deleted: summary.deleted,
+      deletedCostInr: inr(summary.deletedUsd),
+      imageCostInr: inr(summary.imageUsd),
+      failed: failed.length,
+      members: [...wasteMembers.values()]
+        .filter((member) => member.deleted > 0)
+        .map(({ deletedUsd, ...member }) => ({ ...member, deletedCostInr: inr(deletedUsd) }))
+        .sort((a, b) => b.deletedCostInr - a.deletedCostInr || b.deleted - a.deleted),
+    };
+    scorecard[range] = [...byModel.values()]
+      .map(({ usd, seconds, timed, ...score }) => ({
+        ...score,
+        costInr: inr(usd),
+        costPerImageInr: score.images ? Math.round((usd * INR_PER_USD * 100) / score.images) / 100 : 0,
+        avgSeconds: timed ? Math.round(seconds / timed) : null,
+      }))
+      .sort((a, b) => b.images - a.images);
+  }
+  return { clients, waste, scorecard };
+}
+
 /**
  * The accounts with what each made, the headline numbers, the last 14 days, projects, results,
  * usage and cost, and how much is generating now. Everything that counts what was made or
@@ -768,9 +946,10 @@ export async function loadOverview(): Promise<DashboardOverview> {
     ids.length ? loadLive(ids) : Promise.resolve({ jobs: [], checkedAt: '' } as LiveSnapshot),
     loadProjects(db, ids),
   ]);
-  const [summaries, outcomes30d] = await Promise.all([
+  const [summaries, outcomes30d, insights] = await Promise.all([
     Promise.all(members.map((member) => memberSummary(member.id, entries))),
     loadOutcomes(db, counted, entries),
+    loadInsights(db, entries, counted, ids),
   ]);
   const activity = activityFrom(entries);
   const usage = summarizeUsage(entries, ids);
@@ -786,6 +965,7 @@ export async function loadOverview(): Promise<DashboardOverview> {
     recentProjects: projects.recent,
     outcomes30d,
     usage,
+    insights,
     kpis: {
       images7d: sum(activity.slice(7), 'images'),
       imagesPrev7d: sum(activity.slice(0, 7), 'images'),

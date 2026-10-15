@@ -18,7 +18,7 @@ import {
 } from './resizeImage';
 import { findTextBand } from './textBand';
 import { apiImageSize, type PlaygroundModelId, type PlaygroundSize } from '@/lib/playground/models';
-import { clearPlacement, copyDimensions, extendPrompt, extendRequestSize, geminiAspect, placeOriginal, safeApplies, shapeAtLeast, type Rect } from '@/lib/playground/resize';
+import { clearPlacement, copyDimensions, extendPrompt, extendRequestSize, fullSizeClearPlacement, geminiAspect, placeOriginal, safeApplies, shapeAtLeast, type Rect } from '@/lib/playground/resize';
 
 /** Above this mean difference (0–255) once lined up, Gemini re-composed the picture instead of extending it. */
 export const MOVED_LIMIT = 22;
@@ -46,9 +46,17 @@ export interface ExtendOutcome extends GeneratedImage {
   alignment: Alignment | null;
   /** Where the original sits on the copy (pixel for pixel). */
   rect: Rect;
-  /** Keep clear: how the original was placed ('slid', 'shrunk', or 'shrunk' because the text couldn't be read). */
-  placement?: { mode: 'normal' | 'slid' | 'shrunk'; textBand?: { top: number; bottom: number } | null; jump?: number };
+  /**
+   * Keep clear: how the original was placed ('slid', 'shrunk', or 'shrunk' because the text
+   * couldn't be read; 'full' when Gemini couldn't paint around the shrunk one, so it kept its size).
+   */
+  placement?: { mode: 'normal' | 'slid' | 'shrunk' | 'full'; textBand?: { top: number; bottom: number } | null; jump?: number; shrunkFailed?: string };
+  /** What the person should know about this copy (shown on its card). */
+  note?: string;
 }
+
+/** On the card of a keep-clear copy that had to stay at full size. */
+export const FULL_SIZE_NOTE = 'Kept at full size, as Gemini couldn’t extend it smaller. The top text is clear; the bottom may sit under the Reels caption.';
 
 /** Thrown when Gemini answered but its picture can't be used; carries what was spent. */
 export class ExtendRejected extends PlaygroundGenerationError {
@@ -81,7 +89,7 @@ interface StepContext {
  * shape, with the strips left flat, with the picture moved, or with a separate picture painted
  * around it is tried once more while there is time; then the copy fails (and is refunded).
  */
-async function paint(prepared: ExtendCanvas, ratio: string, context: StepContext): Promise<{ image: RgbImage; alignment: Alignment; jump: number }> {
+async function paint(prepared: ExtendCanvas, ratio: string, context: StepContext, attempts = 2): Promise<{ image: RgbImage; alignment: Alignment; jump: number }> {
   const vertical = prepared.strips.some((strip) => strip.side === 'top' || strip.side === 'bottom');
   const horizontal = prepared.strips.some((strip) => strip.side === 'left' || strip.side === 'right');
   const body = {
@@ -99,7 +107,7 @@ async function paint(prepared: ExtendCanvas, ratio: string, context: StepContext
   };
 
   let reason = '';
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
     if (attempt > 1 && context.deadline - Date.now() < 90_000) break;
     let answer: GeneratedImage;
     try {
@@ -171,7 +179,8 @@ export async function extendImage(options: {
   };
 
   let rect: Rect = placeOriginal(source.width, source.height, dims.width, dims.height, 'extend', options.ratio);
-  let mode: 'normal' | 'slid' | 'shrunk' = 'normal';
+  let mode: 'normal' | 'slid' | 'shrunk' | 'full' = 'normal';
+  let shrunkFailed: string | undefined;
   let textBand: { top: number; bottom: number } | null | undefined;
   if (options.safe && safeApplies('extend', options.ratio)) {
     // A quick look for the text; if it can't be had, shrink into the visible band to be sure.
@@ -194,7 +203,8 @@ export async function extendImage(options: {
     calls: context.calls,
     alignment,
     rect,
-    ...(options.safe ? { placement: { mode, textBand: textBand ?? null, ...(jump !== undefined ? { jump: Number(jump.toFixed(2)) } : {}) } } : {}),
+    ...(options.safe ? { placement: { mode, textBand: textBand ?? null, ...(jump !== undefined ? { jump: Number(jump.toFixed(2)) } : {}), ...(shrunkFailed ? { shrunkFailed } : {}) } } : {}),
+    ...(mode === 'full' ? { note: FULL_SIZE_NOTE } : {}),
   });
 
   const sideRoom = rect.left > 0 || rect.left + rect.width < dims.width;
@@ -205,13 +215,27 @@ export async function extendImage(options: {
     return done(step.image, step.alignment, step.jump);
   }
 
-  // Shrunk: first the sides, on a canvas as tall as the original and wide enough for the copy...
-  const sideShape = shapeAtLeast(options.model, dims.width / rect.height);
-  const sideWidth = Math.max(dims.width, Math.round(rect.height * geminiAspect(sideShape)));
-  const sideRect: Rect = { left: Math.round((sideWidth - rect.width) / 2), top: 0, width: rect.width, height: rect.height };
-  const sides = await paint(extendCanvasAt(original, sideWidth, rect.height, sideRect), sideShape, context);
-  const band = cropRgb(sides.image, { left: sideRect.left - rect.left, top: 0, width: dims.width, height: rect.height });
-  // ...then the top and bottom around that full-width band (the original inside it stays exact).
-  const ends = await paint(extendCanvasAt(band, dims.width, dims.height, { left: 0, top: rect.top, width: dims.width, height: rect.height }), options.ratio, context);
-  return done(ends.image, ends.alignment, Math.max(sides.jump, ends.jump));
+  // Shrunk (keep clear only): each step gets one try here, because a separate picture painted
+  // around a small original tends to come back the same way; then the copy keeps its full size.
+  const shrunk = rect;
+  try {
+    // First the sides, on a canvas as tall as the original and wide enough for the copy...
+    const sideShape = shapeAtLeast(options.model, dims.width / shrunk.height);
+    const sideWidth = Math.max(dims.width, Math.round(shrunk.height * geminiAspect(sideShape)));
+    const sideRect: Rect = { left: Math.round((sideWidth - shrunk.width) / 2), top: 0, width: shrunk.width, height: shrunk.height };
+    const sides = await paint(extendCanvasAt(original, sideWidth, shrunk.height, sideRect), sideShape, context, 1);
+    const band = cropRgb(sides.image, { left: sideRect.left - shrunk.left, top: 0, width: dims.width, height: shrunk.height });
+    // ...then the top and bottom around that full-width band (the original inside it stays exact).
+    const ends = await paint(extendCanvasAt(band, dims.width, dims.height, { left: 0, top: shrunk.top, width: dims.width, height: shrunk.height }), options.ratio, context, 1);
+    return done(ends.image, ends.alignment, Math.max(sides.jump, ends.jump));
+  } catch (error) {
+    // Out of time, or a failure that isn't about the picture: as before.
+    if (!(error instanceof ExtendRejected) || error.reason === 'timeout' || context.deadline - Date.now() < 100_000) throw error;
+    console.warn(`Extend: the smaller keep-clear placement failed (${error.reason}); keeping the original at full size`);
+    shrunkFailed = error.reason;
+    mode = 'full';
+    rect = fullSizeClearPlacement(source.width, source.height, dims.width, dims.height, textBand, 'extend');
+    const full = await paint(extendCanvasAt(await resizeRgb(source, rect.width, rect.height), dims.width, dims.height, rect), options.ratio, context);
+    return done(full.image, full.alignment, full.jump);
+  }
 }

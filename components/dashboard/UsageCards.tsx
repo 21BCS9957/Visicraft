@@ -12,12 +12,12 @@ import { displayName, formatCount, MemberAvatar, PANEL } from './parts';
  * pass the colour-blind and lightness checks against each other on the dark cards. Helpers
  * (prompt writing, checks) and the cheapest rows stay grey.
  */
-const GROUP_COLORS = { gemini: '#3987e5', gpt: '#c98500', video: '#199e70', other: '#52525b' } as const;
+export const GROUP_COLORS = { gemini: '#3987e5', gpt: '#c98500', video: '#199e70', other: '#52525b' } as const;
 /** The cheapest rows of a long list are greyed out so the big spends stand out. */
 const GREY_TAIL = 3;
 
-const rupees = (value: number) => `₹${value.toLocaleString('en-IN')}`;
-const plural = (count: number, word: string) => `${formatCount(count)} ${word}${count === 1 ? '' : 's'}`;
+export const rupees = (value: number) => `₹${value.toLocaleString('en-IN')}`;
+export const plural = (count: number, word: string) => `${formatCount(count)} ${word}${count === 1 ? '' : 's'}`;
 
 const PERIODS: ReadonlyArray<{ id: UsageRange; label: string }> = [
   { id: 'today', label: 'Today' },
@@ -28,10 +28,10 @@ const PERIODS: ReadonlyArray<{ id: UsageRange; label: string }> = [
 ];
 
 /** Rows a card shows until it is expanded. */
-const COMPACT_ROWS = 3;
+export const COMPACT_ROWS = 3;
 
 /** A compact card: its title and period picker, then the numbers. */
-function UsageCard({ title, period, onPeriod, children, className }: {
+export function UsageCard({ title, period, onPeriod, children, className }: {
   title: string;
   period: UsageRange;
   onPeriod: (period: UsageRange) => void;
@@ -56,8 +56,8 @@ function UsageCard({ title, period, onPeriod, children, className }: {
   );
 }
 
-function ShowAll({ open, total, noun, onToggle }: { open: boolean; total: number; noun: string; onToggle: () => void }) {
-  if (total <= COMPACT_ROWS) return null;
+export function ShowAll({ open, total, noun, onToggle, rows = COMPACT_ROWS }: { open: boolean; total: number; noun: string; onToggle: () => void; rows?: number }) {
+  if (total <= rows) return null;
   return (
     <button
       type="button"

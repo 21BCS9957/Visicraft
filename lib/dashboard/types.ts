@@ -111,6 +111,58 @@ export interface DashboardUsage {
   byModel: Record<UsageRange, ModelSpend[]>;
 }
 
+/** One client's spend in a period: its projects grouped ("Thriller 40 Prompts" joins "Thriller"). */
+export interface ClientSpend {
+  key: string;
+  name: string;
+  /** The project names grouped under it. */
+  projects: string[];
+  /** Team accounts that worked on it (the owner's own accounts are counted, not listed). */
+  userIds: string[];
+  images: number;
+  videos: number;
+  credits: number;
+  costInr: number;
+}
+
+/** Spend on Playground images that were deleted later, and images that failed (refunded). */
+export interface WasteSummary {
+  /** Playground images made (the ones the dashboard can follow). */
+  made: number;
+  deleted: number;
+  deletedCostInr: number;
+  /** What all images cost in the period, for the share. */
+  imageCostInr: number;
+  /** Images that failed: refunded, so they cost nothing. */
+  failed: number;
+  /** Team accounts with deleted images, most wasted first. */
+  members: Array<{ userId: string; made: number; deleted: number; deletedCostInr: number }>;
+}
+
+/** How an image model did in a period. Rates use the Playground images it made (`tracked`). */
+export interface ModelScore {
+  key: string;
+  name: string;
+  maker: string;
+  group: 'gemini' | 'gpt' | 'video' | 'other';
+  images: number;
+  costInr: number;
+  /** Rupees per image, two decimals. */
+  costPerImageInr: number;
+  tracked: number;
+  deleted: number;
+  favorites: number;
+  failed: number;
+  /** Average seconds from start to finish of a finished image, or null with none timed. */
+  avgSeconds: number | null;
+}
+
+export interface DashboardInsights {
+  clients: Record<UsageRange, ClientSpend[]>;
+  waste: Record<UsageRange, WasteSummary>;
+  scorecard: Record<UsageRange, ModelScore[]>;
+}
+
 export interface DashboardOverview {
   domain: string;
   members: Array<MemberWithSummary & { liveCount: number; latestProject: DashboardProject | null }>;
@@ -121,6 +173,7 @@ export interface DashboardOverview {
   recentProjects: DashboardProject[];
   outcomes30d: DashboardOutcomes;
   usage: DashboardUsage;
+  insights: DashboardInsights;
 }
 
 /** An image in the feed: a Playground image, or a quick generation from the old tools. */
