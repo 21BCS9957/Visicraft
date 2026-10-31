@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ApiError, assertDb, apiErrorResponse, readJson, withUser } from '@/lib/server/playground/http';
 import { isMissingKindColumn, listProjects, playgroundDb, toProject, VIDEO_SETUP_MESSAGE } from '@/lib/server/playground/db';
+import { requireAgency, requireClient } from '@/lib/server/clients';
 import type { ProjectKind } from '@/lib/playground/types';
 
 /** The signed-in user's image projects (or `?kind=video` video projects), most recently used first. */
@@ -17,13 +18,19 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const user = await withUser(request);
-    const body = await readJson<{ name?: unknown; kind?: unknown }>(request);
+    const body = await readJson<{ name?: unknown; kind?: unknown; clientId?: unknown }>(request);
     const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 120) : 'Untitled project';
     const kind: ProjectKind = body.kind === 'video' ? 'video' : 'image';
     const db = playgroundDb();
+    // The client it is for: GoGrowth accounts only, and it must exist.
+    let clientId: string | null = null;
+    if (body.clientId !== undefined && body.clientId !== null) {
+      await requireAgency(user.id);
+      clientId = (await requireClient(db, body.clientId)).id;
+    }
     const insert = (withKind: boolean) => db
       .from('playground_projects')
-      .insert(withKind ? { user_id: user.id, name, kind } : { user_id: user.id, name })
+      .insert({ user_id: user.id, name, ...(withKind ? { kind } : {}), ...(clientId ? { client_id: clientId } : {}) })
       .select('*')
       .single();
     let { data, error } = await insert(true);

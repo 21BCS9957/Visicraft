@@ -15,14 +15,14 @@ import { isGenerating, itemStartedAt, itemTitle } from './items';
 import { RunBar } from './LiveList';
 import { LiveDot } from './Sidebar';
 import { TeamList } from './TeamTable';
-import { InsightCards } from './InsightCards';
+import { ClientSpendCard, ModelScorecard, WasteCard } from './InsightCards';
 import { GeneratedCard, SpendCard } from './UsageCards';
 import {
   ArrowLink, dashboardHref, displayName, elapsed, failureMessage, failureOf, formatCount, Loading, Message, PageHeader, Panel, PANEL,
-  PILL_OUTLINE, PILL_PRIMARY, PILL_SMALL, useNow, type Failure,
+  PILL_OUTLINE, PILL_PRIMARY, PILL_SMALL, projectViewerHref, useNow, type Failure,
 } from './parts';
 
-/** The dashboard's home: a bento of this week's numbers, live work, projects, the team, results and the newest work. */
+/** The dashboard's home: this week's numbers, then usage and cost, then the team and their newest work. */
 export function DashboardOverviewPage() {
   return (
     <DashboardShell active="overview">
@@ -37,6 +37,19 @@ function DeltaPill({ now, before, onAccent = false }: { now: number; before: num
   const text = change === 0 ? 'Same as last week' : `${change > 0 ? '▲' : '▼'} ${formatCount(Math.abs(change))} vs last week`;
   const tone = onAccent ? 'bg-black/10 text-[#1f1c00]' : change > 0 ? 'bg-emerald-400/10 text-emerald-300' : change < 0 ? 'bg-[#ec835a]/10 text-[#ec835a]' : 'bg-white/[0.05] text-zinc-400';
   return <span className={cx('inline-flex max-w-full truncate rounded-full px-2.5 py-1 text-xs font-medium', tone)}>{text}</span>;
+}
+
+/** A labelled group of cards: what they are about, said once above them. */
+function Section({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+  return (
+    <section className="mt-8 sm:mt-10">
+      <div className="mb-3 flex min-w-0 items-baseline gap-3 sm:mb-4">
+        <h2 className="shrink-0 text-xs font-semibold uppercase tracking-[0.08em] text-zinc-400">{title}</h2>
+        {description && <p className="truncate text-xs text-zinc-600">{description}</p>}
+      </div>
+      {children}
+    </section>
+  );
 }
 
 function FootPill({ children }: { children: ReactNode }) {
@@ -120,13 +133,15 @@ function ProjectsCard({ projects, className }: { projects: DashboardProject[]; c
   const preview = useDashboardPreview();
   const { memberById } = useDashboard();
   return (
-    <Panel title="Projects" description="Updated most recently" className={className} bodyClassName="px-3 pb-3 pt-3">
+    <Panel title="Projects" description="Updated most recently" className={className} bodyClassName="px-3 pb-3 pt-2">
       {projects.length === 0 ? <p className="px-2 py-8 text-center text-sm text-zinc-500">No projects yet.</p> : (
-        <ul className="space-y-1">
+        <ul className="grid gap-1 sm:grid-cols-2">
           {projects.map((project) => (
             <li key={`${project.kind}-${project.id}`}>
               <Link
-                href={dashboardHref(`/accounts/${project.userId}`, { tab: 'projects', project: project.id, kind: project.kind }, preview)}
+                href={project.kind === 'image'
+                  ? projectViewerHref(project.userId, project.id, preview)
+                  : dashboardHref(`/accounts/${project.userId}`, { tab: 'projects', project: project.id, kind: project.kind }, preview)}
                 className="flex items-center gap-3 rounded-2xl p-2 transition-colors hover:bg-white/[0.04]"
               >
                 <ProjectCover project={project} />
@@ -202,14 +217,13 @@ function ResultsGauge({ outcomes }: { outcomes: DashboardOutcomes }) {
   );
 }
 
-/** The team's credits: the total left, what 30 days used, and each balance (lowest first: who needs a top-up). */
-/** Credits left per account; "used" is the same 30-day total as the headline card (everyone's work). */
-function CreditsCard({ members, used }: { members: DashboardOverview['members']; used: number }) {
+/** Credits left per account, lowest first (who needs a top-up); "used" is the same 30-day total as the headline card. */
+function CreditsCard({ members, used, className }: { members: DashboardOverview['members']; used: number; className?: string }) {
   const left = members.reduce((sum, member) => sum + (member.summary.balance ?? 0), 0);
   const balances = members.filter((member) => member.summary.balance !== null).sort((a, b) => (a.summary.balance ?? 0) - (b.summary.balance ?? 0)).slice(0, 4);
   const most = Math.max(1, ...balances.map((member) => member.summary.balance ?? 0));
   return (
-    <div className={cx(PANEL, 'flex min-w-0 flex-col p-5')}>
+    <div className={cx(PANEL, 'flex min-w-0 flex-col p-4 sm:p-5', className)}>
       <p className="text-[17px] font-semibold tracking-tight text-zinc-50">Credits left</p>
       <p className="mt-0.5 text-xs text-zinc-500">{formatCount(used)} used in the last 30 days</p>
       <p className="mt-5 text-[44px] font-semibold leading-none tracking-tight text-zinc-50">{formatCount(left)}</p>
@@ -300,37 +314,49 @@ function OverviewBody() {
         />
       </div>
 
-      {/* What was made and what it cost, right under the headline numbers; each card keeps its own height when expanded. */}
-      {/* A server older than this page (mid-deploy) sends neither; the cards wait for one that does. */}
-      {overview.usage && (
-        <div className="mt-3 grid grid-cols-1 items-start gap-3 sm:mt-4 sm:gap-4 lg:grid-cols-2">
-          <GeneratedCard usage={overview.usage} />
-          <SpendCard usage={overview.usage} />
+      <Section title="Usage & cost" description="What was made, what it cost and where it went">
+        {/*
+          Two columns that stack their own cards, so a tall card never leaves a hole beside a short
+          one, and the last card in each grows so both end level. On a phone the columns dissolve
+          into one list in reading order. A server older than this page (mid-deploy) sends no usage
+          or insights; those cards wait for one that does.
+        */}
+        <div className="flex flex-col gap-3 sm:gap-4 lg:grid lg:grid-cols-2">
+          <div className="contents lg:flex lg:flex-col lg:gap-4">
+            {overview.usage && <GeneratedCard usage={overview.usage} className="order-1 lg:order-none" />}
+            {overview.insights && <ClientSpendCard insights={overview.insights} className="order-3 lg:order-none lg:flex-1" />}
+          </div>
+          <div className="contents lg:flex lg:flex-col lg:gap-4">
+            {overview.usage && <SpendCard usage={overview.usage} className="order-2 lg:order-none" />}
+            {overview.insights && <WasteCard insights={overview.insights} className="order-4 lg:order-none" />}
+            <CreditsCard members={overview.members} used={overview.kpis.credits30d} className="order-5 lg:order-none lg:flex-1" />
+          </div>
         </div>
-      )}
-      {/* Where the money goes: per client, on images thrown away, and model against model. */}
-      {overview.insights && <InsightCards insights={overview.insights} />}
+        {overview.insights && <ModelScorecard insights={overview.insights} className="mt-3 sm:mt-4" />}
+      </Section>
 
-      <div className="mt-3 grid grid-cols-1 gap-3 sm:mt-4 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
-        <ActivityChart days={overview.activity} className="sm:col-span-2" />
-        <LiveSpotlight lastActiveAt={lastActiveAt} />
-        <ProjectsCard projects={overview.recentProjects} className="xl:row-span-2" />
+      <Section title="Team & activity" description="Who is making what, and the newest work">
+        {/* Rows of equal height: the week, live work and results; the team and its projects; the newest work. */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
+          <ActivityChart days={overview.activity} className="sm:col-span-2" />
+          <LiveSpotlight lastActiveAt={lastActiveAt} />
+          <ResultsGauge outcomes={overview.outcomes30d} />
 
-        <Panel title="Team" description={`${overview.members.length} account${overview.members.length === 1 ? '' : 's'}`} className="sm:col-span-2" bodyClassName="px-3 pb-3 pt-2">
-          <TeamList members={overview.members} liveByMember={liveByMember} />
-        </Panel>
-        <ResultsGauge outcomes={overview.outcomes30d} />
+          <Panel title="Team" description={`${overview.members.length} account${overview.members.length === 1 ? '' : 's'}`} className="sm:col-span-2" bodyClassName="px-3 pb-3 pt-2">
+            <TeamList members={overview.members} liveByMember={liveByMember} />
+          </Panel>
+          <ProjectsCard projects={overview.recentProjects} className="sm:col-span-2" />
 
-        <CreditsCard members={overview.members} used={overview.kpis.credits30d} />
-        <Panel
-          title="Recent"
-          description="The newest finished work"
-          action={<Link href={dashboardHref('/gallery', {}, preview)} className={PILL_SMALL}>Open gallery</Link>}
-          className="sm:col-span-2 xl:col-span-3"
-        >
-          <Gallery compact={18} compactRows={1} />
-        </Panel>
-      </div>
+          <Panel
+            title="Recent"
+            description="The newest finished work"
+            action={<Link href={dashboardHref('/gallery', {}, preview)} className={PILL_SMALL}>Open gallery</Link>}
+            className="sm:col-span-2 xl:col-span-4"
+          >
+            <Gallery compact={18} compactRows={1} />
+          </Panel>
+        </div>
+      </Section>
     </>
   );
 }

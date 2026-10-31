@@ -2,7 +2,10 @@
 
 import { getAuthenticatedHeaders } from '@/lib/supabase/auth';
 import type { ImageQuality, ReferenceRole, ThinkingLevel } from './models';
+import { usePlaygroundStore } from './store';
 import type { ResizeMethod } from './resize';
+import type { FeedPage } from '@/lib/dashboard/types';
+import type { ClientRef } from '@/lib/clients';
 import type {
   GenerateResponse,
   LibraryFolder,
@@ -31,7 +34,15 @@ export class PlaygroundApiError extends Error {
   }
 }
 
+/** Viewing someone else's project (the owner's dashboard): only reads may leave the page. */
+function refuseWritesWhenViewOnly(method: string | undefined) {
+  if (usePlaygroundStore.getState().viewOnly && (method ?? 'GET').toUpperCase() !== 'GET') {
+    throw new PlaygroundApiError(403, 'This project is view only.', 'view_only');
+  }
+}
+
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
+  refuseWritesWhenViewOnly(init.method);
   const headers = await getAuthenticatedHeaders({ 'Content-Type': 'application/json' });
   const response = await fetch(path, { ...init, headers: { ...headers, ...(init.headers as Record<string, string> | undefined) } });
   const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
@@ -90,15 +101,28 @@ export interface ResizeRunRequest {
 }
 
 export const playgroundApi = {
+  /** The signed-in person's finished images and videos, newest first (one project or all). */
+  creatives: (options: { project?: string | null; type?: 'all' | 'image' | 'video'; before?: string | null } = {}) => {
+    const params = new URLSearchParams();
+    if (options.project) params.set('project', options.project);
+    if (options.type && options.type !== 'all') params.set('type', options.type);
+    if (options.before) params.set('before', options.before);
+    return call<FeedPage>(`/api/playground/creatives${params.size ? `?${params}` : ''}`);
+  },
   listProjects: (kind: ProjectKind = 'image') =>
     call<{ projects: PlaygroundProjectSummary[]; setup?: string }>(`/api/playground/projects${kind === 'video' ? '?kind=video' : ''}`),
-  createProject: (name: string, kind: ProjectKind = 'image') =>
-    call<{ project: PlaygroundProject }>('/api/playground/projects', { method: 'POST', body: json({ name, kind }) }),
+  createProject: (name: string, kind: ProjectKind = 'image', clientId: string | null = null) =>
+    call<{ project: PlaygroundProject }>('/api/playground/projects', { method: 'POST', body: json({ name, kind, ...(clientId ? { clientId } : {}) }) }),
   getProject: (id: string, before?: string | null) =>
     call<PlaygroundBundle>(`/api/playground/projects/${id}${before ? `?before=${encodeURIComponent(before)}` : ''}`),
-  updateProject: (id: string, patch: { name?: string; brief?: string; briefName?: string | null; settings?: Partial<PlaygroundSettings> | { product?: VideoProjectProduct; video?: VideoProjectSettings } }) =>
+  updateProject: (id: string, patch: { name?: string; brief?: string; briefName?: string | null; clientId?: string | null; settings?: Partial<PlaygroundSettings> | { product?: VideoProjectProduct; video?: VideoProjectSettings } }) =>
     call<{ project: PlaygroundProject }>(`/api/playground/projects/${id}`, { method: 'PATCH', body: json(patch) }),
   deleteProject: (id: string) => call<{ deleted: boolean }>(`/api/playground/projects/${id}`, { method: 'DELETE' }),
+
+  /** The agency's clients (GoGrowth accounts; `enabled: false` for anyone else) and which of my projects have one. */
+  clients: () => call<{ enabled: boolean; clients: ClientRef[]; assigned: Record<string, string>; setup?: string }>('/api/playground/clients'),
+  /** Adds a client, or gives back the one that already has this name. */
+  createClient: (name: string) => call<{ client: ClientRef; existed: boolean }>('/api/playground/clients', { method: 'POST', body: json({ name }) }),
 
   addReferences: (projectId: string, images: NewReferenceImage[]) =>
     call<{ references: PlaygroundReference[] }>(`/api/playground/projects/${projectId}/references`, { method: 'POST', body: json({ images }) }),
@@ -125,6 +149,7 @@ export const playgroundApi = {
 
   /** Never throws for the answers the runner handles (402, 409, 429, 503); throws on network errors. */
   generateItem: async (id: string): Promise<{ status: number; body: GenerateResponse }> => {
+    refuseWritesWhenViewOnly('POST');
     const headers = await getAuthenticatedHeaders({ 'Content-Type': 'application/json' });
     const response = await fetch(`/api/playground/items/${id}/generate`, { method: 'POST', headers });
     const body = (await response.json().catch(() => ({}))) as GenerateResponse & { error?: string };

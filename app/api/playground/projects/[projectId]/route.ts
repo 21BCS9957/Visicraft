@@ -4,6 +4,7 @@ import { getOwnedProject, loadProjectBundle, playgroundDb, removeStoredFiles, to
 import { isPlaygroundModel } from '@/lib/playground/models';
 import { MAX_BRIEF_CHARS, MAX_VARIATIONS } from '@/lib/playground/prompts';
 import { cleanVideoProduct, cleanVideoSettings } from '@/lib/server/playground/videoProject';
+import { requireAgency, setProjectClient } from '@/lib/server/clients';
 
 type Context = { params: Promise<{ projectId: string }> };
 
@@ -20,14 +21,26 @@ export async function GET(request: NextRequest, { params }: Context) {
   }
 }
 
-/** Renames the project, saves its guidelines, or remembers its settings (a video project's product and New video choices). */
+/**
+ * Renames the project, saves its guidelines, remembers its settings (a video project's product
+ * and New video choices), or puts it under a client (GoGrowth accounts only).
+ */
 export async function PATCH(request: NextRequest, { params }: Context) {
   try {
     const user = await withUser(request);
     const projectId = requireUuid((await params).projectId, 'project');
-    const body = await readJson<{ name?: unknown; brief?: unknown; briefName?: unknown; settings?: unknown }>(request);
+    const body = await readJson<{ name?: unknown; brief?: unknown; briefName?: unknown; settings?: unknown; clientId?: unknown }>(request);
     const db = playgroundDb();
     const project = await getOwnedProject(db, projectId, user.id);
+
+    // The client changes on its own: it doesn't count as working on the project (its place in the list stays).
+    if (body.clientId !== undefined) {
+      await requireAgency(user.id);
+      await setProjectClient(db, projectId, body.clientId === null ? null : requireUuid(body.clientId, 'client'), user.id);
+      if (!['name', 'brief', 'briefName', 'settings'].some((key) => key in body)) {
+        return NextResponse.json({ project: toProject(await getOwnedProject(db, projectId, user.id)) });
+      }
+    }
 
     const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (typeof body.name === 'string') {

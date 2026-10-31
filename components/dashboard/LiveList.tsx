@@ -10,7 +10,7 @@ import { useDashboard } from './DashboardData';
 import { DashboardShell } from './DashboardShell';
 import { itemPrompt, itemStartedAt, itemState, itemThumb, itemTitle, jobKey, videoSeconds } from './items';
 import { Lightbox } from './Lightbox';
-import { dashboardHref, displayName, elapsed, EmptyState, Loading, MemberAvatar, PageHeader, PANEL, StateChip, useNow } from './parts';
+import { displayName, elapsed, EmptyState, Loading, MemberAvatar, PageHeader, PANEL, projectViewerHref, StateChip, useNow } from './parts';
 
 /**
  * A run's images by state, in the order the bar shows them. Being made is striped (yellow on
@@ -115,7 +115,7 @@ function RunCard({ run, showWho, onOpen }: { run: LiveRun; showWho: boolean; onO
   const left = run.making + run.waiting;
   const eta = timeLeft(run, now);
   const idle = Math.max(1, Math.round((now - Date.parse(run.lastActivityAt)) / 60_000));
-  const projectHref = run.projectId ? dashboardHref(`/accounts/${run.userId}`, { tab: 'projects', project: run.projectId, kind: 'image' }, preview) : null;
+  const projectHref = run.projectId ? projectViewerHref(run.userId, run.projectId, preview) : null;
   const meta = [`${run.total} image${run.total === 1 ? '' : 's'}`, run.model, run.size].filter(Boolean).join(' · ');
   const project = run.projectName ?? 'Playground';
   return (

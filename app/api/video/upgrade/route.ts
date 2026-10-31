@@ -28,7 +28,7 @@ export const maxDuration = 300;
 const FINAL: FinalQuality[] = ['720p', '1080p', '4k'];
 
 /** What the new clip carries over from the source, so it can be retried, refunded or upgraded again. */
-const CARRIED = ['heroUrl', 'referenceImageUrls', 'promptIsFinal', 'prompt', 'negativePrompt', 'aspectRatio', 'cameraFixed', 'needsAudio', 'realFace', 'lastFramePinned', 'sensitive', 'videoStyle', 'madeStyle', 'exactGarment', 'modelledOn', 'referenceVideoIds'];
+const CARRIED = ['heroUrl', 'referenceImageUrls', 'promptIsFinal', 'prompt', 'negativePrompt', 'aspectRatio', 'cameraFixed', 'needsAudio', 'realFace', 'lastFramePinned', 'sensitive', 'videoStyle', 'madeStyle', 'exactGarment', 'modelledOn', 'referenceVideoIds', 'projectId', 'clientId', 'surface'];
 
 export async function POST(request: NextRequest) {
   let charged: { userId: string; credits: number } | null = null;

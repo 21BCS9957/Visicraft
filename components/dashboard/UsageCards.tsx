@@ -19,7 +19,7 @@ const GREY_TAIL = 3;
 export const rupees = (value: number) => `₹${value.toLocaleString('en-IN')}`;
 export const plural = (count: number, word: string) => `${formatCount(count)} ${word}${count === 1 ? '' : 's'}`;
 
-const PERIODS: ReadonlyArray<{ id: UsageRange; label: string }> = [
+export const PERIODS: ReadonlyArray<{ id: UsageRange; label: string }> = [
   { id: 'today', label: 'Today' },
   { id: 'yesterday', label: 'Yesterday' },
   { id: '7d', label: 'Last 7 days' },
@@ -29,6 +29,26 @@ const PERIODS: ReadonlyArray<{ id: UsageRange; label: string }> = [
 
 /** Rows a card shows until it is expanded. */
 export const COMPACT_ROWS = 3;
+
+/** The period picker of the usage cards, for a whole page (the Clients pages). */
+export function PeriodSelect({ value, onChange, label = 'Period' }: { value: UsageRange; onChange: (period: UsageRange) => void; label?: string }) {
+  return (
+    <select
+      value={value}
+      onChange={(event) => onChange(event.target.value as UsageRange)}
+      aria-label={label}
+      className="h-10 shrink-0 rounded-full border border-white/[0.08] bg-[#0b0b0d] px-4 text-sm text-zinc-200 outline-none focus-visible:ring-2 focus-visible:ring-[#fff05a]/60"
+    >
+      {PERIODS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+    </select>
+  );
+}
+
+/** A card's own period, or the page's when the page passes one (`range` with `onRange`). */
+function usePeriod(initial: UsageRange, range?: UsageRange, onRange?: (period: UsageRange) => void): [UsageRange, (period: UsageRange) => void] {
+  const [own, setOwn] = useState<UsageRange>(initial);
+  return range && onRange ? [range, onRange] : [own, setOwn];
+}
 
 /** A compact card: its title and period picker, then the numbers. */
 export function UsageCard({ title, period, onPeriod, children, className }: {
@@ -41,7 +61,7 @@ export function UsageCard({ title, period, onPeriod, children, className }: {
   return (
     <section className={cx(PANEL, 'flex min-w-0 flex-col p-4 sm:p-5', className)}>
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-[15px] font-semibold tracking-tight text-zinc-50">{title}</h2>
+        <h2 className="text-[17px] font-semibold tracking-tight text-zinc-50">{title}</h2>
         <select
           value={period}
           onChange={(event) => onPeriod(event.target.value as UsageRange)}
@@ -99,12 +119,12 @@ function SplitLegend({ gemini, gpt }: { gemini: number; gpt: number }) {
   );
 }
 
-function PersonRow({ userId, counts }: { userId: string; counts: UsageCounts }) {
+function PersonRow({ userId, counts, onPick }: { userId: string; counts: UsageCounts; onPick?: () => void }) {
   const { memberById } = useDashboard();
   const known = memberById.get(userId);
   const made = [`${formatCount(counts.gemini)} Gemini`, `${formatCount(counts.gpt)} GPT`, counts.videos ? plural(counts.videos, 'video') : null].filter(Boolean).join(' · ');
-  return (
-    <li className="flex items-center gap-2.5 py-2">
+  const row = (
+    <>
       <MemberAvatar name={known?.name ?? null} email={known?.email ?? '?'} url={known?.avatarUrl ?? null} size="sm" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-[13px] text-zinc-100">{displayName(known)}</p>
@@ -114,13 +134,31 @@ function PersonRow({ userId, counts }: { userId: string; counts: UsageCounts }) 
         <p className="text-[13px] tabular-nums text-zinc-100">{plural(counts.images, 'image')}</p>
         <p className="text-[11px] tabular-nums text-zinc-500">≈ {rupees(counts.costInr)}</p>
       </div>
+    </>
+  );
+  return (
+    <li>
+      {onPick ? (
+        <button type="button" onClick={onPick} title={`Only ${displayName(known)}’s work`} className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2.5 rounded-xl px-2 py-2 text-left transition-colors hover:bg-white/[0.04]">{row}</button>
+      ) : (
+        <div className="flex items-center gap-2.5 py-2">{row}</div>
+      )}
     </li>
   );
 }
 
-/** What was made in a period: images by Gemini and GPT Image, videos, credits and cost, and who made them. */
-export function GeneratedCard({ usage, className }: { usage: DashboardUsage; className?: string }) {
-  const [range, setRange] = useState<UsageRange>('today');
+/**
+ * What was made in a period: images by Gemini and GPT Image, videos, credits and cost, and who
+ * made them. `onPerson` makes each person's row pick them (a client's page).
+ */
+export function GeneratedCard({ usage, className, range: pageRange, onRange, onPerson }: {
+  usage: DashboardUsage;
+  className?: string;
+  range?: UsageRange;
+  onRange?: (period: UsageRange) => void;
+  onPerson?: (userId: string) => void;
+}) {
+  const [range, setRange] = usePeriod('today', pageRange, onRange);
   const [open, setOpen] = useState(false);
   const period = usage.periods[range];
   const people = open ? period.members : period.members.slice(0, COMPACT_ROWS);
@@ -142,7 +180,7 @@ export function GeneratedCard({ usage, className }: { usage: DashboardUsage; cla
       <SplitLegend gemini={period.gemini} gpt={period.gpt} />
       {people.length > 0 ? (
         <ul className="mt-3 divide-y divide-white/[0.05] border-t border-white/[0.06]" aria-label="Made per account">
-          {people.map(({ userId, ...counts }) => <PersonRow key={userId} userId={userId} counts={counts} />)}
+          {people.map(({ userId, ...counts }) => <PersonRow key={userId} userId={userId} counts={counts} onPick={onPerson ? () => onPerson(userId) : undefined} />)}
         </ul>
       ) : !period.images && !period.videos ? (
         <p className="mt-3 text-xs text-zinc-500">{range === 'today' ? 'Nothing made yet today.' : 'Nothing made in this period.'}</p>
@@ -180,8 +218,14 @@ function ModelRow({ model, most, muted }: { model: ModelSpend; most: number; mut
 }
 
 /** Credits per model for a period, then everything spent so far, in rupees. */
-export function SpendCard({ usage, className }: { usage: DashboardUsage; className?: string }) {
-  const [range, setRange] = useState<UsageRange>('all');
+export function SpendCard({ usage, className, range: pageRange, onRange, totalLabel = 'Total spent till now' }: {
+  usage: DashboardUsage;
+  className?: string;
+  range?: UsageRange;
+  onRange?: (period: UsageRange) => void;
+  totalLabel?: string;
+}) {
+  const [range, setRange] = usePeriod('all', pageRange, onRange);
   const [open, setOpen] = useState(false);
   const period = usage.periods[range];
   const models = usage.byModel[range];
@@ -214,7 +258,7 @@ export function SpendCard({ usage, className }: { usage: DashboardUsage; classNa
       <ShowAll open={open} total={models.length} noun="models" onToggle={() => setOpen((value) => !value)} />
       <div className="mt-auto pt-3">
         <div className="flex items-baseline justify-between gap-3 border-t border-white/[0.06] pt-3">
-          <span className="text-xs text-zinc-400">Total spent till now</span>
+          <span className="text-xs text-zinc-400">{totalLabel}</span>
           <span className="text-lg font-semibold leading-none tabular-nums text-[#fff05a]">≈ {rupees(usage.periods.all.costInr)}</span>
         </div>
       </div>

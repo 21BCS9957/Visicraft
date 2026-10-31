@@ -6,7 +6,7 @@ import { isMusicFailure, withoutMusic } from '@/lib/video/shared';
 import { videoCredits, videoModelOptions } from '@/lib/videoModels';
 
 /** What a review row carries into its new try (history, project, style, references). */
-const CARRIED = ['requestedVideoModel', 'videoStyle', 'madeStyle', 'sensitive', 'exactGarment', 'heroFrameUrl', 'referenceVideoIds', 'sceneImages', 'modelledOn', 'productTitle', 'storyboardHook', 'projectId', 'promptWriter'];
+const CARRIED = ['requestedVideoModel', 'videoStyle', 'madeStyle', 'sensitive', 'exactGarment', 'heroFrameUrl', 'referenceVideoIds', 'sceneImages', 'modelledOn', 'productTitle', 'storyboardHook', 'projectId', 'promptWriter', 'clientId', 'surface', 'quick', 'textOnly'];
 
 /**
  * "Try again" on a video that didn't render (or was cancelled): its approved plan comes back

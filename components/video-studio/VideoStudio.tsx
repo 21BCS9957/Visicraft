@@ -18,6 +18,7 @@ import { pollVideoOperation, videoApi, VideoApiError, type PollReport, type Star
 import { isVideoPreviewRequested, PREVIEW_CLIP, previewHistory, previewPlanEvents, previewReview, previewVideoProject } from '@/lib/video/preview';
 import { readVideoReview, studioVideoStatus, videoModelName, type FrameSource, type StudioVideo, type VideoInfo, type VideoReviewState, type VideoTake } from '@/lib/video/shared';
 import { initialStages, PipelineTimeline, VIDEO_STAGES, type StageId, type StageState, type StageStatus } from '@/components/ui/PipelineTimeline';
+import { ProjectClientChip } from '@/components/playground/ClientControls';
 import { cx } from '@/components/playground/ui';
 import { GuidelinesEditor } from '@/components/playground/GuidelinesEditor';
 import { EMPTY_PRODUCT, NewVideoPanel, type PlanRequest, type VideoChoices } from './NewVideoPanel';
@@ -147,6 +148,7 @@ function Topbar({ preview, project, onRename, panelOpen, onTogglePanel }: {
       </Link>
       <span className="hidden text-white/20 sm:inline">/</span>
       {project ? <ProjectName project={project} onRename={onRename} /> : <span className="px-2 text-sm text-white/60">Video project</span>}
+      {project && <ProjectClientChip projectId={project.id} clientId={project.clientId} preview={preview} />}
       <button
         type="button"
         onClick={onTogglePanel}

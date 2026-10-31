@@ -2,7 +2,7 @@
 
 import { useMemo, type ReactNode } from 'react';
 import Link from 'next/link';
-import { Images, LayoutDashboard, LogOut, Radio } from 'lucide-react';
+import { Building2, Images, LayoutDashboard, LogOut, Radio } from 'lucide-react';
 import { useDashboardPreview } from '@/lib/dashboard/preview';
 import { cx } from '@/components/playground/ui';
 import { useDashboard } from './DashboardData';
@@ -10,7 +10,7 @@ import { isGenerating } from './items';
 import { dashboardHref, displayName, MemberAvatar } from './parts';
 
 /** Which page is open: a section, or one account. */
-export type DashboardSection = 'overview' | 'gallery' | 'live' | `account:${string}`;
+export type DashboardSection = 'overview' | 'clients' | 'gallery' | 'live' | `account:${string}`;
 
 /** A pulsing yellow dot: this account is generating right now. */
 export function LiveDot({ className }: { className?: string }) {
@@ -79,6 +79,7 @@ export function SidebarContent({ active, email, onSignOut, onNavigate, inDrawer 
 
       <nav className="space-y-0.5 px-3" aria-label="Sections">
         <NavLink href={href('/')} active={active === 'overview'} icon={<LayoutDashboard className="h-4 w-4" />} onNavigate={onNavigate}>Overview</NavLink>
+        <NavLink href={href('/clients')} active={active === 'clients'} icon={<Building2 className="h-4 w-4" />} onNavigate={onNavigate}>Clients</NavLink>
         <NavLink href={href('/gallery')} active={active === 'gallery'} icon={<Images className="h-4 w-4" />} onNavigate={onNavigate}>Gallery</NavLink>
         <NavLink
           href={href('/live')}

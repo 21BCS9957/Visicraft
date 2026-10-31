@@ -7,23 +7,27 @@ import { dashboardApi } from '@/lib/dashboard/client';
 import { isDashboardPreview } from '@/lib/dashboard/preview';
 import type { FeedImage, MemberWithSummary } from '@/lib/dashboard/types';
 import { downloadUrl } from '@/lib/playground/api';
-import { playgroundModel } from '@/lib/playground/models';
-import type { LibraryItem, LibraryKind, PlaygroundBundle, PlaygroundItem, PlaygroundProjectSummary, PlaygroundRun } from '@/lib/playground/types';
+import type { LibraryItem, LibraryKind, PlaygroundProjectSummary } from '@/lib/playground/types';
 import { cx, timeAgo } from '@/components/playground/ui';
 import { ShotSequence, VideoThumb } from '@/components/playground/library/libraryParts';
 import { useDashboard } from './DashboardData';
 import { DashboardShell } from './DashboardShell';
 import { Gallery, MediaTile, TILE_GRID, TileSkeleton } from './Gallery';
-import { isGenerating, itemKey } from './items';
+import { isGenerating } from './items';
 import { Lightbox } from './Lightbox';
+import { ProjectGrid, SmallStat } from './ProjectCards';
 import { LiveDot } from './Sidebar';
 import {
   dashboardHref, displayName, EmptyState, failureMessage, failureOf, formatCount, Loading, MemberAvatar, Message, Overlay,
-  PageHeader, PANEL, Segmented, type Failure,
+  PageHeader, PANEL, projectViewerHref, Segmented, type Failure,
 } from './parts';
 
 type Tab = 'gallery' | 'projects' | 'library';
 type ProjectCardData = PlaygroundProjectSummary & { kind: 'image' | 'video' };
+
+const projectDetail = (project: ProjectCardData) => `${project.kind === 'video'
+  ? `${project.videoCount ?? 0} video${project.videoCount === 1 ? '' : 's'}`
+  : `${formatCount(project.imageCount)} image${project.imageCount === 1 ? '' : 's'}`} · updated ${timeAgo(project.updatedAt)}`;
 
 /**
  * One GoGrowth account, read-only: everything it made (Gallery), its image and video projects,
@@ -34,15 +38,6 @@ export function AccountWorkspace({ userId }: { userId: string }) {
     <DashboardShell active={`account:${userId}`}>
       <AccountBody userId={userId} />
     </DashboardShell>
-  );
-}
-
-function SmallStat({ label, value }: { label: string; value: string | null }) {
-  return (
-    <div className={cx(PANEL, 'min-w-0 p-5')}>
-      <p className="text-[13px] text-zinc-400">{label}</p>
-      {value === null ? <span className="mt-3 block h-8 w-20 animate-pulse rounded-full bg-white/[0.06]" /> : <p className="mt-2 text-[32px] font-semibold leading-none tracking-tight text-zinc-50">{value}</p>}
-    </div>
   );
 }
 
@@ -58,6 +53,12 @@ function AccountBody({ userId }: { userId: string }) {
   const [member, setMember] = useState<MemberWithSummary | null>(null);
   const [projects, setProjects] = useState<ProjectCardData[] | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
+
+  // An image project opens as the member sees it in the Playground, view only (old links too).
+  const imageProject = tab === 'projects' && projectId && projectKind === 'image' ? projectId : null;
+  useEffect(() => {
+    if (imageProject) router.replace(projectViewerHref(userId, imageProject, isDashboardPreview()));
+  }, [imageProject, router, userId]);
 
   const go = useCallback((next: { tab: Tab; project?: string | null; kind?: 'image' | 'video' }) => {
     router.push(dashboardHref(`/accounts/${userId}`, {
@@ -135,8 +136,10 @@ function AccountBody({ userId }: { userId: string }) {
         {tab === 'projects' && (projectId
           ? projectKind === 'video'
             ? <VideoProject userId={userId} projectId={projectId} name={projects?.find((project) => project.id === projectId)?.name ?? null} onBack={() => go({ tab: 'projects' })} />
-            : <ImageProject userId={userId} projectId={projectId} onBack={() => go({ tab: 'projects' })} />
-          : <ProjectGrid projects={projects} onOpen={(project) => go({ tab: 'projects', project: project.id, kind: project.kind })} />)}
+            : <Loading />
+          : <ProjectGrid projects={projects} detail={projectDetail} onOpen={(project) => (project.kind === 'image'
+            ? router.push(projectViewerHref(userId, project.id, isDashboardPreview()))
+            : go({ tab: 'projects', project: project.id, kind: project.kind }))} />)}
         {tab === 'library' && <LibraryView userId={userId} />}
       </div>
     </>
@@ -144,43 +147,6 @@ function AccountBody({ userId }: { userId: string }) {
 }
 
 /* ----------------------------------------------------------------- projects */
-
-function ProjectCard({ project, onOpen }: { project: ProjectCardData; onOpen: () => void }) {
-  const [coverFailed, setCoverFailed] = useState(false);
-  const what = project.kind === 'video'
-    ? `${project.videoCount ?? 0} video${project.videoCount === 1 ? '' : 's'}`
-    : `${formatCount(project.imageCount)} image${project.imageCount === 1 ? '' : 's'}`;
-  return (
-    <button type="button" onClick={onOpen} className={cx(PANEL, 'group overflow-hidden !p-0 text-left transition-colors hover:border-white/15')}>
-      <div className="relative aspect-[16/10] overflow-hidden bg-zinc-900">
-        {project.coverUrl && !coverFailed ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={project.coverUrl} alt="" loading="lazy" onError={() => setCoverFailed(true)} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
-        ) : (
-          <div className="flex h-full items-center justify-center text-zinc-700">{project.kind === 'video' ? <Clapperboard className="h-7 w-7" /> : <ImageIcon className="h-7 w-7" />}</div>
-        )}
-        <span className="absolute left-2.5 top-2.5 inline-flex items-center gap-1 rounded-full bg-black/65 px-1.5 py-0.5 text-[11px] font-medium text-white backdrop-blur-sm">
-          {project.kind === 'video' ? <Clapperboard className="h-3 w-3" /> : <ImageIcon className="h-3 w-3" />}
-          {project.kind === 'video' ? 'Video' : 'Images'}
-        </span>
-      </div>
-      <div className="px-3.5 py-3">
-        <h3 className="truncate text-sm font-medium text-zinc-100">{project.name}</h3>
-        <p className="mt-0.5 truncate text-xs text-zinc-500">{what} · updated {timeAgo(project.updatedAt)}</p>
-      </div>
-    </button>
-  );
-}
-
-function ProjectGrid({ projects, onOpen }: { projects: ProjectCardData[] | null; onOpen: (project: ProjectCardData) => void }) {
-  if (!projects) return <div className="pt-5"><Loading /></div>;
-  if (!projects.length) return <div className={cx(PANEL, 'mt-5')}><EmptyState icon={<ImageIcon className="h-5 w-5" />} title="No projects yet" body="Image and video projects this account creates show up here." /></div>;
-  return (
-    <div className="grid grid-cols-1 gap-3 pt-5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-      {projects.map((project) => <ProjectCard key={`${project.kind}-${project.id}`} project={project} onOpen={() => onOpen(project)} />)}
-    </div>
-  );
-}
 
 function BackBar({ title, detail, onBack, children }: { title: string; detail?: string; onBack: () => void; children?: ReactNode }) {
   return (
@@ -191,139 +157,6 @@ function BackBar({ title, detail, onBack, children }: { title: string; detail?: 
       <h2 className="min-w-0 truncate text-lg font-semibold tracking-tight text-zinc-50">{title}</h2>
       {detail && <span className="text-xs text-zinc-500">{detail}</span>}
       {children}
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------- image project */
-
-/** A Playground image as a feed image, so the gallery's tile and viewer can show it. */
-function asFeedImage(item: PlaygroundItem, run: PlaygroundRun | null, userId: string, project: { id: string; name: string }): FeedImage {
-  return {
-    kind: 'image',
-    id: item.id,
-    userId,
-    createdAt: item.createdAt,
-    status: item.status,
-    url: item.imageUrl,
-    previewUrl: item.previewUrl,
-    aspectRatio: item.aspectRatio,
-    width: item.width,
-    height: item.height,
-    prompt: run && item.promptIndex !== null ? run.prompts[item.promptIndex] ?? null : item.kind === 'edit' ? 'Edited in Canvas' : null,
-    model: run ? playgroundModel(run.model).name : null,
-    size: run?.size ?? null,
-    projectId: project.id,
-    projectName: project.name,
-    source: 'playground',
-    error: item.error,
-    startedAt: item.startedAt,
-  };
-}
-
-/** An image project: its runs, newest first, each headed by its prompt, with the finished images in the gallery grid. */
-function ImageProject({ userId, projectId, onBack }: { userId: string; projectId: string; onBack: () => void }) {
-  const [bundle, setBundle] = useState<PlaygroundBundle | null>(null);
-  const [failure, setFailure] = useState<Failure | null>(null);
-  const [loadingOlder, setLoadingOlder] = useState(false);
-  const [broken, setBroken] = useState<ReadonlySet<string>>(() => new Set());
-  const [open, setOpen] = useState<number | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    dashboardApi.project(userId, projectId).then((next) => active && setBundle(next)).catch((error) => active && setFailure(failureOf(error)));
-    return () => {
-      active = false;
-    };
-  }, [userId, projectId]);
-
-  const older = async () => {
-    if (!bundle?.nextBefore || loadingOlder) return;
-    setLoadingOlder(true);
-    try {
-      const page = await dashboardApi.project(userId, projectId, bundle.nextBefore);
-      setBundle((current) => current && { ...current, runs: [...current.runs, ...page.runs], items: [...current.items, ...page.items.filter((item) => item.runId)], nextBefore: page.nextBefore });
-    } catch (error) {
-      setFailure(failureOf(error));
-    } finally {
-      setLoadingOlder(false);
-    }
-  };
-
-  // Each run with its finished images (as feed images), plus Canvas edits; one flat list for the viewer.
-  const { sections, viewable } = useMemo(() => {
-    if (!bundle) return { sections: [], viewable: [] as FeedImage[] };
-    const project = { id: bundle.project.id, name: bundle.project.name };
-    const runOf = new Map(bundle.runs.map((run) => [run.id, run]));
-    const all: FeedImage[] = [];
-    const list: Array<{ key: string; title: string; meta: string; images: Array<{ image: FeedImage; index: number }>; unfinished: number }> = [];
-    const add = (key: string, title: string, meta: string, items: PlaygroundItem[]) => {
-      const images: Array<{ image: FeedImage; index: number }> = [];
-      let unfinished = 0;
-      for (const item of [...items].sort((a, b) => a.position - b.position)) {
-        const image = asFeedImage(item, item.runId ? runOf.get(item.runId) ?? null : null, userId, project);
-        if (item.status !== 'done' || !(item.previewUrl || item.imageUrl) || broken.has(itemKey(image))) {
-          if (item.status !== 'done') unfinished += 1;
-          continue;
-        }
-        images.push({ image, index: all.length });
-        all.push(image);
-      }
-      if (images.length || unfinished) list.push({ key, title, meta, images, unfinished });
-    };
-    for (const run of bundle.runs) {
-      const items = bundle.items.filter((item) => item.runId === run.id);
-      const model = playgroundModel(run.model);
-      const title = run.prompts.length === 1 ? run.prompts[0] : run.prompts.length ? `${run.prompts.length} prompts · ${run.prompts[0]}` : 'Run';
-      add(run.id, title, `${timeAgo(run.createdAt)} · ${model.name} · ${run.size}${run.quality ? ` · ${run.quality}` : ''}`, items);
-    }
-    const edits = bundle.items.filter((item) => item.kind === 'edit');
-    if (edits.length) add('edits', 'Edited in Canvas', `${edits.length} image${edits.length === 1 ? '' : 's'}`, edits);
-    return { sections: list, viewable: all };
-  }, [bundle, userId, broken]);
-
-  if (failure) return <Message {...failureMessage(failure)} />;
-  if (!bundle) return <div className="pt-5"><TileSkeleton /></div>;
-
-  return (
-    <div>
-      <BackBar title={bundle.project.name} detail={`updated ${timeAgo(bundle.project.updatedAt)}`} onBack={onBack} />
-      {bundle.project.brief?.trim() && (
-        <details className={cx(PANEL, 'mt-3')}>
-          <summary className="cursor-pointer list-none px-4 py-2.5 text-xs text-zinc-400 hover:text-zinc-100">Project guidelines</summary>
-          <p className="max-h-72 overflow-y-auto whitespace-pre-wrap px-4 pb-4 text-[13px] leading-relaxed text-zinc-400">{bundle.project.brief}</p>
-        </details>
-      )}
-      {sections.length === 0 ? (
-        <div className={cx(PANEL, 'mt-5')}><EmptyState icon={<ImageIcon className="h-5 w-5" />} title="No images in this project yet" /></div>
-      ) : (
-        sections.map((section) => (
-          <section key={section.key} className="pt-6">
-            <div className="mb-3">
-              <h3 className="line-clamp-2 text-sm font-medium text-zinc-200" title={section.title}>{section.title}</h3>
-              <p className="mt-0.5 text-xs text-zinc-500">
-                {section.meta} · {section.images.length} image{section.images.length === 1 ? '' : 's'}
-                {section.unfinished > 0 && <span className="text-zinc-600"> · {section.unfinished} didn’t finish</span>}
-              </p>
-            </div>
-            {section.images.length > 0 && (
-              <div className={TILE_GRID}>
-                {section.images.map(({ image, index }) => (
-                  <MediaTile key={image.id} item={image} showWho={false} onOpen={() => setOpen(index)} onBroken={() => setBroken((current) => new Set(current).add(itemKey(image)))} />
-                ))}
-              </div>
-            )}
-          </section>
-        ))
-      )}
-      {bundle.nextBefore && (
-        <div className="flex justify-center pt-8">
-          <button type="button" onClick={() => void older()} disabled={loadingOlder} className="inline-flex h-10 items-center gap-2 rounded-full border border-white/15 px-5 text-sm text-zinc-200 hover:bg-white/[0.06] disabled:opacity-50">
-            {loadingOlder && <Loader2 className="h-4 w-4 animate-spin" />} Older runs
-          </button>
-        </div>
-      )}
-      {open !== null && viewable[open] && <Lightbox items={viewable} index={open} onIndex={setOpen} onClose={() => setOpen(null)} />}
     </div>
   );
 }

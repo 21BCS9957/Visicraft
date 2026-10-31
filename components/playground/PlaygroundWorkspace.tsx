@@ -12,6 +12,7 @@ import { cachedBundle, fetchBundle, rememberBundle } from '@/lib/playground/cach
 import { previewBundle, PREVIEW_PROJECT_ID } from '@/lib/playground/preview';
 import { isRunnerBusy, setRunnerListener } from '@/lib/playground/runner';
 import { usePlaygroundStore } from '@/lib/playground/store';
+import { ProjectClientChip } from './ClientControls';
 import { Composer } from './Composer';
 import { usePreviewFlag, useStoredNumber } from './hooks';
 import { Gallery } from './Gallery';
@@ -25,8 +26,14 @@ const DENSITY_KEY = 'visicraft:playgroundDensity';
 
 function ProjectName() {
   const project = usePlaygroundStore((state) => state.project);
+  const preview = usePlaygroundStore((state) => state.preview);
   if (!project) return null;
-  return <ProjectNameInput key={`${project.id}:${project.name}`} initial={project.name} />;
+  return (
+    <>
+      <ProjectNameInput key={`${project.id}:${project.name}`} initial={project.name} />
+      <ProjectClientChip projectId={project.id} clientId={project.clientId} preview={preview} />
+    </>
+  );
 }
 
 function ProjectNameInput({ initial }: { initial: string }) {

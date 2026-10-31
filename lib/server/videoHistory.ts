@@ -131,11 +131,13 @@ const COLUMNS = 'id,user_id,created_at,model,credit_cost,metadata';
 export async function loadVideosOf(
   admin: Db,
   userIds: string[],
-  options: { projectId?: string | null; before?: string | null; limit?: number } = {}
+  options: { projectId?: string | null; projectIds?: string[] | null; surface?: string | null; before?: string | null; limit?: number } = {}
 ): Promise<{ entries: Array<{ userId: string; projectId: string | null; video: StudioVideo }>; nextBefore: string | null }> {
   const { projectId, before } = options;
   const limit = options.limit ?? PAGE;
-  if (!userIds.length) return { entries: [], nextBefore: null };
+  // `projectIds`: only these projects (a client's); an empty list matches nothing.
+  const projectIds = options.projectIds?.filter((id) => /^[0-9a-f-]{36}$/i.test(id)) ?? null;
+  if (!userIds.length || (projectIds && !projectIds.length)) return { entries: [], nextBefore: null };
 
   let query = admin
     .from('usage_logs')
@@ -146,6 +148,9 @@ export async function loadVideosOf(
     .order('created_at', { ascending: false })
     .limit(limit + 1);
   if (projectId && /^[0-9a-f-]{36}$/i.test(projectId)) query = query.eq('metadata->>projectId', projectId);
+  if (projectIds) query = query.in('metadata->>projectId', projectIds);
+  // `surface`: where the video was made (the Create tab marks its own).
+  if (options.surface && /^[a-z]+$/.test(options.surface)) query = query.eq('metadata->>surface', options.surface);
   if (before && !Number.isNaN(Date.parse(before))) query = query.lt('created_at', before);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
@@ -188,7 +193,7 @@ export async function loadVideosOf(
 }
 
 /** One page of a user's videos (24), optionally of one project, older than `before`. */
-export async function loadVideoHistory(admin: Db, userId: string, options: { projectId?: string | null; before?: string | null } = {}): Promise<VideoHistoryPage> {
+export async function loadVideoHistory(admin: Db, userId: string, options: { projectId?: string | null; surface?: string | null; before?: string | null } = {}): Promise<VideoHistoryPage> {
   const { entries, nextBefore } = await loadVideosOf(admin, [userId], options);
   return { videos: entries.map((entry) => entry.video), nextBefore };
 }

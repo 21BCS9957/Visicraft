@@ -3,12 +3,16 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Clapperboard, FolderPlus, Loader2, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Building2, Clapperboard, FolderPlus, Loader2, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import toast from '@/lib/toast';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { playgroundApi } from '@/lib/playground/api';
 import type { PlaygroundProjectSummary } from '@/lib/playground/types';
 import { isVideoPreviewRequested, PREVIEW_VIDEO_PROJECT_ID, previewVideoProjects } from '@/lib/video/preview';
+import type { ClientRef } from '@/lib/clients';
+import { useAgencyClients } from '@/lib/playground/agencyClients';
+import { ClientBadge, NewProjectButton, useProjectClients } from '@/components/playground/ClientControls';
+import { ClientPicker } from '@/components/playground/ClientPicker';
 import { PlaygroundTabs } from '@/components/playground/PlaygroundTabs';
 import { Popover, PopoverClose, timeAgo } from '@/components/playground/ui';
 
@@ -23,24 +27,29 @@ function defaultName(): string {
   return `Video · ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`;
 }
 
-function ProjectCard({ project, href, onRename, onDelete }: {
+/** `client`: the project's client (null: none yet); left out where clients don't apply. */
+function ProjectCard({ project, href, client, onClient, onRename, onDelete }: {
   project: PlaygroundProjectSummary;
   href: string;
+  client?: ClientRef | null;
+  onClient?: (client: ClientRef | null) => Promise<void>;
   onRename: () => void;
   onDelete: () => void;
 }) {
   const [coverFailed, setCoverFailed] = useState(false);
+  const [picking, setPicking] = useState(false);
   const count = project.videoCount ?? 0;
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-white/8 bg-white/[0.03] transition-colors hover:border-white/15">
       <Link href={href} className="block">
-        <div className="aspect-[4/3] overflow-hidden bg-[#111115]">
+        <div className="relative aspect-[4/3] overflow-hidden bg-[#111115]">
           {project.coverUrl && !coverFailed ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={project.coverUrl} alt="" loading="lazy" onError={() => setCoverFailed(true)} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
           ) : (
             <div className="flex h-full items-center justify-center"><Clapperboard className="h-8 w-8 text-white/15" /></div>
           )}
+          <ClientBadge client={client ?? null} />
         </div>
         <div className="px-3.5 py-3 pr-11">
           <h3 className="truncate text-sm font-medium text-white">{project.name}</h3>
@@ -49,6 +58,7 @@ function ProjectCard({ project, href, onRename, onDelete }: {
           </p>
         </div>
       </Link>
+      <ClientPicker anchor open={picking} onOpenChange={setPicking} value={client?.id ?? null} onPick={(picked) => onClient?.(picked)} title="Which client is this project for?" align="end">
       <div className="absolute bottom-2.5 right-2">
         <Popover
           side="bottom"
@@ -65,6 +75,14 @@ function ProjectCard({ project, href, onRename, onDelete }: {
               <Pencil className="h-4 w-4" /> Rename
             </button>
           </PopoverClose>
+          {client !== undefined && (
+            <PopoverClose asChild>
+              {/* Opens once the menu has closed (the menu hands focus back first). */}
+              <button type="button" onClick={() => window.setTimeout(() => setPicking(true), 0)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-white/85 hover:bg-white/8">
+                <Building2 className="h-4 w-4" /> {client ? 'Change client' : 'Add client'}
+              </button>
+            </PopoverClose>
+          )}
           <PopoverClose asChild>
             <button type="button" onClick={onDelete} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-red-300 hover:bg-red-500/10">
               <Trash2 className="h-4 w-4" /> Delete
@@ -72,6 +90,7 @@ function ProjectCard({ project, href, onRename, onDelete }: {
           </PopoverClose>
         </Popover>
       </div>
+      </ClientPicker>
     </div>
   );
 }
@@ -94,6 +113,7 @@ export function VideoHub() {
   const projects = loaded ?? (preview ? previewVideoProjects() : null);
   const setProjects = (update: (list: PlaygroundProjectSummary[] | null) => PlaygroundProjectSummary[] | null) => setLoaded(update(projects));
   const signedOut = !preview && !authLoading && !user;
+  const clients = useProjectClients(preview || Boolean(user));
 
   const hrefFor = (id: string, url?: string | null) => {
     const params = new URLSearchParams();
@@ -103,11 +123,13 @@ export function VideoHub() {
     return `/playground/video/${preview ? PREVIEW_VIDEO_PROJECT_ID : id}${query ? `?${query}` : ''}`;
   };
 
-  const create = async (url?: string | null) => {
+  // A product link handed over from Home starts a project at once, without a client (it can get one in the Studio).
+  const create = async (url?: string | null, client: ClientRef | null = null) => {
     if (preview) return router.push(hrefFor(PREVIEW_VIDEO_PROJECT_ID, url));
     setCreating(true);
     try {
-      const { project } = await playgroundApi.createProject(defaultName(), 'video');
+      const { project } = await playgroundApi.createProject(defaultName(), 'video', client?.id ?? null);
+      if (client) useAgencyClients.getState().assign(project.id, client.id);
       router.push(hrefFor(project.id, url));
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : 'Could not create the project', TOAST);
@@ -171,9 +193,11 @@ export function VideoHub() {
           <div className="flex flex-wrap items-center gap-3">
             <PlaygroundTabs active="videos" preview={preview} />
             {!signedOut && (
-              <button type="button" onClick={() => void create()} disabled={creating || Boolean(setup)} className="inline-flex items-center gap-2 rounded-full bg-[#fff05a] px-5 py-2.5 text-sm font-medium text-black hover:bg-white disabled:opacity-60">
-                {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderPlus className="h-4 w-4" />} New project
-              </button>
+              <NewProjectButton enabled={clients.enabled} onCreate={(client) => create(null, client)}>
+                <button type="button" disabled={creating || Boolean(setup)} className="inline-flex items-center gap-2 rounded-full bg-[#fff05a] px-5 py-2.5 text-sm font-medium text-black hover:bg-white disabled:opacity-60">
+                  {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderPlus className="h-4 w-4" />} New project
+                </button>
+              </NewProjectButton>
             )}
           </div>
         </div>
@@ -197,12 +221,22 @@ export function VideoHub() {
         )}
         {projects && !setup && (
           <div className="mt-8 grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
-            <button type="button" onClick={() => void create()} disabled={creating} className="flex h-full min-h-[200px] flex-col items-center justify-center gap-2.5 rounded-2xl border border-dashed border-white/15 text-white/60 transition-colors hover:border-[#fff05a]/50 hover:bg-[#fff05a]/[0.04] hover:text-white">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04]"><FolderPlus className="h-4 w-4" /></span>
-              <span className="text-sm">New video project</span>
-            </button>
+            <NewProjectButton enabled={clients.enabled} onCreate={(client) => create(null, client)}>
+              <button type="button" disabled={creating} className="flex h-full min-h-[200px] flex-col items-center justify-center gap-2.5 rounded-2xl border border-dashed border-white/15 text-white/60 transition-colors hover:border-[#fff05a]/50 hover:bg-[#fff05a]/[0.04] hover:text-white">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04]"><FolderPlus className="h-4 w-4" /></span>
+                <span className="text-sm">New video project</span>
+              </button>
+            </NewProjectButton>
             {projects.map((project) => (
-              <ProjectCard key={project.id} project={project} href={hrefFor(project.id)} onRename={() => void rename(project)} onDelete={() => void remove(project)} />
+              <ProjectCard
+                key={project.id}
+                project={project}
+                href={hrefFor(project.id)}
+                client={clients.enabled ? clients.clientOf(project.id) : undefined}
+                onClient={(client) => clients.save(project.id, client, preview)}
+                onRename={() => void rename(project)}
+                onDelete={() => void remove(project)}
+              />
             ))}
           </div>
         )}

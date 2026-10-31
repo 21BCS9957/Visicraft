@@ -82,3 +82,65 @@ Return JSON: "prompt" is the full new prompt; "summary" is one short sentence (a
   const summary = typeof parsed.summary === 'string' ? parsed.summary.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
   return { prompt, summary: summary || 'Prompt rewritten with your change.', seconds: length, usage, fast };
 }
+
+const ENHANCE_SYSTEM = 'You write the exact prompt a video model receives, for short ads made by an Indian D2C agency. The user gives a rough idea in a few words (sometimes Hinglish) and maybe some images. You turn it into one clear, filmable, shot-by-shot prompt that the engine follows well.';
+
+const ENHANCE_SCHEMA = js.obj({ prompt: js.str, summary: js.str });
+
+/**
+ * "Improve prompt" in the Create tab: a short idea (and the images the video uses) becomes a
+ * timed, shot-by-shot prompt for the engine picked, at the chosen length and shape. Claude sees
+ * the images; the result goes back into the prompt box for the user to read before Generate.
+ */
+export async function enhanceVideoPrompt(options: {
+  idea: string;
+  engine: 'seedance' | 'veo';
+  /** How the images are used: the clip starts from Image 1, or is built from Image 1..N. */
+  role: 'first_frame' | 'reference' | 'none';
+  images: Array<{ url: string }>;
+  seconds: number;
+  orientation: string;
+  /** A motion preset's line ("Slow push-in…"), kept in the shots. */
+  motion?: string;
+}): Promise<{ prompt: string; summary: string; usage: ProviderUsage; fast: boolean }> {
+  const count = options.images.length;
+  const imageRule = options.role === 'first_frame'
+    ? 'The video starts exactly on Image 1 (the first frame): describe what happens from there, keep everything in it (product, people, setting) consistent, and never ask for a cut away from it in the first shot.'
+    : options.role === 'reference'
+      ? `The video is built from ${count === 1 ? 'Image 1' : `Images 1–${count}`}: cite them as "(Image k)" in the shots where each appears, and keep each product exactly as in its image.`
+      : 'There are no images: describe the product, people and setting fully in words.';
+  const request = `THE IDEA: ${options.idea.trim().slice(0, 1200)}
+${options.motion ? `\nCAMERA / MOTION STYLE TO USE: ${options.motion}\n` : ''}
+THE VIDEO: ${options.seconds} seconds, ${options.orientation}, made with ${options.engine === 'veo' ? 'Google Veo' : 'Seedance'}.
+${count ? `IMAGES: ${count} (shown above, in order as Image 1${count > 1 ? `…Image ${count}` : ''}).` : ''}
+${imageRule}
+
+Write the prompt like this (plain text, these lines in this order):
+- First line: "${options.seconds}-second ${options.orientation} video:" plus the look and who appears.
+- One short paragraph on the product (from the images when there are any: exact colours, pattern, printed text) and the rule to keep it exactly as shown.
+- "Setting:" one sentence.
+- One line per shot: "Shot N (start-end s): Framing. Action. Camera move." Shots cover 0 to ${options.seconds} seconds end to end, each 1.5-5 seconds, exactly one camera move each.
+- "Sound:" original music inside ( ), sound effects inside < >, and a spoken line inside { } only if the idea asks for speech.
+- "Constraints:" what must not happen (no on-screen text, subtitles or logos unless asked; no warping of the product; no extra products).
+
+Rules: concrete, physical, filmable actions with their speed; realistic, never exaggerated; people are real-looking Indian adults, never a real or famous person; music is always original, never a named song. Keep what the user asked for and fill in only what is missing. At most 2,800 characters.
+
+Return JSON: "prompt" is the full prompt; "summary" is one short sentence (at most 16 words) saying what you made of the idea.`;
+
+  const { json: parsed, usage, fast } = await requestClaudeJson<{ prompt?: unknown; summary?: unknown }>({
+    system: ENHANCE_SYSTEM,
+    images: options.images.slice(0, 9).map((image, index) => ({ url: image.url, label: `Image ${index + 1}` })),
+    prompt: request,
+    schema: ENHANCE_SCHEMA,
+    effort: 'low',
+    fast: true,
+    maxTokens: 4000,
+    timeoutMs: 60_000,
+  });
+  const written = typeof parsed.prompt === 'string' ? parsed.prompt.trim().slice(0, 3500) : '';
+  if (!written) throw new Error('The new prompt came back empty. Try again.');
+  const timed = promptSeconds(written);
+  const prompt = timed && timed !== options.seconds ? retimePrompt(written, options.seconds) : written;
+  const summary = typeof parsed.summary === 'string' ? parsed.summary.replace(/\s+/g, ' ').trim().slice(0, 160) : '';
+  return { prompt, summary: summary || 'Your idea, written as a shot-by-shot prompt.', usage, fast };
+}

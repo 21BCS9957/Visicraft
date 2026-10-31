@@ -24,6 +24,8 @@ export function GuidelinesEditor({ emptyHint, compact = false }: { emptyHint?: s
   const project = usePlaygroundStore((state) => state.project);
   const setProject = usePlaygroundStore((state) => state.setProject);
   const preview = usePlaygroundStore((state) => state.preview);
+  // The owner's dashboard: read and download only.
+  const viewOnly = usePlaygroundStore((state) => state.viewOnly);
   const withImages = usePlaygroundStore((state) => state.settings.guidelinesWithImages);
   const setSettings = usePlaygroundStore((state) => state.setSettings);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -44,13 +46,15 @@ export function GuidelinesEditor({ emptyHint, compact = false }: { emptyHint?: s
   const gptRoom = imageProject && withImages ? OPENAI_PROMPT_LIMIT - longestOpenAiPrompt(brief, [{ role: 'product', label: '' }], ['']) : Infinity;
   const sendSwitch = (
     <div className="flex items-start gap-2.5">
-      <Toggle checked={withImages} onCheckedChange={(checked) => setSettings({ guidelinesWithImages: checked })} label="Send the guidelines with every image" />
+      <Toggle checked={withImages} onCheckedChange={(checked) => setSettings({ guidelinesWithImages: checked })} disabled={viewOnly} label="Send the guidelines with every image" />
       <span className="min-w-0 text-[11px] leading-snug">
         <span className="block text-white/80">Send with every image</span>
         <span className="block text-white/40">
-          {withImages
-            ? 'On: the image model reads them with each prompt too, for prompts you paste yourself.'
-            : 'Off: only Claude reads them, when it writes your prompts, and puts what each image needs into the prompt.'}
+          {viewOnly
+            ? withImages ? 'On: new images get them with every prompt.' : 'Off: only Claude reads them, when it writes prompts.'
+            : withImages
+              ? 'On: the image model reads them with each prompt too, for prompts you paste yourself.'
+              : 'Off: only Claude reads them, when it writes your prompts, and puts what each image needs into the prompt.'}
         </span>
       </span>
     </div>
@@ -159,31 +163,31 @@ export function GuidelinesEditor({ emptyHint, compact = false }: { emptyHint?: s
                 {!imageProject ? 'Markdown · every image and prompt follows them' : withImages ? 'Markdown · Claude follows them in your prompts, and every image gets them' : 'Markdown · Claude follows them when it writes your prompts'}
               </Dialog.Description>
               <span className="ml-auto text-[11px] text-white/40">
-                {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : ''} · {brief.length.toLocaleString('en-IN')} / {MAX_BRIEF_CHARS.toLocaleString('en-IN')}
+                {viewOnly ? `View only · ${brief.length.toLocaleString('en-IN')} characters` : <>{saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : ''} · {brief.length.toLocaleString('en-IN')} / {MAX_BRIEF_CHARS.toLocaleString('en-IN')}</>}
               </span>
-              {gptRoom < MAX_PROMPT_CHARS && (
+              {!viewOnly && gptRoom < MAX_PROMPT_CHARS && (
                 <span className="w-full text-[11px] text-[#fff6a8]/80 sm:order-last">
                   {gptRoom <= 0
                     ? `Too long for GPT Image, which reads ${OPENAI_PROMPT_LIMIT.toLocaleString('en-IN')} characters per image with the prompt: shorten them, or use a Nano Banana model, which takes them whole.`
                     : `With guidelines this long, GPT Image has room for prompts of about ${gptRoom.toLocaleString('en-IN')} characters (Nano Banana models take any length).`}
                 </span>
               )}
-              <button type="button" onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1.5 rounded-full border border-white/12 px-3 py-1.5 text-xs text-white/80 hover:bg-white/8"><Upload className="h-3.5 w-3.5" /> Upload .md</button>
+              {!viewOnly && <button type="button" onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1.5 rounded-full border border-white/12 px-3 py-1.5 text-xs text-white/80 hover:bg-white/8"><Upload className="h-3.5 w-3.5" /> Upload .md</button>}
               <button type="button" disabled={!brief.trim()} onClick={download} className="inline-flex items-center gap-1.5 rounded-full border border-white/12 px-3 py-1.5 text-xs text-white/80 hover:bg-white/8 disabled:opacity-40"><Download className="h-3.5 w-3.5" /> Download</button>
               <Dialog.Close className="rounded-full p-1.5 text-white/50 hover:bg-white/8 hover:text-white" aria-label="Close"><X className="h-4 w-4" /></Dialog.Close>
             </div>
             {imageProject && <div className="border-b border-white/8 px-5 py-2.5">{sendSwitch}</div>}
-            <div className="grid min-h-0 flex-1 md:grid-cols-2">
-              <textarea
+            <div className={cx('grid min-h-0 flex-1', !viewOnly && 'md:grid-cols-2')}>
+              {!viewOnly && <textarea
                 value={brief}
                 onChange={(event) => save({ brief: event.target.value })}
                 maxLength={MAX_BRIEF_CHARS}
                 spellCheck
                 placeholder={'# Brand\nWho you are, tone, audience.\n\n## Product\nExact facts: name, colours, what must never change.\n\n## Always\n- One hero product per image\n\n## Never\n- Competitor logos'}
                 className="min-h-0 resize-none border-b border-white/8 bg-transparent p-5 font-mono text-[13px] leading-relaxed text-white outline-none placeholder:text-white/25 md:border-b-0 md:border-r"
-              />
+              />}
               <div className={cx('min-h-0 overflow-y-auto p-5', !brief.trim() && 'flex items-center justify-center')}>
-                {brief.trim() ? <Markdown>{brief}</Markdown> : <p className="text-sm text-white/30">The preview shows here.</p>}
+                {brief.trim() ? <Markdown>{brief}</Markdown> : <p className="text-sm text-white/30">{viewOnly ? 'This project has no guidelines.' : 'The preview shows here.'}</p>}
               </div>
             </div>
           </Dialog.Content>
@@ -265,11 +269,21 @@ export function GuidelinesEditor({ emptyHint, compact = false }: { emptyHint?: s
           </>
         ) : (
           <span className="block py-3 text-xs leading-relaxed text-white/35">
-            {emptyHint ?? 'Upload a .md file or write your guidelines: brand, product facts, what to always or never show. Claude follows them when it writes your prompts.'}
+            {viewOnly ? 'No guidelines in this project.' : emptyHint ?? 'Upload a .md file or write your guidelines: brand, product facts, what to always or never show. Claude follows them when it writes your prompts.'}
           </span>
         )}
       </button>
 
+      {viewOnly ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button type="button" disabled={!brief.trim()} onClick={() => setEditorOpen(true)} className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-white/75 hover:bg-white/8 disabled:opacity-40">
+            <BookOpen className="h-3 w-3" /> Read
+          </button>
+          <button type="button" disabled={!brief.trim()} onClick={download} className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-white/75 hover:bg-white/8 disabled:opacity-40">
+            <Download className="h-3 w-3" /> Download .md
+          </button>
+        </div>
+      ) : (
       <div className="flex flex-wrap items-center gap-1.5">
         <button type="button" onClick={() => setEditorOpen(true)} className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-white/75 hover:bg-white/8">
           <Pencil className="h-3 w-3" /> {brief.trim() ? 'Edit' : 'Write'}
@@ -298,6 +312,7 @@ export function GuidelinesEditor({ emptyHint, compact = false }: { emptyHint?: s
           </PopoverClose>
         </Popover>
       </div>
+      )}
       {imageProject && <div className="pt-1">{sendSwitch}</div>}
       {dialogs}
     </div>

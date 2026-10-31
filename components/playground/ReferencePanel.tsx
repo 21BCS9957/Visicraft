@@ -17,6 +17,7 @@ const TOAST = { position: 'top-center' as const };
 const ROLES: ReferenceRole[] = ['product', 'person', 'style'];
 function ReferenceTile({ reference }: { reference: PlaygroundReference }) {
   const preview = usePlaygroundStore((state) => state.preview);
+  const viewOnly = usePlaygroundStore((state) => state.viewOnly);
   const upsertReference = usePlaygroundStore((state) => state.upsertReference);
   const removeReference = usePlaygroundStore((state) => state.removeReference);
   const [label, setLabel] = useState(reference.label);
@@ -54,8 +55,18 @@ function ReferenceTile({ reference }: { reference: PlaygroundReference }) {
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={reference.url} alt={reference.label || ROLE_LABELS[reference.role]} loading="lazy" className="aspect-square w-full object-cover" />
       <div className="absolute right-1.5 top-1.5">
-        <Toggle checked={reference.enabled} onCheckedChange={(enabled) => update({ enabled })} label={reference.enabled ? 'Used in every image (click to switch off)' : 'Switched off (click to use it)'} />
+        <Toggle
+          checked={reference.enabled}
+          onCheckedChange={(enabled) => update({ enabled })}
+          disabled={viewOnly}
+          label={viewOnly ? (reference.enabled ? 'On: used in every image' : 'Off: not used') : reference.enabled ? 'Used in every image (click to switch off)' : 'Switched off (click to use it)'}
+        />
       </div>
+      {viewOnly ? (
+        <span title={reference.label || ROLE_LABELS[reference.role]} className="absolute inset-x-1.5 bottom-1.5 truncate rounded-lg bg-black/60 px-2 py-1 text-[11px] text-white backdrop-blur-md">
+          {reference.label || ROLE_LABELS[reference.role]}
+        </span>
+      ) : (
       <Popover
         side="right"
         align="start"
@@ -101,6 +112,7 @@ function ReferenceTile({ reference }: { reference: PlaygroundReference }) {
           </button>
         </PopoverClose>
       </Popover>
+      )}
     </div>
   );
 }
@@ -108,6 +120,7 @@ function ReferenceTile({ reference }: { reference: PlaygroundReference }) {
 export function ReferencePanel() {
   const projectId = usePlaygroundStore((state) => state.projectId);
   const preview = usePlaygroundStore((state) => state.preview);
+  const viewOnly = usePlaygroundStore((state) => state.viewOnly);
   const references = usePlaygroundStore((state) => state.references);
   const upsertReference = usePlaygroundStore((state) => state.upsertReference);
   const modelId = usePlaygroundStore((state) => state.settings.model);
@@ -152,6 +165,7 @@ export function ReferencePanel() {
     accept: IMAGE_ACCEPT,
     multiple: true,
     noClick: true,
+    disabled: viewOnly,
     onDrop: (accepted, rejected) => {
       if (rejected.length) toast.error('Only JPG, PNG and WebP images can be references.', TOAST);
       void upload(accepted);
@@ -169,7 +183,11 @@ export function ReferencePanel() {
       <input {...getInputProps()} />
       <div>
         <h2 className="text-sm font-medium text-white">Project context</h2>
-        <p className="mt-0.5 text-xs text-white/45">Saved with the project. References go with every image; Claude follows the guidelines when it writes prompts.</p>
+        <p className="mt-0.5 text-xs text-white/45">
+          {viewOnly
+            ? 'As the project is now: switched-on references go with every new image. Each run below shows what it actually used.'
+            : 'Saved with the project. References go with every image; Claude follows the guidelines when it writes prompts.'}
+        </p>
       </div>
 
       <div className="space-y-3">
@@ -180,6 +198,7 @@ export function ReferencePanel() {
           </span>
         </div>
 
+        {!viewOnly && (<>
         <div className="flex items-center gap-2">
           <span className="text-[11px] text-white/40">Add as</span>
           <div className="flex rounded-full border border-white/10 bg-white/[0.03] p-0.5">
@@ -229,6 +248,7 @@ export function ReferencePanel() {
             role
           )}
         />
+        </>)}
 
         {warnings.length > 0 && (
           <ul className="space-y-1 rounded-xl border border-[#fff05a]/20 bg-[#fff05a]/[0.05] px-3 py-2 text-[11px] leading-relaxed text-[#fff6a8]/90">
@@ -251,6 +271,8 @@ export function ReferencePanel() {
                 <div className="grid grid-cols-3 gap-2">
                   {group.map((reference) => <ReferenceTile key={reference.id} reference={reference} />)}
                 </div>
+              ) : viewOnly ? (
+                <p className="px-1 text-[11px] text-white/30">None</p>
               ) : (
                 <button
                   type="button"

@@ -1,16 +1,17 @@
 'use client';
 
 import Link from 'next/link';
-import { Clapperboard, FolderHeart, Images } from 'lucide-react';
+import { Clapperboard, FolderHeart, Images, WandSparkles } from 'lucide-react';
 import { cx } from './ui';
 
 const TABS = [
   { id: 'images', href: '/playground', label: 'Images', icon: Images },
   { id: 'videos', href: '/playground/video', label: 'Videos', icon: Clapperboard },
+  { id: 'create', href: '/playground/create', label: 'Create', icon: WandSparkles },
   { id: 'library', href: '/playground/library', label: 'Library', icon: FolderHeart },
 ] as const;
 
-/** Images · Videos · Library, on the Playground's own pages. */
+/** Images · Videos · Create · Library, on the Playground's own pages. */
 export function PlaygroundTabs({ active, preview = false }: { active: (typeof TABS)[number]['id']; preview?: boolean }) {
   return (
     <nav className="inline-flex rounded-full border border-white/10 bg-white/[0.04] p-1" aria-label="Playground sections">

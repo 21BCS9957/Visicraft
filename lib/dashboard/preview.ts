@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { previewBundle, previewLibrary, previewProjects } from '@/lib/playground/preview';
 import { previewHistory, previewVideoProjects } from '@/lib/video/preview';
 import type { LibraryKind } from '@/lib/playground/types';
-import type { ActivityDay, ClientSpend, DashboardInsights, DashboardOverview, DashboardProject, DashboardUsage, ModelScore, FeedImage, FeedItem, FeedPage, FeedStatus, FeedType, FeedVideo, LiveJob, LiveRun, LiveSnapshot, ModelSpend, UsageRange } from './types';
+import type { ActivityDay, ClientProject, ClientSpend, DashboardClient, DashboardClientDetail, DashboardClients, DashboardInsights, DashboardOverview, DashboardProject, DashboardUsage, ModelScore, FeedImage, FeedItem, FeedPage, FeedStatus, FeedType, FeedVideo, LiveJob, LiveRun, LiveSnapshot, ModelSpend, UnsortedProject, UsageCounts, UsageRange } from './types';
 
 /**
  * Development-only sample data for the dashboard (`?previewDashboard=1`), so its pages can be
@@ -64,6 +64,7 @@ const SAMPLE_PROJECTS: DashboardProject[] = [
   { id: 'preview-video', name: 'Tissue saree — festive films', kind: 'video', coverUrl: PICTURES[4], userId: PRIYA, updatedAt: ago(HOUR) },
   { id: 'preview-3', name: 'Brew Sage launch', kind: 'image', coverUrl: PICTURES[1], userId: AMEET, updatedAt: ago(2 * DAY) },
   { id: 'preview-video-3', name: 'Lace bralette set', kind: 'video', coverUrl: null, userId: SHRUTI, updatedAt: ago(5 * DAY) },
+  { id: 'preview-4', name: 'Brew Sage — monsoon offer', kind: 'image', coverUrl: PICTURES[2], userId: AMEET, updatedAt: ago(6 * DAY) },
 ];
 
 /** Sample spend per model for one period: the Playground's mix, scaled. */
@@ -122,12 +123,11 @@ function sampleUsage(): DashboardUsage {
 function sampleInsights(): DashboardInsights {
   const scales: Record<UsageRange, number> = { today: 0.06, yesterday: 0.09, '7d': 0.4, '30d': 1, all: 1.15 };
   const clientRows: ClientSpend[] = [
-    { key: 'night unwind tea', name: 'Night Unwind tea', projects: ['Night Unwind tea — Diwali set', 'Night Unwind tea — Holi'], userIds: [PRIYA], images: 212, videos: 2, credits: 9800, costInr: 3410 },
-    { key: 'tissue saree', name: 'Tissue saree', projects: ['Tissue saree — festive shoot', 'Tissue saree — festive films'], userIds: [SHRUTI, PRIYA], images: 168, videos: 3, credits: 7600, costInr: 2950 },
-    { key: 'brew sage', name: 'Brew Sage launch', projects: ['Brew Sage launch'], userIds: [AMEET], images: 41, videos: 0, credits: 1800, costInr: 610 },
-    { key: 'no project', name: 'No project', projects: ['No project'], userIds: [], images: 60, videos: 4, credits: 2100, costInr: 1880 },
-    { key: 'lace bralette', name: 'Lace bralette set', projects: ['Lace bralette set'], userIds: [SHRUTI], images: 12, videos: 1, credits: 600, costInr: 420 },
-    { key: 'deleted project', name: 'Deleted project', projects: ['Deleted project'], userIds: [], images: 9, videos: 0, credits: 300, costInr: 95 },
+    { key: CLIENT_BREW, id: CLIENT_BREW, name: 'Brew Sage', projects: ['Night Unwind tea — Diwali set', 'Brew Sage launch', 'Brew Sage — monsoon offer'], userIds: [PRIYA, AMEET], images: 253, videos: 2, credits: 11600, costInr: 4020 },
+    { key: CLIENT_TISSUE, id: CLIENT_TISSUE, name: 'Tissue saree', projects: ['Tissue saree — festive shoot', 'Tissue saree — festive films'], userIds: [SHRUTI, PRIYA], images: 168, videos: 3, credits: 7600, costInr: 2950 },
+    { key: 'no project', id: null, name: 'No project', projects: ['No project'], userIds: [], images: 60, videos: 4, credits: 2100, costInr: 1880 },
+    { key: 'unsorted', id: null, name: 'Unsorted', projects: ['Lace bralette set', 'Thriller', 'Thriller Grip me'], userIds: [SHRUTI, PRIYA], images: 52, videos: 1, credits: 1900, costInr: 660 },
+    { key: 'deleted project', id: null, name: 'Deleted project', projects: ['Deleted project'], userIds: [], images: 9, videos: 0, credits: 300, costInr: 95 },
   ];
   const scoreRows: ModelScore[] = [
     { key: 'gpt-image-2.5-sunburst', name: 'GPT Image 2.5 Sunburst', maker: 'OpenAI', group: 'gpt', images: 524, costInr: 3829, costPerImageInr: 7.31, tracked: 524, deleted: 27, favorites: 4, failed: 42, avgSeconds: 42 },
@@ -354,13 +354,136 @@ function matches(item: FeedItem, status: FeedStatus): boolean {
   return status === 'done' ? ready && !item.video.cancelled : !ready || item.video.cancelled;
 }
 
+/* Clients: two set up, the rest waiting to be sorted. Sorting here only changes this copy. */
+
+const CLIENT_BREW = 'aaaaaaaa-0000-4000-8000-000000000001';
+const CLIENT_TISSUE = 'aaaaaaaa-0000-4000-8000-000000000002';
+const OWNER = '99999999-9999-4999-8999-999999999999';
+
+const clientState = {
+  clients: [{ id: CLIENT_BREW, name: 'Brew Sage' }, { id: CLIENT_TISSUE, name: 'Tissue saree' }],
+  /** project id → client id. */
+  assigned: new Map<string, string>([['preview', CLIENT_BREW], ['preview-3', CLIENT_BREW], ['preview-4', CLIENT_BREW], ['preview-2', CLIENT_TISSUE], ['preview-video', CLIENT_TISSUE]]),
+};
+
+/** Every sample project, the sorted and the unsorted, with what each made (all time). */
+const CLIENT_PROJECTS: Array<DashboardProject & { images: number; videos: number; costInr: number; suggestion?: string }> = [
+  ...SAMPLE_PROJECTS.map((project, index) => ({ ...project, images: [212, 168, 0, 41, 12, 0][index] ?? 0, videos: [0, 0, 3, 0, 1, 0][index] ?? 0, costInr: [3010, 2400, 550, 610, 420, 400][index] ?? 0 })),
+  { id: 'preview-thriller', name: 'Thriller', kind: 'image', coverUrl: PICTURES[4], userId: SHRUTI, updatedAt: ago(3 * HOUR), images: 30, videos: 0, costInr: 180, suggestion: 'Thriller' },
+  { id: 'preview-thriller-2', name: 'Thriller Grip me', kind: 'image', coverUrl: PICTURES[5], userId: PRIYA, updatedAt: ago(9 * HOUR), images: 10, videos: 0, costInr: 60, suggestion: 'Thriller' },
+  { id: 'preview-owner', name: 'Uwears', kind: 'image', coverUrl: null, userId: OWNER, updatedAt: ago(2 * DAY), images: 6, videos: 0, costInr: 45 },
+  { id: 'preview-default', name: 'Project 12 Oct', kind: 'image', coverUrl: null, userId: AMEET, updatedAt: ago(4 * DAY), images: 0, videos: 0, costInr: 0 },
+];
+
+const PERIOD_SHARE: Record<UsageRange, number> = { today: 0.05, yesterday: 0.08, '7d': 0.4, '30d': 0.85, all: 1 };
+const RANGE_LIST = Object.keys(PERIOD_SHARE) as UsageRange[];
+
+function countsOf(projects: typeof CLIENT_PROJECTS, share: number): UsageCounts {
+  const images = Math.round(projects.reduce((total, project) => total + project.images, 0) * share);
+  const costInr = Math.round(projects.reduce((total, project) => total + project.costInr, 0) * share);
+  return { images, gemini: Math.round(images * 0.4), gpt: images - Math.round(images * 0.4), videos: Math.round(projects.reduce((total, project) => total + project.videos, 0) * share), credits: costInr * 3, costInr };
+}
+
+function clientsPage(): DashboardClients {
+  const clients: DashboardClient[] = clientState.clients.map((client) => {
+    const projects = CLIENT_PROJECTS.filter((project) => clientState.assigned.get(project.id) === client.id);
+    return {
+      ...client,
+      coverUrl: projects.find((project) => project.coverUrl)?.coverUrl ?? null,
+      projectCount: projects.length,
+      userIds: [...new Set(projects.map((project) => project.userId).filter((id) => id !== OWNER))],
+      lastActiveAt: projects.map((project) => project.updatedAt).sort().at(-1) ?? null,
+      periods: Object.fromEntries(RANGE_LIST.map((range) => [range, countsOf(projects, PERIOD_SHARE[range])])) as Record<UsageRange, UsageCounts>,
+    };
+  });
+  const unsorted: UnsortedProject[] = CLIENT_PROJECTS.filter((project) => !clientState.assigned.has(project.id)).map(({ suggestion, ...project }) => {
+    const existing = suggestion ? clientState.clients.find((client) => client.name === suggestion) : undefined;
+    return { ...project, ownerAccount: project.userId === OWNER, suggestion: suggestion ? { clientId: existing?.id ?? null, name: suggestion } : null };
+  });
+  return { clients, unsorted };
+}
+
+function clientDetail(clientId: string, person: string | null): DashboardClientDetail {
+  const client = clientState.clients.find((known) => known.id === clientId) ?? clientState.clients[0];
+  const projects = CLIENT_PROJECTS.filter((project) => clientState.assigned.get(project.id) === client.id && project.userId !== OWNER);
+  const peopleIds = [...new Set(projects.map((project) => project.userId))];
+  const people = peopleIds.map((userId) => {
+    const own = projects.filter((project) => project.userId === userId);
+    const counts = countsOf(own, 1);
+    return { userId, images: counts.images, videos: counts.videos, costInr: counts.costInr };
+  }).sort((a, b) => b.costInr - a.costInr);
+  const who = person && peopleIds.includes(person) ? person : null;
+  const shown = who ? projects.filter((project) => project.userId === who) : projects;
+  const usage = sampleUsage();
+  const allCost = usage.periods.all.costInr || 1;
+  const share = countsOf(shown, 1).costInr / allCost;
+  const scaledUsage: DashboardUsage = {
+    ...usage,
+    periods: Object.fromEntries(RANGE_LIST.map((range) => {
+      const counts = countsOf(shown, PERIOD_SHARE[range]);
+      const members = peopleIds.filter((id) => !who || id === who).map((userId) => ({ userId, ...countsOf(shown.filter((project) => project.userId === userId), PERIOD_SHARE[range]) }));
+      return [range, { ...counts, members }];
+    })) as DashboardUsage['periods'],
+    byModel: Object.fromEntries(RANGE_LIST.map((range) => [range, usage.byModel[range].map((model) => ({
+      ...model, images: Math.round(model.images * share), videos: Math.round(model.videos * share), renders: Math.round(model.renders * share), credits: Math.round(model.credits * share), costInr: Math.round(model.costInr * share),
+    })).filter((model) => model.costInr > 0)])) as DashboardUsage['byModel'],
+  };
+  return {
+    client,
+    people,
+    person: who,
+    usage: scaledUsage,
+    projects: shown.map((project): ClientProject => ({ id: project.id, name: project.name, kind: project.kind, coverUrl: project.coverUrl, userId: project.userId, updatedAt: project.updatedAt, images: project.images, videos: project.videos, costInr: project.costInr })),
+    projectCount: projects.length,
+    lastActiveAt: projects.map((project) => project.updatedAt).sort().at(-1) ?? null,
+  };
+}
+
+function addClient(name: string) {
+  const known = clientState.clients.find((client) => client.name.toLowerCase().replace(/[^a-z0-9]+/g, '') === name.toLowerCase().replace(/[^a-z0-9]+/g, ''));
+  if (known) return { client: known, existed: true };
+  const client = { id: `aaaaaaaa-0000-4000-8000-${String(Date.now()).slice(-12).padStart(12, '0')}`, name: name.trim() };
+  clientState.clients.push(client);
+  return { client, existed: false };
+}
+
 export const previewDashboard = {
   overview,
+  clients: clientsPage,
+  client: clientDetail,
+  createClient: addClient,
+  renameClient: (clientId: string, name: string) => {
+    const client = clientState.clients.find((known) => known.id === clientId);
+    if (client) client.name = name.trim();
+    return { client: client ?? { id: clientId, name } };
+  },
+  mergeClient: (clientId: string, into: string) => {
+    let projects = 0;
+    for (const [projectId, id] of clientState.assigned) if (id === clientId) {
+      clientState.assigned.set(projectId, into);
+      projects += 1;
+    }
+    clientState.clients = clientState.clients.filter((client) => client.id !== clientId);
+    return { projects };
+  },
+  setProjectClient: (projectId: string, clientId: string | null) => {
+    if (clientId) clientState.assigned.set(projectId, clientId);
+    else clientState.assigned.delete(projectId);
+    return { projectId, clientId };
+  },
+  sortProjects: (assignments: Array<{ projectId: string; clientId?: string | null; newClient?: string }>) => ({
+    sorted: assignments.map((assignment) => {
+      const clientId = assignment.clientId ?? addClient(assignment.newClient ?? 'New client').client.id;
+      clientState.assigned.set(assignment.projectId, clientId);
+      return { projectId: assignment.projectId, clientId };
+    }),
+  }),
   member: (userId: string) => overview().members.find((known) => known.id === userId) ?? overview().members[0],
-  feed: (options: { account?: string | null; project?: string | null; type?: FeedType; status?: FeedStatus }): FeedPage => ({
+  feed: (options: { account?: string | null; project?: string | null; client?: string | null; type?: FeedType; status?: FeedStatus }): FeedPage => ({
     items: all().filter((item) => {
       if (options.account && item.userId !== options.account) return false;
       if (options.project && item.projectId !== options.project) return false;
+      if (options.client && clientState.assigned.get(item.projectId ?? '') !== options.client) return false;
       if (options.type === 'image' && item.kind !== 'image') return false;
       if (options.type === 'video' && item.kind !== 'video') return false;
       return matches(item, options.status ?? 'done');

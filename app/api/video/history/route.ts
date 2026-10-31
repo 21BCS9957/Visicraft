@@ -3,12 +3,13 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { apiErrorResponse, withUser } from '@/lib/server/playground/http';
 import { loadVideoHistory } from '@/lib/server/videoHistory';
 
-/** The signed-in user's videos, newest first (lib/server/videoHistory.ts). */
+/** The signed-in user's videos, newest first (lib/server/videoHistory.ts); ?projectId= one project's, ?surface=create the Create tab's. */
 export async function GET(request: NextRequest) {
   try {
     const user = await withUser(request);
     const page = await loadVideoHistory(createServiceClient(), user.id, {
       projectId: request.nextUrl.searchParams.get('projectId'),
+      surface: request.nextUrl.searchParams.get('surface'),
       before: request.nextUrl.searchParams.get('before'),
     });
     return NextResponse.json(page);

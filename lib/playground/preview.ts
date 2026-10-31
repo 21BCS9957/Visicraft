@@ -126,6 +126,7 @@ export function previewBundle(): PlaygroundBundle {
       settings: { model: 'gemini-3-pro-image', size: '2K', ratios: ['4:5', '9:16'], variations: 1, thinking: 'minimal' },
       kind: 'image',
       coverUrl: SAMPLES[0],
+      clientId: 'preview-client-brew-sage',
       createdAt: iso(86_400_000),
       updatedAt: iso(600_000),
     },

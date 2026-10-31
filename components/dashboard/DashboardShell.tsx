@@ -117,6 +117,30 @@ function MobileBar({ active, email, preview }: { active: DashboardSection; email
   );
 }
 
+/** What a visitor who isn't (yet) the signed-in owner sees. */
+function GateScreen({ gate, email }: { gate: Exclude<Gate, 'ok'>; email: string | null }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-black px-4 text-zinc-100">
+      {gate === 'loading' && <Loading />}
+      {gate === 'signin' && <SignIn />}
+      {gate === 'denied' && (
+        <Message title="Only for GoGrowth’s owner" body={`You’re signed in as ${email ?? 'another account'}. This dashboard opens only with GoGrowth’s owner account.`}>
+          <button type="button" onClick={() => void signOut()} className="inline-flex h-10 items-center gap-2 rounded-full bg-white px-5 text-sm font-medium text-black hover:bg-zinc-200">
+            <LogOut className="h-4 w-4" /> Sign out
+          </button>
+        </Message>
+      )}
+    </div>
+  );
+}
+
+/** Sign-in and the owner check only, for full-screen dashboard pages (a member's project). */
+export function DashboardGate({ children }: { children: ReactNode }) {
+  const preview = useDashboardPreview();
+  const { gate, email } = useGate(preview);
+  return gate === 'ok' ? <>{children}</> : <GateScreen gate={gate} email={email} />;
+}
+
 /**
  * The dashboard's frame: Google sign-in and the owner check, then a sidebar (sections and the
  * team) beside the page. `children` render only for the owner.
@@ -124,22 +148,7 @@ function MobileBar({ active, email, preview }: { active: DashboardSection; email
 export function DashboardShell({ active, children }: { active: DashboardSection; children: ReactNode }) {
   const preview = useDashboardPreview();
   const { gate, email } = useGate(preview);
-
-  if (gate !== 'ok') {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-black px-4 text-zinc-100">
-        {gate === 'loading' && <Loading />}
-        {gate === 'signin' && <SignIn />}
-        {gate === 'denied' && (
-          <Message title="Only for GoGrowth’s owner" body={`You’re signed in as ${email ?? 'another account'}. This dashboard opens only with GoGrowth’s owner account.`}>
-            <button type="button" onClick={() => void signOut()} className="inline-flex h-10 items-center gap-2 rounded-full bg-white px-5 text-sm font-medium text-black hover:bg-zinc-200">
-              <LogOut className="h-4 w-4" /> Sign out
-            </button>
-          </Message>
-        )}
-      </div>
-    );
-  }
+  if (gate !== 'ok') return <GateScreen gate={gate} email={email} />;
 
   return (
     <DashboardDataProvider>

@@ -197,6 +197,7 @@ export function previewVideoProject(id: string): PlaygroundProject {
       video: { model: DEFAULT_VIDEO_MODEL, duration: 10, quality: 'draft', aspectRatio: '9:16', style: 'cinematic', referenceVideoIds: ['lib-video-0'], notes: '' },
     },
     coverUrl: PHOTOS[0],
+    clientId: null,
     createdAt: now,
     updatedAt: now,
   };

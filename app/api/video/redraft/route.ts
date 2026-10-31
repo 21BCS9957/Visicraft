@@ -14,7 +14,7 @@ export const maxDuration = 300;
 const MAX_REFERENCE_IMAGES = 9;
 
 /** What the new take carries over from the one it was edited from. */
-const CARRIED = ['aspectRatio', 'cameraFixed', 'needsAudio', 'lastFramePinned', 'sensitive', 'videoStyle', 'madeStyle', 'exactGarment', 'modelledOn', 'referenceVideoIds', 'projectId', 'productTitle'];
+const CARRIED = ['aspectRatio', 'cameraFixed', 'needsAudio', 'lastFramePinned', 'sensitive', 'videoStyle', 'madeStyle', 'exactGarment', 'modelledOn', 'referenceVideoIds', 'projectId', 'productTitle', 'clientId', 'surface'];
 
 /**
  * A new draft of a video with small changes: the take the user was watching is rendered again

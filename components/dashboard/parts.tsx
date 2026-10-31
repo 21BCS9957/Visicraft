@@ -49,6 +49,10 @@ export function dashboardHref(path: string, params: Record<string, string | null
   return `${path}${query ? `?${query}` : ''}`;
 }
 
+/** A member's image project, view only, as they see it in the Playground. */
+export const projectViewerHref = (userId: string, projectId: string, preview = false) =>
+  dashboardHref(`/accounts/${userId}/projects/${projectId}`, {}, preview);
+
 export type Failure = { status: number; message: string };
 
 export const failureOf = (error: unknown): Failure => ({

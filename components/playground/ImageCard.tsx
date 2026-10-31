@@ -184,6 +184,8 @@ export function ImageCard({ item, prompt, onOpen, onCanvas, pendingFit, canRetry
 }) {
   const actions = useItemActions(item, prompt);
   const checking = usePlaygroundStore((state) => state.runner.checking.includes(item.id));
+  // The owner's dashboard: look, open and download only.
+  const viewOnly = usePlaygroundStore((state) => state.viewOnly);
   const ratio = cssRatio(item.aspectRatio);
   // Small tiles can't fit every action as a button: favourite and download stay, the rest go in "More".
   const [cardRef, cardWidth] = useElementWidth();
@@ -212,6 +214,25 @@ export function ImageCard({ item, prompt, onOpen, onCanvas, pendingFit, canRetry
             <span className="line-clamp-2">{item.error}</span>
           </span>
         )}
+        {viewOnly && (
+          <span className={cx('pointer-events-none absolute left-2 flex items-center gap-1.5', item.kind === 'edit' ? 'top-8' : 'top-2')}>
+            {item.kind !== 'edit' && <span className="rounded-full bg-black/60 px-2 py-0.5 text-[10px] tabular-nums text-white/85 backdrop-blur-md">#{item.position + 1}</span>}
+            {item.favorite && <Star className="h-4 w-4 fill-[#fff05a] text-[#fff05a] drop-shadow" aria-label="Favourited" />}
+          </span>
+        )}
+        {viewOnly ? (
+          <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-end p-2 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+            <a
+              href={actions.href}
+              download={actions.fileName}
+              aria-label="Download"
+              title="Download"
+              className="pointer-events-auto inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-md hover:bg-black/75"
+            >
+              <Download className="h-4 w-4" />
+            </a>
+          </div>
+        ) : (
         <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-end gap-1 p-2 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
           <div className="pointer-events-auto flex gap-1">
             {layout !== 'menu' && (
@@ -246,7 +267,8 @@ export function ImageCard({ item, prompt, onOpen, onCanvas, pendingFit, canRetry
               : <MoreMenu item={item} actions={actions} onCanvas={onCanvas} withQuick={layout === 'menu'} />}
           </div>
         </div>
-        {item.favorite && (
+        )}
+        {item.favorite && !viewOnly && (
           <Star className="pointer-events-none absolute left-2 top-2 h-4 w-4 fill-[#fff05a] text-[#fff05a] drop-shadow group-hover:opacity-0" />
         )}
         <figcaption className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent p-3 pt-10 text-xs leading-snug text-white/90 opacity-0 transition-opacity group-hover:opacity-100">
@@ -283,7 +305,7 @@ export function ImageCard({ item, prompt, onOpen, onCanvas, pendingFit, canRetry
         {item.status === 'cancelled' && (
           <>
             <span className="text-white/40">Cancelled</span>
-            {canRetry && (
+            {canRetry && !viewOnly && (
               <button type="button" onClick={actions.retry} className="rounded-full border border-white/12 px-2.5 py-1 text-white/80 hover:bg-white/8">
                 Generate
               </button>
@@ -296,6 +318,7 @@ export function ImageCard({ item, prompt, onOpen, onCanvas, pendingFit, canRetry
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span className="line-clamp-3">{item.error ?? 'This image failed. Credits were refunded.'}</span>
             </span>
+            {!viewOnly && (
             <div className="flex items-center gap-2">
               {canRetry && (
                 <button type="button" onClick={actions.retry} className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-white hover:bg-white/15">
@@ -304,6 +327,7 @@ export function ImageCard({ item, prompt, onOpen, onCanvas, pendingFit, canRetry
               )}
               <IconButton label="Delete" tone="danger" className="h-7 w-7" onClick={actions.remove}><Trash2 className="h-3.5 w-3.5" /></IconButton>
             </div>
+            )}
           </div>
         )}
       </div>

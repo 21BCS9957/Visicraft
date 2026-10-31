@@ -111,9 +111,14 @@ export interface DashboardUsage {
   byModel: Record<UsageRange, ModelSpend[]>;
 }
 
-/** One client's spend in a period: its projects grouped ("Thriller 40 Prompts" joins "Thriller"). */
+/**
+ * One client's spend in a period. With clients set up it is a real client (its `id`) or one of
+ * the rows without one (Unsorted, Deleted project, No project); before, projects grouped by name.
+ */
 export interface ClientSpend {
   key: string;
+  /** The client, for its page; null for the rows without one. */
+  id: string | null;
   name: string;
   /** The project names grouped under it. */
   projects: string[];
@@ -161,6 +166,68 @@ export interface DashboardInsights {
   clients: Record<UsageRange, ClientSpend[]>;
   waste: Record<UsageRange, WasteSummary>;
   scorecard: Record<UsageRange, ModelScore[]>;
+}
+
+/** A client on the dashboard's Clients page, with what was made and spent for it in each period. */
+export interface DashboardClient {
+  id: string;
+  name: string;
+  /** The newest cover among its projects. */
+  coverUrl: string | null;
+  projectCount: number;
+  /** Team accounts that worked on it, most spent first (the owner's own accounts count, unlisted). */
+  userIds: string[];
+  lastActiveAt: string | null;
+  periods: Record<UsageRange, UsageCounts>;
+}
+
+/** A project without a client, with what it cost so far and the client its name suggests. */
+export interface UnsortedProject extends DashboardProject {
+  /** Made with one of the owner's own accounts. */
+  ownerAccount: boolean;
+  images: number;
+  videos: number;
+  costInr: number;
+  /** An existing client (clientId) or a new one to add (clientId null); null when the name can't tell. */
+  suggestion: { clientId: string | null; name: string } | null;
+}
+
+export interface DashboardClients {
+  clients: DashboardClient[];
+  /** Most spent first; names the app gave last. */
+  unsorted: UnsortedProject[];
+  /** Set when the clients migration hasn't run. */
+  setup?: string;
+}
+
+/** A team project of a client, with what was made in it (all time, deleted images included). */
+export interface ClientProject extends DashboardProject {
+  images: number;
+  videos: number;
+  costInr: number;
+}
+
+/** A team account that worked on a client, with all it made and spent for it. */
+export interface ClientPerson {
+  userId: string;
+  images: number;
+  videos: number;
+  costInr: number;
+}
+
+export interface DashboardClientDetail {
+  client: { id: string; name: string };
+  /** Everyone who worked on it, most spent first (the person chips). */
+  people: ClientPerson[];
+  /** The account the numbers, projects and work are for; null for everyone. */
+  person: string | null;
+  /** What was made and spent for the client (and the person), as the Overview counts it. */
+  usage: DashboardUsage;
+  /** The team's projects for it (only the person's when one is picked). */
+  projects: ClientProject[];
+  /** All its team projects, whoever is picked. */
+  projectCount: number;
+  lastActiveAt: string | null;
 }
 
 export interface DashboardOverview {

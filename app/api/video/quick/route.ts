@@ -4,6 +4,8 @@ import { imageToBase64 } from '@/lib/banana/api';
 import { isOwnStorageUrl, loadVideoProject } from '@/lib/server/playground/db';
 import { ApiError } from '@/lib/server/playground/http';
 import { inspectFaces } from '@/lib/server/referenceImages';
+import { requireAgency, requireClient } from '@/lib/server/clients';
+import { createServiceClient } from '@/lib/supabase/server';
 import { resolveSeedanceModel, seedanceFaceModelReady } from '@/lib/server/seedance';
 import { requireAuthenticatedUser } from '@/lib/server/usage';
 import { readyFaceAssets } from '@/lib/server/videoFaces';
@@ -12,9 +14,13 @@ import { normalizeVideoQuality, seedanceSpec, snapVideoAspect, snapVideoDuration
 
 export const maxDuration = 60;
 
-const MAX_PROMPT_CHARS = 1500;
+/** The Studio's box stops at 1,500; the Create tab's "Improve prompt" writes up to about 3,000. */
+const MAX_PROMPT_CHARS = 4000;
 /** Photos of a verified face sent with a video. */
 const MAX_FACE_PHOTOS = 3;
+/** Images a Seedance 2.x reference film takes (the render route sends at most 9). */
+const MAX_REFERENCE_IMAGES = 9;
+const VEO_START_IMAGE = 'Google Veo needs a start image: add one, or pick Seedance to make a video from words alone.';
 
 /** The shape nearest to the image's own (Seedance 2.5 keeps a first frame's shape). */
 async function imageShape(url: string): Promise<VideoAspect | null> {
@@ -32,6 +38,20 @@ async function imageShape(url: string): Promise<VideoAspect | null> {
   }
 }
 
+/** The images that can't be opened (deleted since they were picked), by number. */
+async function missingImages(urls: string[]): Promise<number[]> {
+  const opens = await Promise.all(urls.map(async (url) => {
+    try {
+      const response = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(8000) });
+      return response.ok;
+    } catch {
+      // A slow answer isn't proof it's gone; the render will tell.
+      return true;
+    }
+  }));
+  return opens.map((ok, index) => (ok ? 0 : index + 1)).filter(Boolean);
+}
+
 /** A short title for the video's history, from the prompt's first words. */
 function titleOf(prompt: string): string {
   const words = prompt.replace(/\s+/g, ' ').trim().split(' ');
@@ -39,33 +59,60 @@ function titleOf(prompt: string): string {
 }
 
 /**
- * Quick video: the user's own prompt (and, if they want, one image to start from and/or a
- * verified face) goes straight to Seedance, with no product capture and no prompt writing.
- * Like every video, it is first saved for approval; nothing is charged until it is approved
- * (POST /api/video/render).
+ * Quick video: the user's own prompt (and, if they want, images and/or a verified face) goes
+ * straight to the engine, with no product capture and no prompt writing. Like every video, it
+ * is first saved for approval; nothing is charged until it is approved (POST /api/video/render).
+ * The Studio approves it on its card; the Create tab approves it at once (its panel is the review).
  *
- * - a verified face: a Seedance 2.x reference film (the face as Image 1, their image after);
- * - an image: Seedance animates it. A real person's face in it is checked for first: Seedance
- *   2.x refuses those, so it goes to the face model (Seedance 1.0 Pro, silent) when that is
- *   switched on, and is turned down here, before approval, when it isn't;
- * - neither: text-to-video in the shape picked.
+ * Seedance:
+ * - a verified face: a Seedance 2.x reference film (the face as Image 1, their images after);
+ * - several images, or one used as a reference (`imageRole: 'reference'`): a 2.x reference
+ *   film, Image 1..N. Seedance 2.x refuses real faces, so a face in any of them is turned down;
+ * - one image as the start: Seedance animates it. A real person's face in it is checked for
+ *   first: it goes to the face model (Seedance 1.0 Pro, silent) when that is switched on, and
+ *   is turned down here, before approval, when it isn't;
+ * - none: text-to-video in the shape picked.
+ *
+ * Google Veo animates one start image (it takes real people; it has no text-only mode here).
  */
 export async function POST(request: NextRequest) {
   try {
     const user = await requireAuthenticatedUser(request);
     const body = (await request.json().catch(() => ({}))) as {
-      prompt?: unknown; imageUrl?: unknown; faceId?: unknown; model?: unknown; durationSeconds?: unknown; quality?: unknown; aspectRatio?: unknown; projectId?: unknown;
+      prompt?: unknown; imageUrl?: unknown; imageUrls?: unknown; imageRole?: unknown; faceId?: unknown; model?: unknown; durationSeconds?: unknown;
+      quality?: unknown; aspectRatio?: unknown; projectId?: unknown; clientId?: unknown; surface?: unknown;
     };
     const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
     if (prompt.length < 3) throw new ApiError(400, 'Describe the video in a sentence or two.', 'bad_request');
     if (prompt.length > MAX_PROMPT_CHARS) throw new ApiError(400, `Keep the prompt under ${MAX_PROMPT_CHARS} characters.`, 'bad_request');
-    const imageUrl = typeof body.imageUrl === 'string' && body.imageUrl ? body.imageUrl : null;
-    if (imageUrl && !isOwnStorageUrl(imageUrl)) throw new ApiError(400, 'Upload the image first.', 'bad_request');
+    // One image (the Studio) or several (the Create tab), in order, each one of ours.
+    const images = [...new Set([
+      ...(Array.isArray(body.imageUrls) ? body.imageUrls : []),
+      ...(typeof body.imageUrl === 'string' ? [body.imageUrl] : []),
+    ].filter((url): url is string => typeof url === 'string' && url.length > 0))];
+    if (images.some((url) => !isOwnStorageUrl(url))) throw new ApiError(400, 'Upload the image first.', 'bad_request');
+    if (images.length > MAX_REFERENCE_IMAGES) throw new ApiError(400, `Use at most ${MAX_REFERENCE_IMAGES} images.`, 'bad_request');
+    // An image deleted since it was picked would only fail at render: say so now.
+    const missing = images.length ? await missingImages(images) : [];
+    if (missing.length) {
+      throw new ApiError(400, `${missing.length === 1 ? `Image ${missing[0]} can’t` : `Images ${missing.join(', ')} can’t`} be opened any more (deleted?). Remove ${missing.length === 1 ? 'it' : 'them'} and add ${missing.length === 1 ? 'it' : 'them'} again.`, 'missing_image');
+    }
+    const imageUrl = images[0] ?? null;
+    const asReferences = images.length > 1 || (images.length === 1 && body.imageRole === 'reference');
     const faceId = typeof body.faceId === 'string' && body.faceId ? body.faceId : null;
+    const asked = typeof body.model === 'string' ? body.model : undefined;
+    const veo = videoEngineOf(asked) === 'veo';
 
-    // Quick videos are Seedance; a reference film (a verified face) needs the 2.x series.
-    let model = resolveSeedanceModel(typeof body.model === 'string' ? body.model : undefined);
-    if (videoEngineOf(model) !== 'seedance' || (faceId && seedanceSpec(model).family === '1.0')) model = resolveSeedanceModel(undefined);
+    // The client the video is for (GoGrowth accounts only): its spend counts for that client.
+    let clientId: string | null = null;
+    if (typeof body.clientId === 'string' && body.clientId) {
+      await requireAgency(user.id);
+      clientId = (await requireClient(createServiceClient(), body.clientId)).id;
+    }
+
+    // Seedance unless Veo is asked for; a reference film (several images, a verified face) needs the 2.x series.
+    let model = veo ? asked! : resolveSeedanceModel(asked);
+    if (!veo && (videoEngineOf(model) !== 'seedance' || ((faceId || asReferences) && seedanceSpec(model).family === '1.0'))) model = resolveSeedanceModel(undefined);
     let aspect = snapVideoAspect(model, typeof body.aspectRatio === 'string' ? body.aspectRatio : undefined);
     let mode: VideoReview['mode'] = 'first_frame';
     let frames: VideoReviewFrame[] = [];
@@ -73,7 +120,13 @@ export async function POST(request: NextRequest) {
     let finalPrompt = prompt;
     const notes: string[] = [];
 
-    if (faceId) {
+    if (veo) {
+      if (faceId) throw new ApiError(400, 'Verified faces are for Seedance. Google Veo takes the person straight from your image.', 'bad_request');
+      if (!imageUrl) throw new ApiError(400, VEO_START_IMAGE, 'needs_image');
+      frames = [{ url: imageUrl, label: 'Your image', kind: 'photo' }];
+      notes.push('The video starts from your image. Veo keeps real people as they are.');
+      if (images.length > 1) notes.push(`Veo takes one start image, so only the first of your ${images.length} images is used.`);
+    } else if (faceId) {
       const face = await readyFaceAssets(user.id, faceId);
       mode = 'reference';
       frames = face.assets.slice(0, MAX_FACE_PHOTOS).map((asset, index) => ({
@@ -83,9 +136,21 @@ export async function POST(request: NextRequest) {
         kind: 'face',
       }));
       const faceImages = frames.map((_, index) => `Image ${index + 1}`).join(' and ');
-      if (imageUrl) frames.push({ url: imageUrl, label: 'Your image', kind: 'photo' });
-      finalPrompt = `${prompt}\n\nThe person in this video is ${face.name}, exactly as in ${faceImages}.${imageUrl ? ` Image ${frames.length} shows what else to feature.` : ''}`;
+      const faces = frames.length;
+      for (const url of images.slice(0, MAX_REFERENCE_IMAGES - faces)) frames.push({ url, label: 'Your image', kind: 'photo' });
+      const extra = frames.length - faces;
+      finalPrompt = `${prompt}\n\nThe person in this video is ${face.name}, exactly as in ${faceImages}.${extra === 1 ? ` Image ${frames.length} shows what else to feature.` : extra > 1 ? ` Images ${faces + 1}–${frames.length} show what else to feature.` : ''}`;
       notes.push(`${face.name}’s verified face is in this video, so Seedance keeps it and the video can have sound.`);
+    } else if (asReferences) {
+      // A reference film: Seedance builds the video from all the images; the prompt names them.
+      mode = 'reference';
+      frames = images.map((url, index) => ({ url, label: `Image ${index + 1}`, kind: 'photo' }));
+      const { faces } = await inspectFaces(images).catch(() => ({ faces: images.map(() => false) }));
+      const withFace = faces.map((face, index) => (face ? index + 1 : 0)).filter(Boolean);
+      if (withFace.length) {
+        throw new ApiError(409, `${withFace.length === 1 ? `Image ${withFace[0]} shows` : `Images ${withFace.join(', ')} show`} a real person’s face, which Seedance 2.5 refuses. Use images without faces, or Google Veo (it keeps real people).`, 'real_face');
+      }
+      notes.push(`Seedance builds the video from your ${images.length === 1 ? 'image' : `${images.length} images`}; name ${images.length === 1 ? 'it “Image 1”' : 'them “Image 1”, “Image 2”…'} in the prompt to say which goes where.`);
     } else if (imageUrl) {
       frames = [{ url: imageUrl, label: 'Your image', kind: 'photo' }];
       // The face check costs nothing to the user; if it can't run, Seedance's own check still catches a face at render.
@@ -112,7 +177,7 @@ export async function POST(request: NextRequest) {
     const seconds = snapVideoDuration(model, Number(body.durationSeconds));
     const quality = normalizeVideoQuality(model, typeof body.quality === 'string' ? body.quality : undefined);
     const review: VideoReview = {
-      engine: 'seedance',
+      engine: veo ? 'veo' : 'seedance',
       model,
       quality,
       durationSeconds: seconds,
@@ -138,6 +203,9 @@ export async function POST(request: NextRequest) {
       textOnly: frames.length === 0,
       faceId,
       heroFrameUrl: imageUrl ?? frames.find((frame) => frame.preview)?.preview ?? null,
+      ...(clientId ? { clientId } : {}),
+      // Where it was made: the Create tab lists only its own videos.
+      ...(body.surface === 'create' ? { surface: 'create' } : {}),
     });
     return NextResponse.json({ reviewId, review });
   } catch (error) {

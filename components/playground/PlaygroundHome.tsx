@@ -3,37 +3,46 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FolderPlus, ImageIcon, Loader2, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Building2, FolderPlus, ImageIcon, Loader2, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import toast from '@/lib/toast';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { playgroundApi } from '@/lib/playground/api';
+import { useAgencyClients } from '@/lib/playground/agencyClients';
 import { cachedProjectList, forgetProject, prefetchProject, rememberBundle, rememberProjectList } from '@/lib/playground/cache';
 import { previewProjects, PREVIEW_PROJECT_ID } from '@/lib/playground/preview';
 import type { PlaygroundProjectSummary } from '@/lib/playground/types';
+import type { ClientRef } from '@/lib/clients';
+import { ClientBadge, NewProjectButton, useProjectClients } from './ClientControls';
+import { ClientPicker } from './ClientPicker';
 import { usePreviewFlag } from './hooks';
 import { PlaygroundTabs } from './PlaygroundTabs';
 import { Popover, PopoverClose, timeAgo } from './ui';
 
 const TOAST = { position: 'top-center' as const };
 
-function ProjectCard({ project, href, onRename, onDelete, onWarm }: {
+/** `client`: the project's client (null: none yet); left out where clients don't apply. */
+function ProjectCard({ project, href, client, onClient, onRename, onDelete, onWarm }: {
   project: PlaygroundProjectSummary;
   href: string;
+  client?: ClientRef | null;
+  onClient?: (client: ClientRef | null) => Promise<void>;
   onRename: () => void;
   onDelete: () => void;
   onWarm?: () => void;
 }) {
   const [coverFailed, setCoverFailed] = useState(false);
+  const [picking, setPicking] = useState(false);
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-white/8 bg-white/[0.03] transition-colors hover:border-white/15">
       <Link href={href} className="block" onPointerEnter={onWarm} onFocus={onWarm}>
-        <div className="aspect-[4/3] overflow-hidden bg-[#111115]">
+        <div className="relative aspect-[4/3] overflow-hidden bg-[#111115]">
           {project.coverUrl && !coverFailed ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={project.coverUrl} alt="" loading="lazy" onError={() => setCoverFailed(true)} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
           ) : (
             <div className="flex h-full items-center justify-center"><ImageIcon className="h-8 w-8 text-white/15" /></div>
           )}
+          <ClientBadge client={client ?? null} />
         </div>
         <div className="px-3.5 py-3 pr-11">
           <h3 className="truncate text-sm font-medium text-white">{project.name}</h3>
@@ -42,6 +51,7 @@ function ProjectCard({ project, href, onRename, onDelete, onWarm }: {
           </p>
         </div>
       </Link>
+      <ClientPicker anchor open={picking} onOpenChange={setPicking} value={client?.id ?? null} onPick={(picked) => onClient?.(picked)} title="Which client is this project for?" align="end">
       <div className="absolute bottom-2.5 right-2">
         <Popover
           side="bottom"
@@ -58,6 +68,14 @@ function ProjectCard({ project, href, onRename, onDelete, onWarm }: {
               <Pencil className="h-4 w-4" /> Rename
             </button>
           </PopoverClose>
+          {client !== undefined && (
+            <PopoverClose asChild>
+              {/* Opens once the menu has closed (the menu hands focus back first). */}
+              <button type="button" onClick={() => window.setTimeout(() => setPicking(true), 0)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-white/85 hover:bg-white/8">
+                <Building2 className="h-4 w-4" /> {client ? 'Change client' : 'Add client'}
+              </button>
+            </PopoverClose>
+          )}
           <PopoverClose asChild>
             <button type="button" onClick={onDelete} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-red-300 hover:bg-red-500/10">
               <Trash2 className="h-4 w-4" /> Delete
@@ -65,6 +83,7 @@ function ProjectCard({ project, href, onRename, onDelete, onWarm }: {
           </PopoverClose>
         </Popover>
       </div>
+      </ClientPicker>
     </div>
   );
 }
@@ -79,6 +98,7 @@ export function PlaygroundHome() {
   // The dev preview starts from sample projects; renames and deletes then edit this copy.
   const projects = loaded ?? (preview ? previewProjects() : null);
   const setProjects = (update: (list: PlaygroundProjectSummary[] | null) => PlaygroundProjectSummary[] | null) => setLoaded(update(projects));
+  const clients = useProjectClients(preview || Boolean(user));
 
   useEffect(() => {
     if (preview || authLoading || !user) return;
@@ -92,11 +112,12 @@ export function PlaygroundHome() {
 
   const hrefFor = (id: string) => (preview ? `/playground/${PREVIEW_PROJECT_ID}?previewPlayground=1` : `/playground/${id}`);
 
-  const create = async () => {
+  const create = async (client: ClientRef | null) => {
     if (preview) return router.push(hrefFor(PREVIEW_PROJECT_ID));
     setCreating(true);
     try {
-      const { project } = await playgroundApi.createProject(`Project ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`);
+      const { project } = await playgroundApi.createProject(`Project ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`, 'image', client?.id ?? null);
+      if (client) useAgencyClients.getState().assign(project.id, client.id);
       // A new project is empty: it can open without waiting for the server.
       rememberBundle(project.id, { project, references: [], runs: [], items: [], nextBefore: null, refunded: 0 });
       router.push(`/playground/${project.id}`);
@@ -144,9 +165,11 @@ export function PlaygroundHome() {
           <div className="flex flex-wrap items-center gap-3">
           <PlaygroundTabs active="images" preview={preview} />
           {!signedOut && (
-            <button type="button" onClick={create} disabled={creating} className="inline-flex items-center gap-2 rounded-full bg-[#fff05a] px-5 py-2.5 text-sm font-medium text-black hover:bg-white disabled:opacity-60">
-              {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderPlus className="h-4 w-4" />} New project
-            </button>
+            <NewProjectButton enabled={clients.enabled} onCreate={create}>
+              <button type="button" disabled={creating} className="inline-flex items-center gap-2 rounded-full bg-[#fff05a] px-5 py-2.5 text-sm font-medium text-black hover:bg-white disabled:opacity-60">
+                {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderPlus className="h-4 w-4" />} New project
+              </button>
+            </NewProjectButton>
           )}
           </div>
         </div>
@@ -166,12 +189,23 @@ export function PlaygroundHome() {
         )}
         {projects && (
           <div className="mt-8 grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
-            <button type="button" onClick={create} disabled={creating} className="flex h-full min-h-[200px] flex-col items-center justify-center gap-2.5 rounded-2xl border border-dashed border-white/15 text-white/60 transition-colors hover:border-[#fff05a]/50 hover:bg-[#fff05a]/[0.04] hover:text-white">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04]"><FolderPlus className="h-4 w-4" /></span>
-              <span className="text-sm">New project</span>
-            </button>
+            <NewProjectButton enabled={clients.enabled} onCreate={create}>
+              <button type="button" disabled={creating} className="flex h-full min-h-[200px] flex-col items-center justify-center gap-2.5 rounded-2xl border border-dashed border-white/15 text-white/60 transition-colors hover:border-[#fff05a]/50 hover:bg-[#fff05a]/[0.04] hover:text-white">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04]"><FolderPlus className="h-4 w-4" /></span>
+                <span className="text-sm">New project</span>
+              </button>
+            </NewProjectButton>
             {projects.map((project) => (
-              <ProjectCard key={project.id} project={project} href={hrefFor(project.id)} onRename={() => rename(project)} onDelete={() => remove(project)} onWarm={preview ? undefined : () => prefetchProject(project.id)} />
+              <ProjectCard
+                key={project.id}
+                project={project}
+                href={hrefFor(project.id)}
+                client={clients.enabled ? clients.clientOf(project.id) : undefined}
+                onClient={(client) => clients.save(project.id, client, preview)}
+                onRename={() => rename(project)}
+                onDelete={() => remove(project)}
+                onWarm={preview ? undefined : () => prefetchProject(project.id)}
+              />
             ))}
           </div>
         )}

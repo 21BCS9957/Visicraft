@@ -3,14 +3,22 @@ import 'server-only';
 import type { NextRequest } from 'next/server';
 import type { User } from '@supabase/supabase-js';
 import { createServiceClient } from '@/lib/supabase/server';
-import { ApiError, withUser } from '@/lib/server/playground/http';
+import { ApiError, isUuid, withUser } from '@/lib/server/playground/http';
+import { DASHBOARD_OWNER_EMAIL, isOwnerEmail, isTeamEmail, OWNER_ACCOUNT_EMAILS, TEAM_DOMAIN } from '@/lib/server/agency';
+import { CLIENTS_SETUP_MESSAGE, isClientsMissing, listClients, suggestClients } from '@/lib/server/clients';
 import { loadVideosOf } from '@/lib/server/videoHistory';
+import { clientInName, isDefaultProjectName, type ClientRef } from '@/lib/clients';
 import { isPlaygroundModel, playgroundModel } from '@/lib/playground/models';
 import { studioVideoStatus, type StudioVideo } from '@/lib/video/shared';
 import { seedanceSpec } from '@/lib/videoModels';
 import type {
   ActivityDay,
+  ClientPerson,
+  ClientProject,
   ClientSpend,
+  DashboardClient,
+  DashboardClientDetail,
+  DashboardClients,
   DashboardInsights,
   DashboardOutcomes,
   DashboardOverview,
@@ -30,35 +38,25 @@ import type {
   TeamMemberSummary,
   UsageCounts,
   UsagePeriod,
+  UnsortedProject,
   UsageRange,
   WasteSummary,
 } from '@/lib/dashboard/types';
 
+export { DASHBOARD_OWNER_EMAIL, isOwnerEmail, isTeamEmail, TEAM_DOMAIN };
+
 /**
  * The GoGrowth dashboard (dashboard.<domain>): only the owner's Google account can open it,
  * and it shows, read-only, every confirmed account at the team's domain: what they have made
- * and what is generating right now. Nothing here writes, charges, refunds or polls a render.
+ * and what is generating right now. Nothing here charges, refunds or polls a render; the only
+ * writes are the owner's client list (lib/server/clients.ts).
  */
-
-export const DASHBOARD_OWNER_EMAIL = 'gogrowthsoftware@gmail.com';
-export const TEAM_DOMAIN = 'gogrowthlabs.com';
 
 type Db = ReturnType<typeof createServiceClient>;
 type Row = Record<string, unknown>;
 
 /** An image model's name; an id the Playground doesn't list is shown as it is. */
 const modelName = (id: unknown) => (typeof id === 'string' && id ? (isPlaygroundModel(id) ? playgroundModel(id).name : id) : null);
-
-export function isOwnerEmail(email?: string | null): boolean {
-  return (email ?? '').trim().toLowerCase() === DASHBOARD_OWNER_EMAIL;
-}
-
-/** Exactly name@gogrowthlabs.com (not a subdomain, not a lookalike). */
-export function isTeamEmail(email?: string | null): boolean {
-  const value = (email ?? '').trim().toLowerCase();
-  const at = value.indexOf('@');
-  return at > 0 && at === value.lastIndexOf('@') && value.slice(at + 1) === TEAM_DOMAIN;
-}
 
 const NOT_OWNER = 'This dashboard is only for GoGrowth’s owner account.';
 
@@ -281,7 +279,8 @@ function afterCursor<T extends Pageable<T>>(query: T, cursor: Cursor | null, ran
   return query.or(`created_at.lt."${cursor.at}",and(created_at.eq."${cursor.at}",id.lt.${cursor.id})`);
 }
 
-type FeedOptions = { status: FeedStatus; project?: string | null; cursor: Cursor | null; limit: number };
+/** `projects`: only these projects (a client's); an empty list matches nothing. */
+type FeedOptions = { status: FeedStatus; project?: string | null; projects?: string[] | null; cursor: Cursor | null; limit: number };
 
 /** Team images (Playground and quick generations), newest first. */
 async function feedImages(db: Db, userIds: string[], options: FeedOptions) {
@@ -292,6 +291,7 @@ async function feedImages(db: Db, userIds: string[], options: FeedOptions) {
     else if (options.status === 'failed') query = query.in('status', ['failed', 'cancelled']);
     else query = query.in('status', ['generating', 'queued']).gte('created_at', new Date(Date.now() - LIVE_IMAGE_MS).toISOString());
     if (options.project) query = query.eq('project_id', options.project);
+    if (options.projects) query = query.in('project_id', options.projects);
     return afterCursor(query, options.cursor, SOURCE_RANK.playground);
   };
   // Quick generations have no project and are only ever finished.
@@ -300,9 +300,10 @@ async function feedImages(db: Db, userIds: string[], options: FeedOptions) {
       .order('created_at', { ascending: false }).order('id', { ascending: false }).limit(options.limit + 1);
     return afterCursor(query, options.cursor, SOURCE_RANK.quick);
   };
+  if (options.projects && !options.projects.length) return { items: [] as FeedImage[], more: false };
   const [playground, generations] = await Promise.all([
     items(),
-    options.status === 'done' && !options.project ? quick() : Promise.resolve({ data: [] as Row[], error: null }),
+    options.status === 'done' && !options.project && !options.projects ? quick() : Promise.resolve({ data: [] as Row[], error: null }),
   ]);
   if (playground.error) throw new ApiError(500, 'Could not load the images.', 'db');
   return {
@@ -334,7 +335,8 @@ function videoMatches(status: FeedStatus, video: StudioVideo, now: number): bool
  * time alone pages them (strictly older than the cursor's time).
  */
 async function feedVideos(db: Db, userIds: string[], options: FeedOptions) {
-  const { entries, nextBefore } = await loadVideosOf(db, userIds, { projectId: options.project, before: options.cursor?.at ?? null, limit: options.limit });
+  if (options.projects && !options.projects.length) return { items: [] as FeedItem[], more: false };
+  const { entries, nextBefore } = await loadVideosOf(db, userIds, { projectId: options.project, projectIds: options.projects, before: options.cursor?.at ?? null, limit: options.limit });
   const now = Date.now();
   const matching = entries.filter((entry) => videoMatches(options.status, entry.video, now));
   const names = await projectNames(db, matching.map((entry) => entry.projectId ?? ''));
@@ -351,14 +353,14 @@ async function feedVideos(db: Db, userIds: string[], options: FeedOptions) {
 }
 
 /**
- * One page of what the team (or one account, or one project) made, images and videos merged
- * newest first: finished ones by default, or those in progress, or those that failed.
- * `before` continues from the last page.
+ * One page of what the team (or one account, or one project, or one client's projects) made,
+ * images and videos merged newest first: finished ones by default, or those in progress, or
+ * those that failed. `before` continues from the last page.
  */
-export async function loadFeed(userIds: string[], options: { type: FeedType; status: FeedStatus; project?: string | null; before?: string | null; limit?: number }): Promise<FeedPage> {
+export async function loadFeed(userIds: string[], options: { type: FeedType; status: FeedStatus; project?: string | null; projects?: string[] | null; before?: string | null; limit?: number }): Promise<FeedPage> {
   const db = createServiceClient();
   const limit = Math.min(60, options.limit ?? 48);
-  const shared = { status: options.status, project: options.project ?? null, cursor: parseCursor(options.before), limit };
+  const shared = { status: options.status, project: options.project ?? null, projects: options.projects ?? null, cursor: parseCursor(options.before), limit };
   const [images, videos] = await Promise.all([
     options.type === 'video' ? Promise.resolve({ items: [] as FeedItem[], more: false }) : feedImages(db, userIds, shared),
     options.type === 'image' ? Promise.resolve({ items: [] as FeedItem[], more: false }) : feedVideos(db, userIds, shared),
@@ -539,7 +541,7 @@ async function loadProjects(db: Db, userIds: string[]): Promise<{ recent: Dashbo
     const row = ((own ?? []) as Row[])[0];
     if (row) latest.set(id, projectOf(row));
   }));
-  return { recent: rows.slice(0, 5), latest };
+  return { recent: rows.slice(0, 6), latest };
 }
 
 /**
@@ -576,9 +578,7 @@ async function loadOutcomes(db: Db, userIds: string[], entries: UsageEntry[]): P
 
 /** Rupees per US dollar for the cost estimates; USD_TO_INR changes it. */
 const INR_PER_USD = Number(process.env.USD_TO_INR) > 0 ? Number(process.env.USD_TO_INR) : 99;
-/** The owner's own accounts: what they make counts in every total, but no row shows them. */
-const OWNER_ACCOUNT_EMAILS = [DASHBOARD_OWNER_EMAIL, 'bananabondismyth@gmail.com'];
-const USAGE_COLUMNS = 'id, user_id, provider, model, feature, image_count, video_seconds, estimated_cost_usd, credit_cost, created_at, mode:metadata->>mode, refunded:metadata->>refunded, newVideo:metadata->>newVideo, projectId:metadata->>projectId, itemId:metadata->>itemId, label:metadata->>label';
+const USAGE_COLUMNS = 'id, user_id, provider, model, feature, image_count, video_seconds, estimated_cost_usd, credit_cost, created_at, mode:metadata->>mode, refunded:metadata->>refunded, newVideo:metadata->>newVideo, projectId:metadata->>projectId, clientId:metadata->>clientId, itemId:metadata->>itemId, label:metadata->>label';
 const RANGES: UsageRange[] = ['today', 'yesterday', '7d', '30d', 'all'];
 
 /** The last `count` India days, today included. */
@@ -655,6 +655,8 @@ interface UsageEntry {
   usd: number;
   mode: string;
   projectId: string | null;
+  /** The client its project had when the project was deleted (kept by the database). */
+  clientId: string | null;
   /** The Playground image it made (for an edit: the image it edited). */
   itemId: string | null;
   /** What a render made outside the app was ("Colorland Treetop ad v1 · 30 s draft"). */
@@ -686,6 +688,7 @@ function usageEntry(row: Row): UsageEntry | null {
     usd: Number(row.estimated_cost_usd) || 0,
     mode,
     projectId: typeof row.projectId === 'string' && row.projectId ? row.projectId : null,
+    clientId: typeof row.clientId === 'string' && row.clientId ? row.clientId : null,
     itemId: typeof row.itemId === 'string' && row.itemId ? row.itemId : null,
     label: typeof row.label === 'string' && row.label ? row.label : null,
   };
@@ -814,7 +817,7 @@ function clientNames(names: string[]): Map<string, string> {
  * usage entries (as every other card counts) and the Playground images that still exist: a
  * Playground image whose row is gone was deleted after it was made (and paid for).
  */
-async function loadInsights(db: Db, entries: UsageEntry[], counted: string[], teamIds: string[]): Promise<DashboardInsights> {
+async function loadInsights(db: Db, entries: UsageEntry[], counted: string[], teamIds: string[], index: ClientIndex | null): Promise<DashboardInsights> {
   const now = Date.now();
   const inRange = rangeDays(now);
   const team = new Set(teamIds);
@@ -827,11 +830,23 @@ async function loadInsights(db: Db, entries: UsageEntry[], counted: string[], te
   const modelOfRun = new Map(runs.map((run) => [String(run.id), String(run.model)]));
   const inr = (usd: number) => Math.round(usd * INR_PER_USD);
 
-  // Clients: the project's name, a render made outside the app by its label's first word.
+  // Clients: the real ones once they are set up; before, the project's name (a render made
+  // outside the app by its label's first word), grouped by name.
   const projectName = (entry: UsageEntry) => entry.projectId
     ? names.get(entry.projectId) ?? 'Deleted project'
     : entry.mode === 'outside_app' && entry.label ? entry.label.split(' ')[0] : 'No project';
   const clientOf = clientNames(entries.map(projectName));
+  const bucketOf = (entry: UsageEntry): { key: string; id: string | null; name: string } => {
+    if (index) {
+      const id = clientOfEntry(index, entry);
+      if (id) return { key: id, id, name: index.byId.get(id)!.name };
+      const none = !entry.projectId ? 'No project' : index.projectClient.has(entry.projectId) ? UNSORTED : 'Deleted project';
+      return { key: none.toLowerCase(), id: null, name: none };
+    }
+    const project = projectName(entry);
+    const name = clientOf.get(project.toLowerCase()) ?? project;
+    return { key: name.toLowerCase(), id: null, name };
+  };
 
   const failedItems = items.filter((item) => item.status === 'failed');
   const failedDay = (item: Row) => dayOf(String(item.finished_at ?? item.created_at));
@@ -847,8 +862,8 @@ async function loadInsights(db: Db, entries: UsageEntry[], counted: string[], te
     const byClient = new Map<string, ClientBucket>();
     for (const entry of inPeriod) {
       const project = projectName(entry);
-      const name = clientOf.get(project.toLowerCase()) ?? project;
-      const bucket = byClient.get(name.toLowerCase()) ?? { key: name.toLowerCase(), name, projects: new Set<string>(), users: new Set<string>(), images: 0, videos: 0, credits: 0, usd: 0 };
+      const client = bucketOf(entry);
+      const bucket = byClient.get(client.key) ?? { ...client, projects: new Set<string>(), users: new Set<string>(), images: 0, videos: 0, credits: 0, usd: 0 };
       bucket.projects.add(project);
       if (team.has(entry.userId)) bucket.users.add(entry.userId);
       bucket.images += entry.images;
@@ -941,15 +956,16 @@ export async function loadOverview(): Promise<DashboardOverview> {
   const [members, ownerIds] = await Promise.all([listTeamMembers(), ownerAccountIds()]);
   const ids = members.map((member) => member.id);
   const counted = [...ids, ...ownerIds];
-  const [entries, live, projects] = await Promise.all([
+  const [entries, live, projects, index] = await Promise.all([
     usageEntries(db, counted),
     ids.length ? loadLive(ids) : Promise.resolve({ jobs: [], checkedAt: '' } as LiveSnapshot),
     loadProjects(db, ids),
+    loadClientIndex(db, counted),
   ]);
   const [summaries, outcomes30d, insights] = await Promise.all([
     Promise.all(members.map((member) => memberSummary(member.id, entries))),
     loadOutcomes(db, counted, entries),
-    loadInsights(db, entries, counted, ids),
+    loadInsights(db, entries, counted, ids, index),
   ]);
   const activity = activityFrom(entries);
   const usage = summarizeUsage(entries, ids);
@@ -977,4 +993,215 @@ export async function loadOverview(): Promise<DashboardOverview> {
     },
     activity,
   };
+}
+
+/* ---------------------------------------------------------------- clients */
+
+const UNSORTED = 'Unsorted';
+
+/** The client list and which client each project of the counted accounts has (null: none yet). */
+interface ClientIndex {
+  clients: ClientRef[];
+  byId: Map<string, ClientRef>;
+  projectClient: Map<string, string | null>;
+  projects: Array<DashboardProject & { clientId: string | null }>;
+}
+
+/** Null until the clients migration has run. */
+async function loadClientIndex(db: Db, userIds: string[]): Promise<ClientIndex | null> {
+  const { clients, setup } = await listClients(db);
+  if (setup) return null;
+  const projects: ClientIndex['projects'] = [];
+  for (let from = 0; userIds.length && from < 100_000; from += 1000) {
+    const { data, error } = await db.from('playground_projects').select(`${PROJECT_COLUMNS}, client_id`).in('user_id', userIds)
+      .order('updated_at', { ascending: false }).order('id', { ascending: true }).range(from, from + 999);
+    if (isClientsMissing(error)) return null;
+    if (error) throw new ApiError(500, 'Could not load the projects.', 'db');
+    const rows = (data ?? []) as unknown as Row[];
+    projects.push(...rows.map((row) => ({ ...projectOf(row), clientId: typeof row.client_id === 'string' ? row.client_id : null })));
+    if (rows.length < 1000) break;
+  }
+  return {
+    clients,
+    byId: new Map(clients.map((client) => [client.id, client])),
+    projectClient: new Map(projects.map((project) => [project.id, project.clientId])),
+    projects,
+  };
+}
+
+/**
+ * The client a usage entry's money counts for: its project's client now (so sorting an old
+ * project brings its past spend along), else the client its deleted project had (kept by the
+ * database), else, for a render made outside the app, the client its label starts with.
+ */
+function clientOfEntry(index: ClientIndex, entry: UsageEntry): string | null {
+  if (entry.projectId && index.projectClient.has(entry.projectId)) return index.projectClient.get(entry.projectId) ?? null;
+  if (entry.clientId && index.byId.has(entry.clientId)) return entry.clientId;
+  if (!entry.projectId && entry.mode === 'outside_app' && entry.label) return clientInName(index.clients, entry.label)?.id ?? null;
+  return null;
+}
+
+type Tally = UsageCounts & { usd: number };
+
+/** A project as the dashboard sends it (without the index's client id). */
+const plainProject = ({ id, name, kind, coverUrl, userId, updatedAt }: DashboardProject): DashboardProject => ({ id, name, kind, coverUrl, userId, updatedAt });
+
+function tally(counts: Tally, entry: UsageEntry): void {
+  counts.images += entry.images;
+  counts.gemini += entry.gemini;
+  counts.gpt += entry.gpt;
+  counts.videos += entry.videos;
+  counts.credits += entry.credits;
+  counts.usd += entry.usd;
+}
+
+const inrOf = ({ usd, ...counts }: Tally): UsageCounts => ({ ...counts, costInr: Math.round(usd * INR_PER_USD) });
+const latest = (...times: Array<number | string | null | undefined>) => {
+  const values = times.map((time) => (typeof time === 'string' ? Date.parse(time) : time ?? NaN)).filter((time) => Number.isFinite(time)) as number[];
+  return values.length ? new Date(Math.max(...values)).toISOString() : null;
+};
+
+/** What each project made and cost, all time (deleted images included: they were paid for). */
+function projectTallies(entries: UsageEntry[]): Map<string, Tally> {
+  const byProject = new Map<string, Tally>();
+  for (const entry of entries) {
+    if (!entry.projectId) continue;
+    const counts = byProject.get(entry.projectId) ?? emptyCounts();
+    tally(counts, entry);
+    byProject.set(entry.projectId, counts);
+  }
+  return byProject;
+}
+
+/** The team's accounts, and those plus the owner's own (whose work counts in every total). */
+export async function countedAccounts(): Promise<{ teamIds: string[]; counted: string[] }> {
+  const [members, ownerIds] = await Promise.all([listTeamMembers(), ownerAccountIds()]);
+  const teamIds = members.map((member) => member.id);
+  return { teamIds, counted: [...teamIds, ...ownerIds] };
+}
+
+/**
+ * The Clients page: every client with what was made and spent for it in each period, and the
+ * projects without a client (the owner's own accounts' too: their money counts) with the client
+ * each one's name suggests.
+ */
+export async function loadClients(): Promise<DashboardClients> {
+  const db = createServiceClient();
+  const { teamIds, counted } = await countedAccounts();
+  const [index, entries] = await Promise.all([loadClientIndex(db, counted), usageEntries(db, counted)]);
+  if (!index) return { clients: [], unsorted: [], setup: CLIENTS_SETUP_MESSAGE };
+  const team = new Set(teamIds);
+  const inRange = rangeDays(Date.now());
+
+  type Bucket = { periods: Record<UsageRange, Tally>; spend: Map<string, number>; last: number };
+  const buckets = new Map<string, Bucket>(index.clients.map((client) => [client.id, {
+    periods: Object.fromEntries(RANGES.map((range) => [range, emptyCounts()])) as Record<UsageRange, Tally>,
+    spend: new Map(),
+    last: 0,
+  }]));
+  for (const entry of entries) {
+    const id = clientOfEntry(index, entry);
+    const bucket = id ? buckets.get(id) : undefined;
+    if (!bucket) continue;
+    for (const range of RANGES) if (inRange(range, entry.day)) tally(bucket.periods[range], entry);
+    if (team.has(entry.userId)) bucket.spend.set(entry.userId, (bucket.spend.get(entry.userId) ?? 0) + entry.usd);
+    bucket.last = Math.max(bucket.last, entry.at);
+  }
+
+  const clients: DashboardClient[] = index.clients.map((client) => {
+    const bucket = buckets.get(client.id)!;
+    const projects = index.projects.filter((project) => project.clientId === client.id);
+    // Team accounts with a project here but nothing spent yet come after those who spent.
+    for (const project of projects) if (team.has(project.userId) && !bucket.spend.has(project.userId)) bucket.spend.set(project.userId, 0);
+    return {
+      id: client.id,
+      name: client.name,
+      coverUrl: projects.find((project) => project.coverUrl)?.coverUrl ?? null,
+      projectCount: projects.length,
+      userIds: [...bucket.spend.entries()].sort((a, b) => b[1] - a[1]).map(([userId]) => userId),
+      lastActiveAt: latest(bucket.last || null, projects[0]?.updatedAt),
+      periods: Object.fromEntries(RANGES.map((range) => [range, inrOf(bucket.periods[range])])) as Record<UsageRange, UsageCounts>,
+    };
+  });
+
+  const loose = index.projects.filter((project) => project.clientId === null);
+  const suggestions = suggestClients(loose, index.clients);
+  const spent = projectTallies(entries);
+  const unsorted: UnsortedProject[] = loose.map((entry) => {
+    const project = plainProject(entry);
+    const counts = inrOf(spent.get(project.id) ?? emptyCounts());
+    return { ...project, ownerAccount: !team.has(project.userId), images: counts.images, videos: counts.videos, costInr: counts.costInr, suggestion: suggestions.get(project.id) ?? null };
+  }).sort((a, b) => Number(isDefaultProjectName(a.name)) - Number(isDefaultProjectName(b.name)) || b.costInr - a.costInr || b.updatedAt.localeCompare(a.updatedAt));
+
+  return { clients, unsorted };
+}
+
+/**
+ * One client: who worked on it, and what was made and spent for it (for one person, or for
+ * everyone with the owner's own accounts counted but unlisted, as on the Overview), plus its
+ * team projects.
+ */
+export async function loadClient(clientId: string, person: string | null): Promise<DashboardClientDetail> {
+  if (!isUuid(clientId)) throw new ApiError(404, 'This client was not found.', 'not_found');
+  const db = createServiceClient();
+  const { teamIds, counted } = await countedAccounts();
+  const [index, entries] = await Promise.all([loadClientIndex(db, counted), usageEntries(db, counted)]);
+  if (!index) throw new ApiError(503, CLIENTS_SETUP_MESSAGE, 'setup');
+  const client = index.byId.get(clientId);
+  if (!client) throw new ApiError(404, 'This client was not found.', 'not_found');
+  const team = new Set(teamIds);
+  const mine = entries.filter((entry) => clientOfEntry(index, entry) === clientId);
+  const ownProjects = index.projects.filter((project) => project.clientId === clientId && team.has(project.userId));
+
+  const people = new Map<string, Tally>();
+  for (const entry of mine) {
+    if (!team.has(entry.userId)) continue;
+    const counts = people.get(entry.userId) ?? emptyCounts();
+    tally(counts, entry);
+    people.set(entry.userId, counts);
+  }
+  for (const project of ownProjects) if (!people.has(project.userId)) people.set(project.userId, emptyCounts());
+  const who = person && people.has(person) ? person : null;
+  const scoped = who ? mine.filter((entry) => entry.userId === who) : mine;
+  const spent = projectTallies(scoped);
+
+  return {
+    client,
+    people: [...people.entries()]
+      .map(([userId, counts]): ClientPerson => {
+        const { images, videos, costInr } = inrOf(counts);
+        return { userId, images, videos, costInr };
+      })
+      .sort((a, b) => b.costInr - a.costInr || b.images - a.images),
+    person: who,
+    usage: summarizeUsage(scoped, teamIds),
+    projects: ownProjects
+      .filter((project) => !who || project.userId === who)
+      .map((entry): ClientProject => {
+        const project = plainProject(entry);
+        const { images, videos, costInr } = inrOf(spent.get(project.id) ?? emptyCounts());
+        return { ...project, images, videos, costInr };
+      }),
+    projectCount: ownProjects.length,
+    lastActiveAt: latest(mine.at(-1)?.at, ownProjects[0]?.updatedAt),
+  };
+}
+
+/** A client's team projects (for its wall); an unknown client has none. */
+export async function clientProjectIds(clientId: string, userIds: string[]): Promise<string[]> {
+  if (!isUuid(clientId) || !userIds.length) return [];
+  const { data, error } = await createServiceClient().from('playground_projects').select('id').eq('client_id', clientId).in('user_id', userIds).limit(2000);
+  if (isClientsMissing(error)) return [];
+  if (error) throw new ApiError(500, 'Could not load the client’s projects.', 'db');
+  return ((data ?? []) as Row[]).map((row) => String(row.id));
+}
+
+/** A project the owner may sort: one of a team or owner account (`counted`, looked up when left out), else "not found". */
+export async function requireCountedProject(projectId: string, counted?: string[]): Promise<{ id: string; userId: string }> {
+  if (!isUuid(projectId)) throw new ApiError(404, 'This project was not found.', 'not_found');
+  const db = createServiceClient();
+  const { data } = await db.from('playground_projects').select('id, user_id').eq('id', projectId).maybeSingle();
+  if (!data) throw new ApiError(404, 'This project was not found.', 'not_found');
+  if (!(counted ?? (await countedAccounts()).counted).includes(String(data.user_id))) throw new ApiError(404, 'This project was not found.', 'not_found');
+  return { id: String(data.id), userId: String(data.user_id) };
 }

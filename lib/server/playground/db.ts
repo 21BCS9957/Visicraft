@@ -45,6 +45,8 @@ export function toProject(row: Row): PlaygroundProject {
     // Rows from before the video-projects migration have no kind: they are image projects.
     kind: row.kind === 'video' ? 'video' : 'image',
     coverUrl: strOrNull(row.cover_url),
+    // Before the clients migration there is no column: no client.
+    clientId: strOrNull(row.client_id),
     createdAt: str(row.created_at),
     updatedAt: str(row.updated_at),
   };

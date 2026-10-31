@@ -11,7 +11,7 @@ import { cx } from '@/components/playground/ui';
 import { takeLabel } from '@/components/video-studio/VideoPlayerCard';
 import { useDashboard } from './DashboardData';
 import { clock, itemError, itemFile, itemKey, itemNote, itemPrompt, itemStartedAt, itemState, itemThumb, itemTitle, playableTake } from './items';
-import { dashboardHref, displayName, elapsed, formatWhen, MemberAvatar, StateChip, useNow } from './parts';
+import { dashboardHref, displayName, elapsed, formatWhen, MemberAvatar, projectViewerHref, StateChip, useNow } from './parts';
 
 /**
  * One generation full screen: the image or video on the left, who made it, where, when, the
@@ -243,6 +243,11 @@ function LightboxDetails({ item, take, versions, onVersion, onLeave }: {
       </Link>
 
       <h2 className="mt-5 text-base font-semibold leading-snug text-zinc-50">{itemTitle(item)}</h2>
+      {item.kind === 'image' && item.source === 'playground' && item.projectId && (
+        <Link href={projectViewerHref(item.userId, item.projectId, preview)} onClick={onLeave} className="mt-1 inline-flex text-xs text-zinc-400 underline-offset-2 hover:text-zinc-100 hover:underline">
+          See it in the project, with its prompt and references →
+        </Link>
+      )}
       {state && <div className="mt-2"><StateChip tone={state.tone} spinning={state.live}>{state.label}</StateChip></div>}
 
       <dl className="mt-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-5 gap-y-2 text-sm">

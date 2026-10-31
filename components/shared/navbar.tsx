@@ -62,8 +62,8 @@ export function Navbar() {
   // Video Studio. The Playground hub and the Library keep the navbar.
   const fullScreen = segments[0] === 'dashboard'
     || pathname?.startsWith('/workflow')
-    // Inside an image project (and its Canvas) or a video project; the hubs and the Library keep it.
-    || /^\/playground\/(video\/[^/]+|[0-9a-f-]{8,}|preview)(\/|$)/i.test(pathname ?? '');
+    // Inside an image project (and its Canvas), a video project or the Create tab; the hubs and the Library keep it.
+    || /^\/playground\/(video\/[^/]+|create|[0-9a-f-]{8,}|preview)(\/|$)/i.test(pathname ?? '');
   if (fullScreen) {
     return null;
   }
@@ -71,6 +71,7 @@ export function Navbar() {
   const links = [
     { href: '/', label: 'Home' },
     { href: '/playground', label: 'Playground' },
+    { href: '/creatives', label: 'Creatives' },
     { href: '/workflow', label: 'Workflow' },
     ...(SHOW_GENERATE ? [{ href: '/generate', label: 'Generate' }] : []),
     ...(SHOW_PRICING ? [{ href: '/pricing', label: 'Pricing' }] : []),

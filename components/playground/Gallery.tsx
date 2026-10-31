@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, CornerDownRight, Download, ImageIcon, Loader2, Pause, Play, Proportions, RotateCcw, Sparkles, Square, TextQuote, Upload } from 'lucide-react';
+import { ChevronDown, CornerDownRight, Download, ImageIcon, ListChecks, Loader2, Pause, Play, Proportions, RotateCcw, Sparkles, Square, TextQuote, Upload } from 'lucide-react';
 import toast from '@/lib/toast';
 import { playgroundApi } from '@/lib/playground/api';
 import { playgroundModel, QUALITY_LABELS, sizeOption, type ImageProvider } from '@/lib/playground/models';
@@ -12,6 +12,7 @@ import { runItems, usePlaygroundStore } from '@/lib/playground/store';
 import type { PlaygroundItem, PlaygroundRun } from '@/lib/playground/types';
 import { downloadZip, imageFileName, type ZipFile } from '@/lib/playground/zip';
 import { ImageCard, type PendingFit } from './ImageCard';
+import { RunDetails } from './RunDetails';
 import { ResizeDialog } from './ResizeDialog';
 import { cx, Popover, PopoverClose, timeAgo } from './ui';
 
@@ -46,9 +47,13 @@ function RunSection({ run, source, group, density, onOpen, onCanvas }: {
 }) {
   const allItems = usePlaygroundStore((state) => state.items);
   const setComposerDraft = usePlaygroundStore((state) => state.setComposerDraft);
+  // The owner's dashboard: everything shown, only Download to act on.
+  const viewOnly = usePlaygroundStore((state) => state.viewOnly);
   const items = useMemo(() => runItems(allItems, run.id), [allItems, run.id]);
   const [zipProgress, setZipProgress] = useState<string | null>(null);
   const [resizing, setResizing] = useState(false);
+  // "See inputs": the run's prompts, which references were on or off, and the guidelines.
+  const [inputs, setInputs] = useState(false);
 
   const counts = items.reduce<Record<PlaygroundItem['status'], number>>(
     (acc, item) => ({ ...acc, [item.status]: acc[item.status] + 1 }),
@@ -151,22 +156,27 @@ function RunSection({ run, source, group, density, onOpen, onCanvas }: {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {active && (
+          {active && !viewOnly && (
             <button type="button" onClick={() => cancelRun(run.id).catch((error) => toast.error(error.message, TOAST))} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 px-3 text-xs text-white/70 hover:bg-white/8 hover:text-white">
               <Square className="h-3 w-3" /> Cancel the rest
             </button>
           )}
-          {failedRetryable.length > 0 && (
+          {failedRetryable.length > 0 && !viewOnly && (
             <button type="button" onClick={() => failedRetryable.forEach((item) => void retryItem(item))} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 px-3 text-xs text-white/70 hover:bg-white/8 hover:text-white">
               <RotateCcw className="h-3 w-3" /> Retry {failedRetryable.length} failed
             </button>
           )}
-          {!copy && (
+          {!copy && !viewOnly && (
             <button type="button" onClick={() => setComposerDraft(run.prompts.join('\n\n'))} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 px-3 text-xs text-white/70 hover:bg-white/8 hover:text-white">
               <TextQuote className="h-3 w-3" /> Reuse prompts
             </button>
           )}
-          {counts.done > 0 && (
+          {!viewOnly && (
+            <button type="button" onClick={() => setInputs((shown) => !shown)} aria-expanded={inputs} className={cx('inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs hover:bg-white/8 hover:text-white', inputs ? 'border-white/25 text-white' : 'border-white/10 text-white/70')}>
+              <ListChecks className="h-3 w-3" /> {inputs ? 'Hide inputs' : 'See inputs'}
+            </button>
+          )}
+          {counts.done > 0 && !viewOnly && (
             <button type="button" onClick={() => setResizing(true)} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 px-3 text-xs text-white/70 hover:bg-white/8 hover:text-white">
               <Proportions className="h-3 w-3" /> Another size
             </button>
@@ -202,6 +212,7 @@ function RunSection({ run, source, group, density, onOpen, onCanvas }: {
           ))}
         </div>
       </header>
+      {(viewOnly || inputs) && <RunDetails run={run} items={items} defaultOpen={inputs} />}
       <div className="grid items-start gap-3" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${density}px, 1fr))` }}>
         {items.map((item) => (
           <ImageCard
@@ -209,7 +220,7 @@ function RunSection({ run, source, group, density, onOpen, onCanvas }: {
             item={item}
             prompt={promptFor(item)}
             onOpen={() => onOpen(item.id)}
-            onCanvas={CANVAS_ENABLED ? () => onCanvas(item.id) : undefined}
+            onCanvas={CANVAS_ENABLED && !viewOnly ? () => onCanvas(item.id) : undefined}
             pendingFit={item.status === 'queued' || item.status === 'generating' ? pendingFit(item) : undefined}
             canRetry={retryable(item)}
           />
@@ -256,6 +267,8 @@ export function Gallery({ density, bottomPadding }: { density: number; bottomPad
   const nextBefore = usePlaygroundStore((state) => state.nextBefore);
   const projectId = usePlaygroundStore((state) => state.projectId);
   const preview = usePlaygroundStore((state) => state.preview);
+  const viewOnly = usePlaygroundStore((state) => state.viewOnly);
+  const olderRuns = usePlaygroundStore((state) => state.olderRuns);
   const appendOlder = usePlaygroundStore((state) => state.appendOlder);
   const setLightbox = usePlaygroundStore((state) => state.setLightbox);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -288,7 +301,8 @@ export function Gallery({ density, bottomPadding }: { density: number; bottomPad
     if (!projectId || !nextBefore) return;
     setLoadingOlder(true);
     try {
-      appendOlder(await playgroundApi.getProject(projectId, nextBefore));
+      // Someone else's project (the dashboard) loads its older runs through the dashboard's API.
+      appendOlder(olderRuns ? await olderRuns(nextBefore) : await playgroundApi.getProject(projectId, nextBefore));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not load older runs', TOAST);
     } finally {
@@ -298,7 +312,7 @@ export function Gallery({ density, bottomPadding }: { density: number; bottomPad
 
   return (
     <div className="space-y-10 px-4 pt-5 sm:px-6" style={{ paddingBottom: bottomPadding }}>
-      {runner.paused && (
+      {runner.paused && !viewOnly && (
         <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-[#fff05a]/25 bg-[#fff05a]/[0.07] px-4 py-3 text-sm text-white">
           <Pause className="h-4 w-4 text-[#fff05a]" />
           <span className="min-w-[14rem] flex-1">{runner.paused}</span>
@@ -310,7 +324,7 @@ export function Gallery({ density, bottomPadding }: { density: number; bottomPad
           </button>
         </div>
       )}
-      {!runner.paused && (Object.entries(runner.pausedProviders) as Array<[ImageProvider, string]>).map(([provider, message]) => (
+      {!runner.paused && !viewOnly && (Object.entries(runner.pausedProviders) as Array<[ImageProvider, string]>).map(([provider, message]) => (
         <div key={provider} className="flex flex-wrap items-center gap-3 rounded-2xl border border-[#fff05a]/25 bg-[#fff05a]/[0.07] px-4 py-3 text-sm text-white">
           <Pause className="h-4 w-4 text-[#fff05a]" />
           <span className="min-w-[14rem] flex-1">
@@ -324,7 +338,7 @@ export function Gallery({ density, bottomPadding }: { density: number; bottomPad
           </button>
         </div>
       ))}
-      {!runner.paused && waiting.length > 0 && (
+      {!runner.paused && !viewOnly && waiting.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white">
           <Pause className="h-4 w-4 text-white/60" />
           <span className="min-w-[14rem] flex-1">{waiting.length} image{waiting.length === 1 ? ' is' : 's are'} waiting from an earlier session. Nothing is charged until each one starts.</span>
@@ -342,14 +356,14 @@ export function Gallery({ density, bottomPadding }: { density: number; bottomPad
           <h3 className="text-sm font-medium text-white">Edited in Canvas <span className="text-white/40">· {edits.length}</span></h3>
           <div className="grid items-start gap-3" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${density}px, 1fr))` }}>
             {edits.map((item) => (
-              <ImageCard key={item.id} item={item} prompt="Edited in Canvas" onOpen={() => setLightbox(item.id)} onCanvas={CANVAS_ENABLED ? () => openCanvas(item.id) : undefined} />
+              <ImageCard key={item.id} item={item} prompt="Edited in Canvas" onOpen={() => setLightbox(item.id)} onCanvas={CANVAS_ENABLED && !viewOnly ? () => openCanvas(item.id) : undefined} />
             ))}
           </div>
         </section>
       )}
 
       {visibleRuns.length === 0 && edits.length === 0 ? (
-        <EmptyState />
+        viewOnly ? <p className="pt-16 text-center text-sm text-white/45">No images in this project yet.</p> : <EmptyState />
       ) : (
         visibleRuns.map(({ run, source }) => (
           <RunSection key={run.id} run={run} source={source} group={groups.get((source ?? run).id) ?? [run]} density={density} onOpen={setLightbox} onCanvas={openCanvas} />

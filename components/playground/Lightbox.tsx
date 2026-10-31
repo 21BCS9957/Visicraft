@@ -34,6 +34,8 @@ function LightboxBody({ item, run, onPrev, onNext }: {
   const router = useRouter();
   const projectId = usePlaygroundStore((state) => state.projectId);
   const preview = usePlaygroundStore((state) => state.preview);
+  // The owner's dashboard: details and download only.
+  const viewOnly = usePlaygroundStore((state) => state.viewOnly);
   const addRun = usePlaygroundStore((state) => state.addRun);
   const setLightbox = usePlaygroundStore((state) => state.setLightbox);
   const items = usePlaygroundStore((state) => state.items);
@@ -153,13 +155,16 @@ function LightboxBody({ item, run, onPrev, onNext }: {
           <a href={actions.href} download={actions.fileName} className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-[#fff05a] text-sm font-medium text-black hover:bg-white">
             <Download className="h-4 w-4" /> Download
           </a>
-          {CANVAS_ENABLED && projectId && (
+          {CANVAS_ENABLED && projectId && !viewOnly && (
             <button type="button" onClick={() => router.push(`/playground/${projectId}/canvas/${item.id}${preview ? '?previewPlayground=1' : ''}`)} className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.06] text-sm text-white hover:bg-white/12">
               <Wand2 className="h-4 w-4" /> Open in Canvas
             </button>
           )}
         </div>
 
+        {viewOnly ? (
+          item.favorite ? <p className="flex items-center gap-1.5 text-xs text-white/70"><Star className="h-3.5 w-3.5 fill-[#fff05a] text-[#fff05a]" /> They favourited this image</p> : null
+        ) : (
         <div className="flex flex-wrap gap-2 text-xs">
           <button type="button" onClick={actions.toggleFavorite} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-white/75 hover:bg-white/8">
             <Star className={cx('h-3.5 w-3.5', item.favorite && 'fill-[#fff05a] text-[#fff05a]')} /> {item.favorite ? 'Favourite' : 'Add to favourites'}
@@ -184,6 +189,7 @@ function LightboxBody({ item, run, onPrev, onNext }: {
             <Trash2 className="h-3.5 w-3.5" /> Delete
           </button>
         </div>
+        )}
 
         {copy && (
           <section className="space-y-2">

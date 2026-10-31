@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { listTeamMembers, loadFeed, requireDashboardOwner, requireTeamMember } from '@/lib/server/dashboard';
+import { clientProjectIds, listTeamMembers, loadFeed, requireDashboardOwner, requireTeamMember } from '@/lib/server/dashboard';
 import { apiErrorResponse } from '@/lib/server/playground/http';
 import type { FeedStatus, FeedType } from '@/lib/dashboard/types';
 
 /**
- * What the team (or ?account=, or ?project=) made, images and videos newest first. ?type=,
- * ?status= (done by default, live, failed), ?before=. Read-only.
+ * What the team (or ?account=, or ?project=, or ?client=: its team projects) made, images and
+ * videos newest first. ?type=, ?status= (done by default, live, failed), ?before=. Read-only.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
     const type = (['image', 'video'].includes(params.get('type') ?? '') ? params.get('type') : 'all') as FeedType;
     const status = (['live', 'failed'].includes(params.get('status') ?? '') ? params.get('status') : 'done') as FeedStatus;
     const project = params.get('project');
+    const client = params.get('client');
     const before = params.get('before');
     const limit = Number(params.get('limit'));
     if (!userIds.length) return NextResponse.json({ items: [], nextBefore: null });
@@ -23,6 +24,7 @@ export async function GET(request: NextRequest) {
       type,
       status,
       project: project && /^[0-9a-f-]{36}$/i.test(project) ? project : null,
+      projects: client ? await clientProjectIds(client, userIds) : null,
       // The cursor from the last page ("time~source~id"); loadFeed checks it.
       before: before && before.length <= 120 ? before : null,
       limit: Number.isInteger(limit) && limit > 0 ? Math.min(limit, 60) : undefined,

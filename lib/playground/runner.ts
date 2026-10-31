@@ -71,6 +71,8 @@ function wakeAfter(ms: number) {
 
 /** Adds images to the queue (at the front for ones that must go next) and starts sending. */
 export function enqueue(ids: string[], front = false) {
+  // Viewing a team member's project: nothing is ever sent.
+  if (store().viewOnly) return;
   store().setRunner((runner) => {
     const known = new Set([...runner.queue, ...runner.inFlight, ...runner.checking]);
     const fresh = ids.filter((id) => !known.has(id));
@@ -82,7 +84,7 @@ export function enqueue(ids: string[], front = false) {
 export function pump() {
   const state = store();
   const { runner } = state;
-  if (runner.queue.length === 0) return;
+  if (runner.queue.length === 0 || state.viewOnly) return;
   // AI images wait while the user is out of credits or a provider asked us to slow down.
   const wait = runner.backoffUntil - Date.now();
   if (!runner.paused && wait > 0) wakeAfter(wait);

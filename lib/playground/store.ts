@@ -57,6 +57,13 @@ interface PlaygroundState {
   nextBefore: string | null;
   /** Dev preview: canned data, simulated generation, no API calls. */
   preview: boolean;
+  /**
+   * The owner's dashboard showing a team member's project: everything is shown, nothing can be
+   * changed (the API client refuses writes and the runner sends nothing while it is on).
+   */
+  viewOnly: boolean;
+  /** Where older runs come from when the project isn't the signed-in user's (the dashboard's API). */
+  olderRuns: ((before: string) => Promise<PlaygroundBundle>) | null;
   runner: RunnerState;
   /** The composer's model, quality, sizes and variations. */
   settings: PlaygroundSettings;
@@ -64,7 +71,7 @@ interface PlaygroundState {
   composerDraft: string | null;
   lightboxId: string | null;
 
-  reset: (projectId: string | null, preview?: boolean) => void;
+  reset: (projectId: string | null, preview?: boolean, view?: { viewOnly: boolean; olderRuns?: (before: string) => Promise<PlaygroundBundle> }) => void;
   setSettings: (update: Partial<PlaygroundSettings>) => void;
   setComposerDraft: (draft: string | null) => void;
   setLightbox: (id: string | null) => void;
@@ -100,12 +107,14 @@ export const usePlaygroundStore = create<PlaygroundState>((set) => ({
   items: {},
   nextBefore: null,
   preview: false,
+  viewOnly: false,
+  olderRuns: null,
   runner: INITIAL_RUNNER,
   settings: DEFAULT_SETTINGS,
   composerDraft: null,
   lightboxId: null,
 
-  reset: (projectId, preview = false) => set({
+  reset: (projectId, preview = false, view) => set({
     projectId,
     project: null,
     references: [],
@@ -113,6 +122,8 @@ export const usePlaygroundStore = create<PlaygroundState>((set) => ({
     items: {},
     nextBefore: null,
     preview,
+    viewOnly: view?.viewOnly ?? false,
+    olderRuns: view?.olderRuns ?? null,
     runner: INITIAL_RUNNER,
     settings: DEFAULT_SETTINGS,
     composerDraft: null,

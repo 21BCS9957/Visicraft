@@ -1,22 +1,26 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
+import Link from 'next/link';
+import { ChevronRight } from 'lucide-react';
 import type { ClientSpend, DashboardInsights, ModelScore, UsageRange } from '@/lib/dashboard/types';
+import { useDashboardPreview } from '@/lib/dashboard/preview';
 import { cx } from '@/components/playground/ui';
 import { useDashboard } from './DashboardData';
-import { displayName, formatCount, MemberAvatar } from './parts';
+import { dashboardHref, displayName, formatCount, MemberAvatar } from './parts';
 import { GROUP_COLORS, plural, rupees, ShowAll, UsageCard } from './UsageCards';
 
 /** Clients a card shows until it is expanded. */
 const CLIENT_ROWS = 5;
 /** A model needs this many Playground images before its rates can be called the best. */
 const MIN_FOR_BEST = 20;
-/** Rows that gather work outside a named project, shown quieter. */
-const UNNAMED = new Set(['No project', 'Deleted project']);
+/** Rows that gather work outside a named project or client, shown quieter. */
+const UNNAMED = new Set(['No project', 'Deleted project', 'Unsorted']);
 
 const percent = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : null);
 
-function People({ userIds }: { userIds: string[] }) {
+/** Up to three of the people's avatars, overlapping. */
+export function People({ userIds }: { userIds: string[] }) {
   const { memberById } = useDashboard();
   if (!userIds.length) return null;
   return (
@@ -30,14 +34,23 @@ function People({ userIds }: { userIds: string[] }) {
 }
 
 function ClientRow({ client, most }: { client: ClientSpend; most: number }) {
+  const preview = useDashboardPreview();
   const unnamed = UNNAMED.has(client.name);
   const made = [client.images ? plural(client.images, 'image') : null, client.videos ? plural(client.videos, 'video') : null].filter(Boolean).join(' · ');
   const projects = client.projects.length > 1 ? `${client.projects.length} projects` : null;
+  // A real client opens its page; Unsorted opens the list to sort.
+  const href = client.id ? dashboardHref(`/clients/${client.id}`, {}, preview) : client.name === 'Unsorted' ? `${dashboardHref('/clients', {}, preview)}#unsorted` : null;
   return (
     <li title={client.projects.length > 1 ? client.projects.join(', ') : undefined}>
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <span className={cx('truncate text-[13px]', unnamed ? 'text-zinc-400' : 'text-zinc-100')}>{client.name}</span>
+          {href ? (
+            <Link href={href} className={cx('inline-flex min-w-0 items-center gap-0.5 truncate text-[13px] hover:underline', unnamed ? 'text-zinc-400' : 'text-zinc-100')}>
+              <span className="truncate">{client.name}</span><ChevronRight className="h-3 w-3 shrink-0 text-zinc-500" />
+            </Link>
+          ) : (
+            <span className={cx('truncate text-[13px]', unnamed ? 'text-zinc-400' : 'text-zinc-100')}>{client.name}</span>
+          )}
           <People userIds={client.userIds} />
         </div>
         <span className="shrink-0 text-[13px] tabular-nums text-zinc-100">≈ {rupees(client.costInr)}</span>
@@ -76,7 +89,11 @@ export function ClientSpendCard({ insights, className }: { insights: DashboardIn
         <p className="mt-3 text-xs text-zinc-500">Nothing spent in this period.</p>
       )}
       <ShowAll open={open} total={clients.length} noun="clients" rows={CLIENT_ROWS} onToggle={() => setOpen((value) => !value)} />
-      <p className="mt-auto pt-3 text-[11px] leading-snug text-zinc-500">Projects that start with the same name count as one client. “No project” is work from the older tools.</p>
+      <p className="mt-auto pt-3 text-[11px] leading-snug text-zinc-500">
+        {clients.some((client) => client.id || client.name === 'Unsorted')
+          ? '“Unsorted” is projects without a client yet. “No project” is work from the older tools.'
+          : 'Projects that start with the same name count as one client. “No project” is work from the older tools.'}
+      </p>
     </UsageCard>
   );
 }
@@ -221,18 +238,5 @@ export function ModelScorecard({ insights, className }: { insights: DashboardIns
         Kept, favourited, failed and time come from Playground images. A yellow dot marks the best of the models with 20 or more.
       </p>
     </UsageCard>
-  );
-}
-
-/** The insight cards as one block: clients and waste side by side, the scorecard under them. */
-export function InsightCards({ insights }: { insights: DashboardInsights }) {
-  return (
-    <>
-      <div className="mt-3 grid grid-cols-1 items-start gap-3 sm:mt-4 sm:gap-4 lg:grid-cols-2">
-        <ClientSpendCard insights={insights} />
-        <WasteCard insights={insights} />
-      </div>
-      <ModelScorecard insights={insights} className="mt-3 sm:mt-4" />
-    </>
   );
 }

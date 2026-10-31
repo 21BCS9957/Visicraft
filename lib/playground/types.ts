@@ -75,6 +75,8 @@ export interface PlaygroundProject {
   settings: Partial<PlaygroundSettings> & { product?: VideoProjectProduct; video?: VideoProjectSettings };
   kind: ProjectKind;
   coverUrl: string | null;
+  /** The agency client it is for (GoGrowth accounts only); null when none was picked. */
+  clientId: string | null;
   createdAt: string;
   updatedAt: string;
 }

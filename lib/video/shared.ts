@@ -31,6 +31,9 @@ export const VIDEO_MODELS: Array<{ id: string; name: string; blurb: string }> = 
 /** Credits for rewriting a video prompt from a short instruction on the approval screen. */
 export const PROMPT_REWRITE_CREDITS = 3;
 
+/** Credits for "Improve prompt" in the Create tab (a short idea becomes a shot-by-shot prompt). */
+export const PROMPT_ENHANCE_CREDITS = 3;
+
 /** The hero frame of a video ad is one 2K Nano Banana Pro image, charged when planning. */
 export const HERO_FRAME_CREDITS = getCreditCost('nano-banana-pro', '2K');
 

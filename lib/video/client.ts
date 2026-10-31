@@ -53,6 +53,13 @@ export interface StartedRender {
 export interface QuickVideoRequest {
   prompt: string;
   imageUrl?: string | null;
+  /** Several images (the Create tab): references Image 1..N, or one start image. */
+  imageUrls?: string[];
+  imageRole?: 'first_frame' | 'reference';
+  /** The agency client the video is for (GoGrowth accounts). */
+  clientId?: string | null;
+  /** Where it was made; the Create tab lists only its own videos. */
+  surface?: 'create';
   faceId?: string | null;
   model: string;
   durationSeconds: number;
@@ -73,9 +80,10 @@ function started(body: Record<string, unknown>): StartedRender {
 }
 
 export const videoApi = {
-  history: (options: { before?: string | null; projectId?: string } = {}) => {
+  history: (options: { before?: string | null; projectId?: string; surface?: 'create' } = {}) => {
     const params = new URLSearchParams();
     if (options.projectId) params.set('projectId', options.projectId);
+    if (options.surface) params.set('surface', options.surface);
     if (options.before) params.set('before', options.before);
     return call<VideoHistoryPage>(`/api/video/history${params.size ? `?${params}` : ''}`);
   },
@@ -97,6 +105,13 @@ export const videoApi = {
   /** Quick video: the user's prompt (an image and a verified face if they want) goes straight to approval. */
   quick: (request: QuickVideoRequest) =>
     call<{ reviewId: string; review: unknown }>('/api/video/quick', { method: 'POST', body: JSON.stringify(request), timeoutMs: 60_000 }),
+
+  /** "Improve prompt" (Create tab): a short idea becomes a shot-by-shot prompt; a few credits. */
+  enhance: (request: { idea: string; model: string; imageUrls: string[]; imageRole: 'first_frame' | 'reference'; seconds: number; aspectRatio: string; motion?: string }) =>
+    call<{ prompt: string; summary: string; credits: number }>('/api/video/enhance-prompt', { method: 'POST', body: JSON.stringify(request), timeoutMs: 90_000 }),
+
+  /** Whether Seedance 2.5 and Google Veo can render now (free checks on the server). */
+  engines: () => call<Record<'seedance' | 'veo', { ready: boolean; reason?: string }>>('/api/video/engines', { timeoutMs: 45_000 }),
 
   faces: {
     list: async (): Promise<FacesState> => {

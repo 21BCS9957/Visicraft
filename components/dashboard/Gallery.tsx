@@ -176,9 +176,11 @@ function CompactRows({ items, rows, account, onBroken }: { items: FeedItem[]; ro
  * the newest few (asking for that many), with no controls, as `compactRows` whole rows (the
  * Overview's "Recent").
  */
-export function Gallery({ account = null, project = null, personFilter = false, showTypes = true, initialType = 'all', compact, compactRows = 2 }: {
+export function Gallery({ account = null, project = null, client = null, personFilter = false, showTypes = true, initialType = 'all', compact, compactRows = 2 }: {
   account?: string | null;
   project?: string | null;
+  /** A client's work: the feed asks by its id; what is in progress matches its projects. */
+  client?: { id: string; projectIds: string[] } | null;
   personFilter?: boolean;
   showTypes?: boolean;
   initialType?: FeedType;
@@ -197,14 +199,15 @@ export function Gallery({ account = null, project = null, personFilter = false, 
   const loadingMoreRef = useRef(false);
   const sentinel = useRef<HTMLDivElement>(null);
   const who = account ?? (person || null);
-  const key = JSON.stringify([who, project, type, status, compact ?? null]);
+  const clientId = client?.id ?? null;
+  const key = JSON.stringify([who, project, clientId, type, status, compact ?? null]);
 
   // Finished and failed work comes from the feed; what is in progress, from the shared live check.
   useEffect(() => {
     if (status === 'live') return;
     let active = true;
-    const requestKey = JSON.stringify([who, project, type, status, compact ?? null]);
-    dashboardApi.feed({ account: who, project, type, status, limit: compact })
+    const requestKey = JSON.stringify([who, project, clientId, type, status, compact ?? null]);
+    dashboardApi.feed({ account: who, project, client: clientId, type, status, limit: compact })
       .then((result) => {
         if (!active) return;
         setPage({ items: result.items, nextBefore: compact ? null : result.nextBefore, key: requestKey });
@@ -214,14 +217,14 @@ export function Gallery({ account = null, project = null, personFilter = false, 
     return () => {
       active = false;
     };
-  }, [who, project, type, status, compact, settledKey]);
+  }, [who, project, clientId, type, status, compact, settledKey]);
 
   const loadMore = useCallback(async () => {
     if (!page?.nextBefore || loadingMoreRef.current) return;
     loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
-      const next = await dashboardApi.feed({ account: who, project, type, status, before: page.nextBefore });
+      const next = await dashboardApi.feed({ account: who, project, client: clientId, type, status, before: page.nextBefore });
       setPage((current) => {
         if (!current || current.key !== page.key) return current;
         const seen = new Set(current.items.map(itemKey));
@@ -233,7 +236,7 @@ export function Gallery({ account = null, project = null, personFilter = false, 
       loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [page, who, project, type, status]);
+  }, [page, who, project, clientId, type, status]);
 
   // More arrives as the end of the grid comes into view.
   useEffect(() => {
@@ -248,7 +251,8 @@ export function Gallery({ account = null, project = null, personFilter = false, 
 
   const liveJobs = useMemo(() => (live ?? []).filter((job) => (!who || job.userId === who)
     && (!project || job.projectId === project)
-    && (type === 'all' || (job.kind === 'run' ? 'image' : 'video') === type)), [live, who, project, type]);
+    && (!client || client.projectIds.includes(job.projectId ?? ''))
+    && (type === 'all' || (job.kind === 'run' ? 'image' : 'video') === type)), [live, who, project, client, type]);
   const visible = useMemo(() => (page?.items ?? []).filter((item) => !broken.has(itemKey(item))), [page, broken]);
   const groups = useMemo(() => {
     const now = Date.now();
