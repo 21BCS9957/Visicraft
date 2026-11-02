@@ -31,7 +31,7 @@ interface OpenAiImageResponse {
 }
 
 /** An OpenAI HTTP answer that wasn't an image, as the queue should treat it. */
-function classifyOpenAiError(status: number, data: OpenAiImageResponse, retryAfter: string | null): PlaygroundGenerationError {
+export function classifyOpenAiError(status: number, data: OpenAiImageResponse, retryAfter: string | null): PlaygroundGenerationError {
   const message = data.error?.message ?? `HTTP ${status}`;
   const code = data.error?.code ?? '';
   if (status === 429) {

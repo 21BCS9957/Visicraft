@@ -11,6 +11,7 @@ import { useAgencyClients } from '@/lib/playground/agencyClients';
 import { uploadImages } from '@/lib/playground/upload';
 import { videoApi, VideoApiError } from '@/lib/video/client';
 import { motionPreset, type MotionPreset } from '@/lib/video/presets';
+import { START_EXTEND_CREDITS } from '@/lib/video/startExtend';
 import { previewHistory } from '@/lib/video/preview';
 import { readVideoReview, type StudioVideo, type VideoTake } from '@/lib/video/shared';
 import {
@@ -31,8 +32,9 @@ import { useVideoTracking } from './useVideoTracking';
 const TOAST = { position: 'top-center' as const };
 const CHOICES_KEY = 'visicraft:createVideo';
 
-type Choices = { model: string; seconds: number; quality: VideoQuality; aspect: CreateAspect; preset: string; role: ImageRole; clientId: string | null };
-const DEFAULT_CHOICES: Choices = { model: createModel(null).id, seconds: 8, quality: 'draft', aspect: '9:16', preset: 'general', role: 'first_frame', clientId: null };
+/** `extendTo`: the shape a Seedance 2.5 start image is extended to (null keeps the image's own). */
+type Choices = { model: string; seconds: number; quality: VideoQuality; aspect: CreateAspect; extendTo: VideoAspect | null; preset: string; role: ImageRole; clientId: string | null };
+const DEFAULT_CHOICES: Choices = { model: createModel(null).id, seconds: 8, quality: 'draft', aspect: '9:16', extendTo: null, preset: 'general', role: 'first_frame', clientId: null };
 
 function readChoices(): Choices {
   try {
@@ -160,13 +162,15 @@ export function CreatePage() {
   const quality = normalizeVideoQuality(model.id, choices.quality);
   const role: ImageRole = veo ? 'first_frame' : images.length > 1 ? 'reference' : choices.role;
   const canAuto = !veo && images.length === 1 && role === 'first_frame';
-  // Seedance 2.5 always keeps a start image's own shape; otherwise the shape picked (Veo: 9:16 or 16:9).
+  // Seedance 2.5 keeps a start image's own shape, unless the image is extended to another one first;
+  // otherwise the shape picked (Veo: 9:16 or 16:9).
+  const extendTo = canAuto && choices.extendTo && options.aspectRatios.includes(choices.extendTo) ? choices.extendTo : null;
   const aspect: CreateAspect = canAuto
-    ? 'auto'
+    ? extendTo ?? 'auto'
     : choices.aspect !== 'auto' && options.aspectRatios.includes(choices.aspect) ? choices.aspect : '9:16';
   const preset = motionPreset(choices.preset);
   const sentPrompt = preset.line ? `${prompt.trim()}\n\n${preset.line}` : prompt.trim();
-  const price = videoCredits(model.id, quality, seconds, aspect === 'auto' ? '9:16' : aspect);
+  const price = videoCredits(model.id, quality, seconds, aspect === 'auto' ? '9:16' : aspect) + (extendTo ? START_EXTEND_CREDITS : 0);
   const client = clientList.find((known) => known.id === choices.clientId) ?? null;
   const engineState = engines?.[model.engine];
 
@@ -222,10 +226,11 @@ export function CreatePage() {
         aspectRatio: aspect === 'auto' ? '9:16' : aspect,
         clientId: client?.id ?? null,
         surface: 'create' as const,
+        ...(extendTo ? { reshape: 'extend' as const } : {}),
       };
       let video: StudioVideo;
       if (preview) {
-        await sleep(600);
+        await sleep(extendTo ? 2000 : 600);
         video = {
           id: `preview-create-${Date.now()}`,
           createdAt: new Date().toISOString(),
@@ -252,7 +257,7 @@ export function CreatePage() {
         // The panel was the review: render it now, as it was sent.
         const started = await videoApi.approve(reviewId, { prompt: review.prompt, frames, durationSeconds: review.durationSeconds });
         pending = null;
-        notice = started.notice ?? review.notes.find((note) => /renders with|only the first/i.test(note)) ?? null;
+        notice = started.notice ?? review.notes.find((note) => /renders with|only the first|extended to/i.test(note)) ?? null;
         const take: VideoTake = {
           key: reviewId,
           operationId: started.operationId,
@@ -420,6 +425,8 @@ export function CreatePage() {
       seconds: video.settings.durationSeconds,
       quality: video.settings.quality,
       aspect: video.settings.aspectRatio,
+      // An extended start image comes back as the image itself, already in its shape.
+      extendTo: null,
       preset: 'general',
       role: video.plan?.mode === 'reference' ? 'reference' : 'first_frame',
     });
@@ -539,7 +546,7 @@ export function CreatePage() {
             }}
             onSeconds={(next) => choose({ seconds: next })}
             onQuality={(next) => choose({ quality: next })}
-            onAspect={(next) => choose({ aspect: next })}
+            onAspect={(next) => (canAuto ? choose({ extendTo: next === 'auto' ? null : next }) : choose({ aspect: next }))}
             onClient={(next: ClientRef | null) => choose({ clientId: next?.id ?? null })}
             onUseVeo={() => changeModel(createModel('veo-3.1-generate-001').id)}
             onGenerate={() => void generate()}

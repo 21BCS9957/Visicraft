@@ -58,10 +58,11 @@ export function Navbar() {
     }
   }, [showUserMenu]);
 
-  // Full-screen tools draw their own top bar: a Playground project (and its Canvas) and the
-  // Video Studio. The Playground hub and the Library keep the navbar.
+  // Full-screen tools draw their own top bar: a Playground project (and its Canvas), the
+  // Video Studio, the Workflow and Chat. The Playground hub and the Library keep the navbar.
   const fullScreen = segments[0] === 'dashboard'
     || pathname?.startsWith('/workflow')
+    || pathname === '/chat' || pathname?.startsWith('/chat/')
     // Inside an image project (and its Canvas), a video project or the Create tab; the hubs and the Library keep it.
     || /^\/playground\/(video\/[^/]+|create|[0-9a-f-]{8,}|preview)(\/|$)/i.test(pathname ?? '');
   if (fullScreen) {
@@ -73,6 +74,7 @@ export function Navbar() {
     { href: '/playground', label: 'Playground' },
     { href: '/creatives', label: 'Creatives' },
     { href: '/workflow', label: 'Workflow' },
+    { href: '/chat', label: 'Chat' },
     ...(SHOW_GENERATE ? [{ href: '/generate', label: 'Generate' }] : []),
     ...(SHOW_PRICING ? [{ href: '/pricing', label: 'Pricing' }] : []),
   ];

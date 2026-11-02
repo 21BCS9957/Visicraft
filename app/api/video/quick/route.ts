@@ -1,18 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
+import type { User } from '@supabase/supabase-js';
 import { imageToBase64 } from '@/lib/banana/api';
 import { isOwnStorageUrl, loadVideoProject } from '@/lib/server/playground/db';
+import { ExtendRejected, extendImage } from '@/lib/server/playground/extend';
 import { ApiError } from '@/lib/server/playground/http';
+import { savePlaygroundImage, type SavedImage } from '@/lib/server/playground/images';
 import { inspectFaces } from '@/lib/server/referenceImages';
 import { requireAgency, requireClient } from '@/lib/server/clients';
 import { createServiceClient } from '@/lib/supabase/server';
 import { resolveSeedanceModel, seedanceFaceModelReady } from '@/lib/server/seedance';
-import { requireAuthenticatedUser } from '@/lib/server/usage';
+import { deductCreditsForUser, logUsage, refundCreditsForUser, requireAuthenticatedUser } from '@/lib/server/usage';
 import { readyFaceAssets } from '@/lib/server/videoFaces';
 import { saveVideoReview, type VideoReview, type VideoReviewFrame } from '@/lib/server/videoReview';
-import { normalizeVideoQuality, seedanceSpec, snapVideoAspect, snapVideoDuration, VIDEO_ASPECTS, videoCredits, videoEngineOf, type VideoAspect } from '@/lib/videoModels';
+import { START_EXTEND_CREDITS, START_EXTEND_MODEL, START_EXTEND_PRICE, START_EXTEND_SIZE } from '@/lib/video/startExtend';
+import { isVideoAspect, normalizeVideoQuality, seedanceSpec, snapVideoAspect, snapVideoDuration, VIDEO_ASPECTS, videoCredits, videoEngineOf, type VideoAspect } from '@/lib/videoModels';
 
-export const maxDuration = 60;
+/** Extending a start image to another shape takes up to about a minute and a half. */
+export const maxDuration = 150;
 
 /** The Studio's box stops at 1,500; the Create tab's "Improve prompt" writes up to about 3,000. */
 const MAX_PROMPT_CHARS = 4000;
@@ -22,19 +27,77 @@ const MAX_FACE_PHOTOS = 3;
 const MAX_REFERENCE_IMAGES = 9;
 const VEO_START_IMAGE = 'Google Veo needs a start image: add one, or pick Seedance to make a video from words alone.';
 
-/** The shape nearest to the image's own (Seedance 2.5 keeps a first frame's shape). */
-async function imageShape(url: string): Promise<VideoAspect | null> {
+/** An image's width ÷ height, or null if it can't be read. */
+async function imageRatio(url: string): Promise<number | null> {
   try {
     const dataUrl = await imageToBase64(url);
     const { width, height } = await sharp(Buffer.from(dataUrl.split(',')[1] ?? '', 'base64')).metadata();
-    if (!width || !height) return null;
-    const distance = (id: string) => {
-      const [w, h] = id.split(':').map(Number);
-      return Math.abs(Math.log((width / height) / (w / h)));
-    };
-    return VIDEO_ASPECTS.reduce((best, aspect) => (distance(aspect.id) < distance(best.id) ? aspect : best)).id;
+    return width && height ? width / height : null;
   } catch {
     return null;
+  }
+}
+
+/** How far a ratio is from a shape (0 = the same). */
+const shapeDistance = (ratio: number, aspect: string) => {
+  const [w, h] = aspect.split(':').map(Number);
+  return Math.abs(Math.log(ratio / (w / h)));
+};
+
+/** The shape nearest to an image's own (Seedance 2.5 keeps a first frame's shape). */
+function nearestShape(ratio: number | null): VideoAspect | null {
+  if (!ratio) return null;
+  return VIDEO_ASPECTS.reduce((best, aspect) => (shapeDistance(ratio, aspect.id) < shapeDistance(ratio, best.id) ? aspect : best)).id;
+}
+
+/**
+ * The start image extended to the video's shape (the Playground's Extend: the image itself stays
+ * exact, new space is painted around it). Charged here, before the video's approval, and
+ * refunded if it fails.
+ */
+async function extendStartImage(user: User, url: string, ratio: VideoAspect, videoCost: number, metadata: Record<string, unknown>): Promise<SavedImage> {
+  // Both must be affordable, so an image is never extended for a video that can't then be made.
+  if (!(await deductCreditsForUser(user.id, START_EXTEND_CREDITS + videoCost))) {
+    throw new ApiError(402, `Extending your image to ${ratio} (${START_EXTEND_CREDITS} credits) and the video (${videoCost}) need ${START_EXTEND_CREDITS + videoCost} credits, and you don’t have enough. Top up, or pick “Match image”.`, 'insufficient_credits');
+  }
+  await refundCreditsForUser(user.id, videoCost);
+  try {
+    const extended = await extendImage({ sourceUrl: url, model: START_EXTEND_MODEL, size: START_EXTEND_SIZE, ratio, deadline: Date.now() + 110_000 });
+    const saved = await savePlaygroundImage(extended.bytes, extended.mimeType);
+    await logUsage({
+      user,
+      provider: 'google',
+      model: START_EXTEND_MODEL,
+      feature: 'image_generation',
+      inputTokens: extended.usage.inputTokens,
+      outputTokens: extended.usage.outputTokens,
+      totalTokens: extended.usage.totalTokens,
+      // A step towards the video, not a creative of its own.
+      imageCount: 0,
+      estimatedCostUsd: START_EXTEND_PRICE.usd * extended.calls,
+      creditCost: START_EXTEND_CREDITS,
+      metadata: { ...metadata, mode: 'video_start_extend', ratio, calls: extended.calls },
+    });
+    return saved;
+  } catch (error) {
+    await refundCreditsForUser(user.id, START_EXTEND_CREDITS);
+    if (error instanceof ExtendRejected && error.calls > 0) {
+      await logUsage({
+        user,
+        provider: 'google',
+        model: START_EXTEND_MODEL,
+        feature: 'image_generation',
+        inputTokens: error.usage.inputTokens,
+        outputTokens: error.usage.outputTokens,
+        totalTokens: error.usage.totalTokens,
+        imageCount: 0,
+        estimatedCostUsd: START_EXTEND_PRICE.usd * error.calls,
+        creditCost: 0,
+        metadata: { ...metadata, mode: 'video_start_extend', ratio, rejected: error.reason },
+      }).catch(() => undefined);
+    }
+    const reason = error instanceof Error && error.message ? ` (${error.message.replace(/\.$/, '')})` : '';
+    throw new ApiError(502, `Your image couldn’t be extended to ${ratio}${reason}. Nothing was charged. Try again, or pick “Match image”.`, 'extend_failed');
   }
 }
 
@@ -81,6 +144,8 @@ export async function POST(request: NextRequest) {
     const body = (await request.json().catch(() => ({}))) as {
       prompt?: unknown; imageUrl?: unknown; imageUrls?: unknown; imageRole?: unknown; faceId?: unknown; model?: unknown; durationSeconds?: unknown;
       quality?: unknown; aspectRatio?: unknown; projectId?: unknown; clientId?: unknown; surface?: unknown;
+      /** 'extend': a Seedance 2.5 start image is extended to `aspectRatio` first (it keeps its own shape otherwise). */
+      reshape?: unknown;
     };
     const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
     if (prompt.length < 3) throw new ApiError(400, 'Describe the video in a sentence or two.', 'bad_request');
@@ -119,6 +184,8 @@ export async function POST(request: NextRequest) {
     let realFace = false;
     let finalPrompt = prompt;
     const notes: string[] = [];
+    /** The shape the start image is extended to before the video (Seedance 2.5 keeps an image's shape). */
+    let extendTo: VideoAspect | null = null;
 
     if (veo) {
       if (faceId) throw new ApiError(400, 'Verified faces are for Seedance. Google Veo takes the person straight from your image.', 'bad_request');
@@ -165,8 +232,15 @@ export async function POST(request: NextRequest) {
         aspect = snapVideoAspect(model, aspect);
         notes.push(`This image shows a real person’s face, which Seedance 2.5 refuses, so it renders with ${seedanceSpec(model).name}: no sound, up to ${seedanceSpec(model).maxSeconds} seconds.`);
       } else if (seedanceSpec(model).family === '2.5') {
-        aspect = (await imageShape(imageUrl)) ?? aspect;
-        notes.push('The video starts from your image and keeps its shape.');
+        const own = await imageRatio(imageUrl);
+        const wanted = body.reshape === 'extend' && isVideoAspect(body.aspectRatio) ? body.aspectRatio : null;
+        if (wanted && own && shapeDistance(own, wanted) > 0.04) {
+          extendTo = wanted;
+          aspect = wanted;
+        } else {
+          aspect = wanted ?? nearestShape(own) ?? aspect;
+          notes.push('The video starts from your image and keeps its shape.');
+        }
       } else {
         notes.push('The video starts from your image.');
       }
@@ -176,6 +250,16 @@ export async function POST(request: NextRequest) {
 
     const seconds = snapVideoDuration(model, Number(body.durationSeconds));
     const quality = normalizeVideoQuality(model, typeof body.quality === 'string' ? body.quality : undefined);
+    const project = await loadVideoProject(user.id, body.projectId).catch(() => null);
+    if (extendTo && imageUrl) {
+      const extended = await extendStartImage(user, imageUrl, extendTo, videoCredits(model, quality, seconds, extendTo), {
+        ...(project ? { projectId: project.id } : {}),
+        ...(clientId ? { clientId } : {}),
+        ...(body.surface === 'create' ? { surface: 'create' } : {}),
+      });
+      frames = [{ url: extended.imageUrl, preview: extended.previewUrl, label: `Your image, extended to ${extendTo}`, kind: 'photo' }];
+      notes.push(`Your image was extended to ${extendTo} first (${START_EXTEND_CREDITS} credits, the product untouched), so the video comes out ${extendTo}.`);
+    }
     const review: VideoReview = {
       engine: veo ? 'veo' : 'seedance',
       model,
@@ -193,7 +277,6 @@ export async function POST(request: NextRequest) {
       needsAudio: false,
       writtenBy: 'Your prompt, sent as you wrote it',
     };
-    const project = await loadVideoProject(user.id, body.projectId).catch(() => null);
     const reviewId = await saveVideoReview(user, review, {
       requestedVideoModel: model,
       projectId: project?.id ?? null,
@@ -202,7 +285,8 @@ export async function POST(request: NextRequest) {
       quick: true,
       textOnly: frames.length === 0,
       faceId,
-      heroFrameUrl: imageUrl ?? frames.find((frame) => frame.preview)?.preview ?? null,
+      heroFrameUrl: (extendTo ? frames[0]?.url : imageUrl) ?? frames.find((frame) => frame.preview)?.preview ?? null,
+      ...(extendTo ? { startExtended: { ratio: extendTo, from: imageUrl, credits: START_EXTEND_CREDITS } } : {}),
       ...(clientId ? { clientId } : {}),
       // Where it was made: the Create tab lists only its own videos.
       ...(body.surface === 'create' ? { surface: 'create' } : {}),

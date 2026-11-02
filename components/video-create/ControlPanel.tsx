@@ -10,6 +10,7 @@ import { videoAspectInfo, videoCredits, videoModelOptions, videoQualityLabel, ty
 import { ClientPicker } from '@/components/playground/ClientPicker';
 import { cx } from '@/components/playground/ui';
 import { ShapeIcon } from '@/components/video-studio/VideoSettings';
+import { START_EXTEND_CREDITS } from '@/lib/video/startExtend';
 import { ModelPicker, type CreateModel, type EngineState } from './ModelPicker';
 import { PresetCard } from './PresetGallery';
 
@@ -278,13 +279,18 @@ export function ControlPanel(props: {
               </div>
             )}
           </SettingTile>
-          <SettingTile label="Shape" value={aspect === 'auto' ? 'Match image' : `${aspect} · ${videoAspectInfo(aspect).label}`}>
+          <SettingTile label="Shape" value={aspect === 'auto' ? 'Match image' : canAuto ? `${aspect} · image extended` : `${aspect} · ${videoAspectInfo(aspect).label}`}>
             {(close) => (
               <div className="space-y-0.5">
                 {canAuto ? (
                   <>
-                    <Option selected onClick={close} hint="keeps your image">Match image</Option>
-                    <p className="px-2.5 pt-1 text-[11px] leading-snug text-white/45">Seedance 2.5 keeps a start image’s own shape. To pick a shape, crop the image first or switch it to “Reference”.</p>
+                    <Option selected={aspect === 'auto'} onClick={() => { props.onAspect('auto'); close(); }} hint="keeps your image’s shape">Match image</Option>
+                    {options.aspectRatios.map((ratio) => (
+                      <Option key={ratio} selected={aspect === ratio} onClick={() => { props.onAspect(ratio); close(); }} hint={`+${START_EXTEND_CREDITS} cr`}>
+                        <span className="inline-flex items-center gap-2"><ShapeIcon ratio={ratio} /> {ratio} · {videoAspectInfo(ratio).label}</span>
+                      </Option>
+                    ))}
+                    <p className="px-2.5 pt-1 text-[11px] leading-snug text-white/45">Seedance 2.5 keeps a start image’s shape. Pick another and your image is extended to it first: the product stays untouched, only new space is painted around it (about 30 seconds, +{START_EXTEND_CREDITS} credits).</p>
                   </>
                 ) : options.aspectRatios.map((ratio) => (
                   <Option key={ratio} selected={aspect === ratio} onClick={() => { props.onAspect(ratio); close(); }} hint={videoAspectInfo(ratio).use}>
@@ -354,7 +360,7 @@ export function ControlPanel(props: {
           className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#fff05a] text-[15px] font-bold text-[#1f1c00] shadow-[0_0_40px_rgba(255,240,90,0.18)] transition-colors hover:bg-[#fff59a] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
         >
           {props.generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <WandSparkles className="h-4 w-4" />}
-          {props.generating ? 'Starting…' : 'Generate'}
+          {props.generating ? (canAuto && aspect !== 'auto' ? `Extending your image to ${aspect}…` : 'Starting…') : 'Generate'}
           {!props.generating && <span className="rounded-full bg-black/10 px-2 py-0.5 text-xs font-semibold tabular-nums">{props.credits} cr</span>}
         </button>
       </div>

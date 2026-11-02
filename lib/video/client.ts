@@ -66,6 +66,8 @@ export interface QuickVideoRequest {
   quality: string;
   aspectRatio: string;
   projectId?: string | null;
+  /** 'extend': a Seedance 2.5 start image is extended to `aspectRatio` first (it keeps its own shape otherwise). */
+  reshape?: 'extend';
 }
 
 function faceFrom(body: { face: unknown }): VideoFace {
@@ -104,7 +106,7 @@ export const videoApi = {
 
   /** Quick video: the user's prompt (an image and a verified face if they want) goes straight to approval. */
   quick: (request: QuickVideoRequest) =>
-    call<{ reviewId: string; review: unknown }>('/api/video/quick', { method: 'POST', body: JSON.stringify(request), timeoutMs: 60_000 }),
+    call<{ reviewId: string; review: unknown }>('/api/video/quick', { method: 'POST', body: JSON.stringify(request), timeoutMs: request.reshape ? 160_000 : 60_000 }),
 
   /** "Improve prompt" (Create tab): a short idea becomes a shot-by-shot prompt; a few credits. */
   enhance: (request: { idea: string; model: string; imageUrls: string[]; imageRole: 'first_frame' | 'reference'; seconds: number; aspectRatio: string; motion?: string }) =>
